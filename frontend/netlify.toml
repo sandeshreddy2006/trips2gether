@@ -28,6 +28,6 @@ esac
 
 [[redirects]]
   from = "/api/*"
-  to = "trips2gether-production.up.railway.app"
+  to = "https://trips2gether-production.up.railway.app/:splat"
   status = 200
   force = true
