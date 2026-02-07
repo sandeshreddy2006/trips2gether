@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pymysql
+passlib[argon2]==1.7.4
+python-jose[cryptography]
+pydantic[email]
+requests
+google-auth
+bcrypt
+python-dotenv
