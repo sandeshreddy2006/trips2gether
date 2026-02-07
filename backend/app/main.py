@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .db import Base, engine, get_db
+from . import models  # Import models to register them with SQLAlchemy
 print("[Startup] Running Base.metadata.create_all...")
 # MySQL-specific: drop the verification_tokens table so it will be recreated
 # by SQLAlchemy with the updated model (e.g. allow NULL user_id). This is
@@ -19,7 +20,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:8888",
-        "https://cosmic-peony-c6376c.netlify.app",
+        "https://trips2gether.netlify.app",
         "https://thefilmfoodie.com",
         "https://www.thefilmfoodie.com",
     ],
