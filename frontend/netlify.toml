@@ -1,0 +1,33 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+  functions = "netlify/functions"
+
+  # Build only for Sandesh's commits (skip everyone else)
+  ignore = """
+AUTHOR=$(git show -s --format='%ae' "$COMMIT_REF")
+
+case "$AUTHOR" in
+  "spatlol@purdue.edu" | *"+sandeshreddy2006@users.noreply.github.com")
+    # If using a monorepo (base set), only build when files in that base changed
+    if grep -q '^ *base *= *\"' netlify.toml 2>/dev/null; then
+      BASEDIR=$(awk -F'\"' '/^ *base *=/ {print $2}' netlify.toml)
+      git diff --quiet "$CACHED_COMMIT_REF" "$COMMIT_REF" -- "$BASEDIR"/ && exit 0 || exit 1
+    else
+      exit 1
+    fi
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+"""
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[[redirects]]
+  from = "/api/*"
+  to = "trips2gether-production.up.railway.app"
+  status = 200
+  force = true
