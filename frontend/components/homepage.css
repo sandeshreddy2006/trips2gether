@@ -1,0 +1,86 @@
+/* Styles extracted from homepage.tsx */
+.homepage-root {
+    position: relative;
+    min-height: 100vh;
+    background: #ffffff;
+}
+
+.homepage-header {
+    height: 140px;
+    background: linear-gradient(90deg, #0E3F2E 12.02%, #8DD48B 55.77%, rgba(18, 129, 92, 0.80) 100%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+    display: flex;
+    align-items: center;
+    padding: 0 48px;
+    justify-content: space-between;
+}
+
+.logo-link {
+    display: flex;
+    align-items: center;
+    width: 350px;
+    height: 96px;
+}
+
+.logo-link img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.search-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+}
+
+.search-inner {
+    width: 60%;
+    max-width: 860px;
+    min-width: 420px;
+}
+
+.auth {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+/* style both links and buttons inside auth */
+.auth a,
+.auth button {
+    padding: 10px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+}
+
+.auth .signin {
+    border: 1px solid rgba(148, 163, 184, 1);
+    background: #f3f4f6;
+    color: #0E3F2E;
+}
+
+.auth .register {
+    padding: 10px 18px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #0E3F2E;
+    color: #ffffff;
+}
+
+.homepage-sidebar {
+    position: absolute;
+    top: 140px;
+    bottom: 0;
+    left: 0;
+    width: 240px;
+    background: linear-gradient(184deg, rgba(14, 63, 46, 0.38) -22.57%, #186C50 65.45%, rgba(33, 153, 114, 0.80) 96.89%);
+    border-right: 1px solid rgba(0, 0, 0, 0.12);
+}
