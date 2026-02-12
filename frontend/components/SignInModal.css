@@ -1,0 +1,165 @@
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal {
+    background-color: white;
+    padding: 30px;
+    border-radius: 10px;
+    width: 350px;
+    box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.3);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-weight: lighter;
+    font-size: 40px;
+    cursor: pointer;
+    color: #2E6B55;
+}
+
+.logo {
+    display: block;
+    margin: 0 auto 20px auto;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+
+.modal-body input {
+    width: 100%;
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 5px;
+    border: 1px solid #2E6B55;
+    color: #666;
+}
+
+.modal-body h2 {
+    color: #2E6B55;
+}
+
+.signin-btn,
+.google-btn {
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+}
+
+.signin-btn {
+    background-color: #2E6B55;
+    color: white;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-top: 10px;
+    color: #2E6B55;
+}
+
+.footer-btn {
+    background: none;
+    border: none;
+    color: #2E6B55;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.error-text {
+    color: #d32f2f;
+    font-size: 0.875rem;
+    margin: 5px 0;
+    padding: 8px;
+    background-color: #ffebee;
+    border-radius: 4px;
+    border-left: 4px solid #d32f2f;
+}
+
+.remember-me-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0 0 0;
+    font-size: 1rem;
+    color: #2E6B55;
+    user-select: none;
+    width: fit-content;
+}
+
+.remember-me-checkbox {
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    border: 2px solid #d5ae52;
+    border-radius: 3px;
+    background: #fff;
+    cursor: pointer;
+    position: relative;
+}
+
+.remember-me-checkbox:checked {
+    background-color: #2E6B55;
+    border-color: #2E6B55;
+}
+
+.remember-me-checkbox:checked::after {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 7px;
+    border: solid #d5ae52;
+    border-width: 0 2px 2px 0;
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    transform: rotate(45deg) scale(1.05);
+}
+
+.remember-me-label {
+    cursor: pointer;
+    font-size: 1rem;
+    color: #2E6B55;
+}
+
+/* google button placeholder */
+.google-btn {
+    display: block;
+    margin: 12px auto 0;
+    width: 169px;
+    height: 40px;
+    background: lightgray;
+    border-radius: 6px;
+}
+
+@media (max-width: 480px) {
+    .modal {
+        width: 90%;
+        padding: 20px;
+    }
+
+    .logo {
+        width: 60px;
+        height: 60px;
+        margin-bottom: 15px;
+    }
+}
