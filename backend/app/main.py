@@ -43,7 +43,7 @@ app.add_middleware(
 # Auth endpoints
 # -------------------------
 
-@app.post("/api/auth/register", response_model=dict)
+@app.post("/auth/register", response_model=dict)
 def register(body: RegisterIn, db: Session = Depends(get_db)):
     """Register a new user"""
     # Check if email already exists
@@ -72,7 +72,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     return {"ok": True, "user": {"id": user.id, "email": user.email, "name": user.name}}
 
 
-@app.post("/api/auth/login", response_model=dict)
+@app.post("/auth/login", response_model=dict)
 def login(response: Response, body: LoginIn, db: Session = Depends(get_db)):
     """Login with email and password"""
     # Find user by email
@@ -126,14 +126,14 @@ def login(response: Response, body: LoginIn, db: Session = Depends(get_db)):
     return result
 
 
-@app.post("/api/auth/logout", response_model=dict)
+@app.post("/auth/logout", response_model=dict)
 def logout(response: Response):
     """Logout user by clearing auth cookie"""
     response.delete_cookie("authToken", path="/")
     return {"ok": True}
 
 
-@app.post("/api/auth/google", response_model=dict)
+@app.post("/auth/google", response_model=dict)
 def google_login(response: Response, body: GoogleOAuthIn, db: Session = Depends(get_db)):
     """Google OAuth login/registration"""
     access_token = body.token
@@ -217,7 +217,7 @@ def google_login(response: Response, body: GoogleOAuthIn, db: Session = Depends(
     }
 
 
-@app.get("/api/auth/me", response_model=dict)
+@app.get("/auth/me", response_model=dict)
 def get_current_user(request: Request, db: Session = Depends(get_db)):
     """Get current authenticated user info"""
     token = request.cookies.get("authToken")

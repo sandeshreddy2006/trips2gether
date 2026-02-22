@@ -49,19 +49,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         longitude,
                     }));
 
-                    // Try to get location name from reverse geocoding (optional)
+                    // Try to get location name from Google Maps reverse geocoding (optional)
                     try {
-                        const response = await fetch(
-                            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-                        );
-                        if (response.ok) {
-                            const data = await response.json();
-                            const city = data.address?.city || data.address?.town || data.address?.village || "";
-                            const country = data.address?.country || "";
-                            setLocationData((prev) => ({
-                                ...prev,
-                                location: city && country ? `${city}, ${country}` : country || city,
-                            }));
+                        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API;
+                        if (!apiKey) {
+                            console.log("Google Maps API key not configured");
+                        } else {
+                            const response = await fetch(
+                                `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
+                            );
+                            if (response.ok) {
+                                const data = await response.json();
+                                if (data.results && data.results.length > 0) {
+                                    const address = data.results[0].formatted_address;
+                                    setLocationData((prev) => ({
+                                        ...prev,
+                                        location: address,
+                                    }));
+                                }
+                            }
                         }
                     } catch (err) {
                         console.log("Could not get location name:", err);
