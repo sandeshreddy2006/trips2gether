@@ -16,10 +16,6 @@ JWT_ALGO = os.getenv("JWT_ALGO")
 
 print("[Startup] Running Base.metadata.create_all...")
 
-# ONE-TIME: Drop user table to reset it
-models.User.__table__.drop(bind=engine, checkfirst=True)
-print("[Startup] Dropped users table (one-time operation)")
-
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
 
