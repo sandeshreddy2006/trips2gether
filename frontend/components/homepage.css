@@ -7,12 +7,32 @@
 
 .homepage-header {
     height: 140px;
-    background: linear-gradient(90deg, #0E3F2E 12.02%, #8DD48B 55.77%, rgba(18, 129, 92, 0.80) 100%);
+    background: linear-gradient(90deg, #0E3F2E 0%, #186C50 100%);
     border-bottom: 1px solid rgba(0, 0, 0, 0.12);
     display: flex;
     align-items: center;
     padding: 0 48px;
     justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+}
+
+.homepage-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image:
+        radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.08) 1.5px, transparent 1.5px),
+        radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.06) 1.5px, transparent 1.5px),
+        radial-gradient(circle at 40% 40%, rgba(0, 0, 0, 0.06) 1.5px, transparent 1.5px),
+        radial-gradient(circle at 90% 10%, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 150px 150px, 200px 200px, 170px 170px, 190px 190px;
+    background-position: 0 0, 40px 40px, 80px 80px, 120px 120px;
+    pointer-events: none;
+    opacity: 0.8;
 }
 
 .logo-link {
@@ -50,29 +70,96 @@
 /* style both links and buttons inside auth */
 .auth a,
 .auth button {
-    padding: 10px 18px;
-    border-radius: 10px;
+    padding: 11px 24px;
+    border-radius: 8px;
     text-decoration: none;
-    font-weight: 500;
+    font-weight: 600;
+    font-size: 14px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     border: none;
     background: transparent;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
 }
 
 .auth .signin {
-    border: 1px solid rgba(148, 163, 184, 1);
-    background: #f3f4f6;
-    color: #0E3F2E;
+    border: none;
+    background: rgba(30, 40, 50, 0.7);
+    color: #ffffff;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.auth .signin:hover {
+    background: rgba(20, 30, 40, 0.85);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    transform: translateY(-2px);
+}
+
+.auth .signin:active {
+    transform: translateY(0);
 }
 
 .auth .register {
-    padding: 10px 18px;
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    background: #0E3F2E;
+    padding: 11px 24px;
+    border: none;
+    background: linear-gradient(135deg, #2E6B55 0%, #186C50 100%);
     color: #ffffff;
+    box-shadow: 0 4px 15px rgba(46, 107, 85, 0.3);
+}
+
+.auth .register:hover {
+    background: linear-gradient(135deg, #0d2f22 0%, #0a4a35 100%);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35);
+    transform: translateY(-2px);
+}
+
+.auth .register:active {
+    transform: translateY(0);
+}
+
+.sidebar-toggle {
+    position: fixed;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 999;
+    width: 50px;
+    height: 50px;
+    background: rgba(14, 63, 46, 0.9);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-toggle:hover {
+    background: rgba(14, 63, 46, 1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    transform: scale(1.1);
+}
+
+.arrow-icon {
+    font-size: 28px;
+    color: #ffffff;
+    display: block;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    line-height: 1;
+}
+
+.sidebar-toggle[aria-expanded="true"] .arrow-icon {
+    transform: rotate(180deg) translateX(-2px);
 }
 
 .homepage-sidebar {
@@ -81,6 +168,38 @@
     bottom: 0;
     left: 0;
     width: 240px;
-    background: linear-gradient(184deg, rgba(14, 63, 46, 0.38) -22.57%, #186C50 65.45%, rgba(33, 153, 114, 0.80) 96.89%);
+    background: #0E3F2E;
     border-right: 1px solid rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    transform: translateX(-240px);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.homepage-sidebar.open {
+    transform: translateX(0);
+}
+
+.homepage-sidebar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image:
+        url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16 2C10.48 2 6 6.48 6 12c0 5.25 9.41 19.26 10 20.4.33.62.98.6 1.33 0 .59-1.14 10-15.15 10-20.4 0-5.52-4.48-10-10-10zm0 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z' fill='%23F2D34F' opacity='0.8'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16 2C10.48 2 6 6.48 6 12c0 5.25 9.41 19.26 10 20.4.33.62.98.6 1.33 0 .59-1.14 10-15.15 10-20.4 0-5.52-4.48-10-10-10zm0 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z' fill='%23F2D34F' opacity='0.7'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16 2C10.48 2 6 6.48 6 12c0 5.25 9.41 19.26 10 20.4.33.62.98.6 1.33 0 .59-1.14 10-15.15 10-20.4 0-5.52-4.48-10-10-10zm0 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z' fill='%23F2D34F' opacity='0.75'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16 2C10.48 2 6 6.48 6 12c0 5.25 9.41 19.26 10 20.4.33.62.98.6 1.33 0 .59-1.14 10-15.15 10-20.4 0-5.52-4.48-10-10-10zm0 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z' fill='%23F2D34F' opacity='0.7'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16 2C10.48 2 6 6.48 6 12c0 5.25 9.41 19.26 10 20.4.33.62.98.6 1.33 0 .59-1.14 10-15.15 10-20.4 0-5.52-4.48-10-10-10zm0 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z' fill='%23F2D34F' opacity='0.8'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16 2C10.48 2 6 6.48 6 12c0 5.25 9.41 19.26 10 20.4.33.62.98.6 1.33 0 .59-1.14 10-15.15 10-20.4 0-5.52-4.48-10-10-10zm0 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z' fill='%23D4B13A' opacity='0.75'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16 2C10.48 2 6 6.48 6 12c0 5.25 9.41 19.26 10 20.4.33.62.98.6 1.33 0 .59-1.14 10-15.15 10-20.4 0-5.52-4.48-10-10-10zm0 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z' fill='%23D4B13A' opacity='0.7'/%3E%3C/svg%3E");
+    background-size: 32px 32px;
+    background-position:
+        -16px 60px, 238px 120px,
+        -16px 240px, 238px 240px,
+        -16px 380px, 238px 440px,
+        -16px 540px, 238px 620px;
+    background-repeat: no-repeat;
+    pointer-events: none;
 }

@@ -95,10 +95,11 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
         if (/[a-z]/.test(p)) score++;
         if (/\d/.test(p)) score++;
         if (/[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/'~`]/.test(p)) score++;
-        if (score <= 2) return { color: "red", label: "Weak" };
-        if (score === 3 || score === 4) return { color: "goldenrod", label: "Medium" };
-        if (score === 5) return { color: "green", label: "Strong" };
-        return { color: "gray", label: "" };
+        const pct = (score / 5) * 100;
+        if (score <= 2) return { color: "red", label: "Weak", pct, score };
+        if (score === 3 || score === 4) return { color: "goldenrod", label: "Medium", pct, score };
+        if (score === 5) return { color: "green", label: "Strong", pct, score };
+        return { color: "gray", label: "", pct, score };
     }
 
     return (
@@ -142,9 +143,17 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                         <div className="pw-strength-bar-wrapper" aria-label="Password strength">
                             <div
                                 className="pw-strength-bar"
-                                style={{ background: getPasswordStrength(pw).color }}
+                                style={{
+                                    background: getPasswordStrength(pw).color,
+                                    width: `${getPasswordStrength(pw).pct}%`
+                                }}
                             />
                         </div>
+                    )}
+                    {pw && (
+                        <p className="pw-strength-label" style={{ color: getPasswordStrength(pw).color }}>
+                            {getPasswordStrength(pw).label}
+                        </p>
                     )}
 
                     <h2>Confirm Password</h2>
@@ -172,11 +181,14 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                         {busy ? "Creating…" : "Create Account"}
                     </button>
 
-                    <div className="modal-footer">
+                    <div className="modal-footer" style={{ justifyContent: 'center' }}>
                         <button type="button" className="footer-btn" onClick={onBackToSignIn}>
                             Back to Sign In
                         </button>
                     </div>
+                    <button className="google-btn" title="Sign in with Google" disabled={busy}>
+                        <img src="/google-signin.png" alt="Sign in with Google" />
+                    </button>
                 </div>
 
                 {success && (

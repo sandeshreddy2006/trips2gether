@@ -141,14 +141,78 @@
     color: #2E6B55;
 }
 
-/* google button placeholder */
 .google-btn {
-    display: block;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     margin: 12px auto 0;
-    width: 169px;
-    height: 40px;
-    background: lightgray;
-    border-radius: 6px;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+.google-btn img {
+    max-height: 40px;
+    width: auto;
+}
+
+.pw-strength-bar-wrapper {
+    width: 100%;
+    height: 6px;
+    background-color: #e0e0e0;
+    border-radius: 3px;
+    margin: 8px 0;
+    overflow: hidden;
+}
+
+.pw-strength-bar {
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease, background-color 0.3s ease;
+    border-radius: 3px;
+    position: relative;
+    overflow: hidden;
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+}
+
+.pw-strength-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: shine 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+@keyframes shine {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.pw-strength-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin: -4px 0 8px 0;
+    text-transform: capitalize;
 }
 
 @media (max-width: 480px) {

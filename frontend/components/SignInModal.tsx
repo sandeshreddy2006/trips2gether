@@ -5,6 +5,7 @@ import './SignInModal.css';
 type SignInModalProps = {
     onClose: () => void;
     onSignInSuccess: () => void;
+    onOpenSignUp?: () => void;
 };
 
 const getErrorMessage = (err: unknown): string => {
@@ -13,7 +14,7 @@ const getErrorMessage = (err: unknown): string => {
     try { return JSON.stringify(err); } catch { return 'Sign in failed'; }
 };
 
-export default function SignInModal({ onClose, onSignInSuccess }: SignInModalProps) {
+export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: SignInModalProps) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [busy, setBusy] = useState(false);
@@ -95,10 +96,12 @@ export default function SignInModal({ onClose, onSignInSuccess }: SignInModalPro
 
                     <div className="modal-footer">
                         <button type="button" className="footer-btn">Forgot password?</button>
-                        <button type="button" className="footer-btn">Not registered?</button>
+                        <button type="button" className="footer-btn" onClick={onOpenSignUp}>Not registered?</button>
                     </div>
 
-                    <button className="google-btn" title="Sign in with Google" disabled={busy} />
+                    <button className="google-btn" title="Sign in with Google" disabled={busy}>
+                        <img src="/google-signin.png" alt="Sign in with Google" />
+                    </button>
                 </div>
             </div>
         </div>

@@ -8,6 +8,7 @@ import SignUpModal from "./SignUpModal";
 export default function Homepage() {
     const [showSignIn, setShowSignIn] = useState(false);
     const [showSignUp, setShowSignUp] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     return (
         <div className="homepage-root">
@@ -51,13 +52,26 @@ export default function Homepage() {
                 </div>
             </header>
 
-            <aside className="homepage-sidebar" />
+            <button
+                className="sidebar-toggle"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                aria-label="Toggle sidebar"
+                aria-expanded={sidebarOpen}
+            >
+                <span className="arrow-icon">›</span>
+            </button>
+
+            <aside className={`homepage-sidebar ${sidebarOpen ? 'open' : ''}`} />
             <main className="homepage-main" />
 
             {showSignIn && (
                 <SignInModal
                     onClose={() => setShowSignIn(false)}
                     onSignInSuccess={() => setShowSignIn(false)}
+                    onOpenSignUp={() => {
+                        setShowSignIn(false);
+                        setShowSignUp(true);
+                    }}
                 />
             )}
 
