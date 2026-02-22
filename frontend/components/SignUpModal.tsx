@@ -1,5 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import { useAuth } from "../app/AuthContext";
+import { useGoogleLogin } from "@react-oauth/google";
 import "./SignInModal.css";
 
 type SignUpModalProps = {
@@ -18,6 +20,7 @@ const getErrorMessage = (err: unknown): string => {
 };
 
 export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProps) {
+    const { login, locationData } = useAuth();
     const [email, setEmail] = useState("");
     const [username, setUsername] = useState("");
     const [pw, setPw] = useState("");
@@ -31,21 +34,68 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
         !busy &&
         isValidEmail(email) &&
         username.trim().length > 0 &&
-        pw.length >= 6 &&
+        pw.length >= 8 &&
         pw === pw2;
+
+    // Google login handler
+    const googleLogin = useGoogleLogin({
+        onSuccess: async (tokenResponse) => {
+            setBusy(true);
+            setError(null);
+            try {
+                const payload: any = {
+                    token: tokenResponse.access_token,
+                };
+                if (locationData.latitude !== null) payload.latitude = locationData.latitude;
+                if (locationData.longitude !== null) payload.longitude = locationData.longitude;
+                if (locationData.location) payload.location = locationData.location;
+
+                const res = await fetch('/api/auth/google', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(payload),
+                });
+
+                if (!res.ok) {
+                    let msg = 'Google sign-up failed';
+                    try {
+                        const data = await res.json();
+                        msg = data.detail || data.message || msg;
+                    } catch {
+                        try { msg = await res.text() } catch { }
+                    }
+                    throw new Error(msg);
+                }
+
+                login();
+                onBackToSignIn();
+            } catch (err) {
+                setError(getErrorMessage(err));
+            } finally {
+                setBusy(false);
+            }
+        },
+        onError: () => {
+            setError('Google sign-up failed');
+        },
+    });
 
     useEffect(() => {
         if (!success) return;
-        const t = setTimeout(() => onBackToSignIn(), 1200);
+        const t = setTimeout(() => {
+            login();
+            onBackToSignIn();
+        }, 1200);
         return () => clearTimeout(t);
-    }, [success, onBackToSignIn]);
+    }, [success, onBackToSignIn, login]);
 
     async function handleSignUp(): Promise<void> {
         setError(null);
         if (!canSubmit) {
             if (!isValidEmail(email)) return setError("Please enter a valid email.");
             if (!username.trim()) return setError("Please enter a username.");
-            if (pw.length < 6) return setError("Password should be at least 6 characters.");
+            if (pw.length < 8) return setError("Password should be at least 8 characters.");
             if (pw !== pw2) return setError("Passwords do not match.");
             return;
         }
@@ -60,6 +110,9 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                     email: email.trim(),
                     password: pw,
                     name: username.trim(),
+                    latitude: locationData.latitude,
+                    longitude: locationData.longitude,
+                    location: locationData.location,
                 }),
             });
 
@@ -133,7 +186,7 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                     <h2>Password</h2>
                     <input
                         type="password"
-                        placeholder="Enter your password (min 6 chars)"
+                        placeholder="Enter your password (min 8 chars)"
                         value={pw}
                         onChange={(e) => setPw(e.target.value)}
                         onKeyDown={onKeyDown}
@@ -168,8 +221,8 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                     {!isValidEmail(email) && email !== "" && (
                         <p className="hint-warn">Please enter a valid email.</p>
                     )}
-                    {pw !== "" && pw.length < 6 && (
-                        <p className="hint-warn">Password should be at least 6 characters.</p>
+                    {pw !== "" && pw.length < 8 && (
+                        <p className="hint-warn">Password should be at least 8 characters.</p>
                     )}
                     {pw2 !== "" && pw !== pw2 && (
                         <p className="hint-warn">Passwords do not match.</p>
@@ -186,7 +239,7 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                             Back to Sign In
                         </button>
                     </div>
-                    <button className="google-btn" title="Sign in with Google" disabled={busy}>
+                    <button className="google-btn" title="Sign in with Google" onClick={() => googleLogin()} disabled={busy}>
                         <img src="/google-signin.png" alt="Sign in with Google" />
                     </button>
                 </div>
@@ -198,7 +251,7 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                         aria-live="assertive"
                         style={{ color: "#082D57" }}
                     >
-                        🎉 Account created! Please sign in.
+                        🎉 Account created! Redirecting...
                     </div>
                 )}
             </div>

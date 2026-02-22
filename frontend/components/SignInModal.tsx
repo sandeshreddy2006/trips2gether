@@ -1,5 +1,7 @@
 "use client";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState } from "react";
+import { useAuth } from "../app/AuthContext";
+import { useGoogleLogin } from "@react-oauth/google";
 import './SignInModal.css';
 
 type SignInModalProps = {
@@ -15,6 +17,7 @@ const getErrorMessage = (err: unknown): string => {
 };
 
 export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: SignInModalProps) {
+    const { login, locationData } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [busy, setBusy] = useState(false);
@@ -31,7 +34,14 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
         }
         setBusy(true);
         try {
-            const payload = { email: email.trim(), password, rememberMe };
+            const payload = {
+                email: email.trim(),
+                password,
+                rememberMe,
+                latitude: locationData.latitude,
+                longitude: locationData.longitude,
+                location: locationData.location,
+            };
             const res = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -43,11 +53,8 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
                 try { const data = await res.json(); msg = data.detail || data.message || msg; } catch { try { msg = await res.text() } catch { } }
                 throw new Error(msg);
             }
-            const data = await res.json().catch(() => ({}));
-            if (data.token) {
-                if (rememberMe) localStorage.setItem('authToken', data.token);
-                else sessionStorage.setItem('authToken', data.token);
-            }
+            // Update auth context
+            login();
             onSignInSuccess();
             onClose();
         } catch (err) {
@@ -58,6 +65,52 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
     function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
         if (e.key === 'Enter' && !busy) void handleSignIn();
     }
+
+    // Google login handler
+    const googleLogin = useGoogleLogin({
+        onSuccess: async (tokenResponse) => {
+            setBusy(true);
+            setError(null);
+            try {
+                const payload: any = {
+                    token: tokenResponse.access_token,
+                    rememberMe,
+                };
+                if (locationData.latitude !== null) payload.latitude = locationData.latitude;
+                if (locationData.longitude !== null) payload.longitude = locationData.longitude;
+                if (locationData.location) payload.location = locationData.location;
+
+                const res = await fetch('/api/auth/google', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(payload),
+                });
+
+                if (!res.ok) {
+                    let msg = 'Google sign-in failed';
+                    try {
+                        const data = await res.json();
+                        msg = data.detail || data.message || msg;
+                    } catch {
+                        try { msg = await res.text() } catch { }
+                    }
+                    throw new Error(msg);
+                }
+
+                login();
+                onSignInSuccess();
+                onClose();
+            } catch (err) {
+                setError(getErrorMessage(err));
+            } finally {
+                setBusy(false);
+            }
+        },
+        onError: () => {
+            setError('Google sign-in failed');
+        },
+    });
 
     return (
         <div className="modal-overlay">
@@ -99,7 +152,7 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
                         <button type="button" className="footer-btn" onClick={onOpenSignUp}>Not registered?</button>
                     </div>
 
-                    <button className="google-btn" title="Sign in with Google" disabled={busy}>
+                    <button className="google-btn" title="Sign in with Google" onClick={() => googleLogin()} disabled={busy}>
                         <img src="/google-signin.png" alt="Sign in with Google" />
                     </button>
                 </div>

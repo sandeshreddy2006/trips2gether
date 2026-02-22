@@ -4,9 +4,11 @@ from typing import Optional, Annotated, List, Literal, Any, Dict
 
 class RegisterIn(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8)
     name: str | None = None
-    recaptchaToken: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    location: str | None = None
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -14,5 +16,21 @@ class LoginIn(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     location: str | None = None
-    rememberMe: bool | None = False
-    recaptchaToken: str | None = None
+    rememberMe: bool = False
+
+class GoogleOAuthIn(BaseModel):
+    token: str
+    latitude: float | None = None
+    longitude: float | None = None
+    location: str | None = None
+    rememberMe: bool = False
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    name: str
+    location: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    created_at: datetime | None = None
+
