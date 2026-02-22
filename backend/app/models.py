@@ -7,9 +7,10 @@ import uuid
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, unique=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)
+    google_client_id = Column(String(255), unique=True, nullable=True)
     name = Column(String(120))
     created_at = Column(DateTime, server_default=func.now())
     latitude = Column(Float, nullable=True)
