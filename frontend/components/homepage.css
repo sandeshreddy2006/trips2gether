@@ -270,6 +270,26 @@
     background-color: rgba(255, 107, 107, 0.25);
 }
 
+.dropdown-view-profile-link {
+    display: block;
+    width: 100%;
+    padding: 12px 16px;
+    color: #ffffff;
+    text-decoration: none;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    background: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dropdown-view-profile-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
 .logout-btn:active {
     transform: translateY(0);
 }
@@ -412,6 +432,7 @@
     gap: 12px;
     padding: 12px;
     background: rgba(46, 107, 85, 0.3);
+    border: none;
     border-radius: 8px;
     color: rgba(255, 255, 255, 0.9);
     text-decoration: none;
