@@ -11,6 +11,23 @@ export default function Homepage() {
     const [showSignIn, setShowSignIn] = useState(false);
     const [showSignUp, setShowSignUp] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+
+    // Close dropdown when clicking outside
+    React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const dropdown = document.querySelector('.profile-dropdown-container');
+            if (dropdown && !dropdown.contains(event.target as Node)) {
+                setProfileDropdownOpen(false);
+            }
+        };
+        if (profileDropdownOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [profileDropdownOpen]);
 
     return (
         <div className="homepage-root">
@@ -32,29 +49,34 @@ export default function Homepage() {
                 <div className="header-right">
                     <div className="auth">
                         {isAuthenticated && user ? (
-                            <div className="user-section">
-                                <div className="user-info">
-                                    <div className="user-icon">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                            <circle cx="12" cy="7" r="4"></circle>
-                                        </svg>
-                                    </div>
-                                    <span className="username">{user.name}</span>
-                                </div>
-                                {locationData.location && (
-                                    <div className="location-info">
-                                        <span className="location-icon">📍</span>
-                                        <span className="location-text">{locationData.location}</span>
+                            <div className="profile-dropdown-container">
+                                <button
+                                    className="profile-btn"
+                                    onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                                    aria-label="Profile menu"
+                                >
+                                    <img src="/UserIcon.svg" alt="Profile" className="profile-icon" />
+                                </button>
+                                {profileDropdownOpen && (
+                                    <div className="profile-dropdown">
+                                        <div className="dropdown-user-name">{user.name}</div>
+                                        {locationData.location && (
+                                            <div className="dropdown-location">
+                                                <img src="/location.svg" alt="Location" className="dropdown-icon" />
+                                                <span>{locationData.location}</span>
+                                            </div>
+                                        )}
+                                        <button
+                                            className="dropdown-logout-btn"
+                                            onClick={() => {
+                                                logout();
+                                                setProfileDropdownOpen(false);
+                                            }}
+                                        >
+                                            Log Out
+                                        </button>
                                     </div>
                                 )}
-                                <button
-                                    className="logout-btn"
-                                    onClick={logout}
-                                    title="Logout"
-                                >
-                                    Log Out
-                                </button>
                             </div>
                         ) : (
                             <>
@@ -92,7 +114,49 @@ export default function Homepage() {
                 <span className="arrow-icon">›</span>
             </button>
 
-            <aside className={`homepage-sidebar ${sidebarOpen ? 'open' : ''}`} />
+            <aside className={`homepage-sidebar ${sidebarOpen ? 'open' : ''}`}>
+                <nav className="sidebar-nav">
+                    <div className="nav-section">
+                        <a href="/" className="nav-item home-item">
+                            <img src="/home.svg" alt="Home" className="nav-icon home-icon" />
+                            <span>Home</span>
+                        </a>
+                    </div>
+
+                    <div className="nav-section">
+                        <a href="#" className="nav-item">
+                            <img src="/flight.svg" alt="My Trips" className="nav-icon" />
+                            <span>My Trips</span>
+                        </a>
+                        <a href="#" className="nav-item">
+                            <img src="/polls.png" alt="Polls & Planning" className="nav-icon" />
+                            <span>Polls & Planning</span>
+                        </a>
+                        <a href="#" className="nav-item">
+                            <img src="/bookings.svg" alt="Previous Bookings" className="nav-icon" />
+                            <span>Previous Bookings</span>
+                        </a>
+                        <a href="#" className="nav-item">
+                            <img src="/location.svg" alt="Saved Locations" className="nav-icon" />
+                            <span>Saved Locations</span>
+                        </a>
+                        <a href="#" className="nav-item">
+                            <img src="/ai.png" alt="AI Travel Assistant" className="nav-icon" />
+                            <span>AI Travel Assistant</span>
+                        </a>
+                    </div>
+
+                    <div className="nav-section">
+                        <a href="#" className="nav-item balance-item">
+                            <span className="nav-icon">💰</span>
+                            <span className="balance-text">
+                                <span className="balance-label">Balance</span>
+                                <span className="balance-amount">$85.20</span>
+                            </span>
+                        </a>
+                    </div>
+                </nav>
+            </aside>
             <main className="homepage-main" />
 
             {showSignIn && (
