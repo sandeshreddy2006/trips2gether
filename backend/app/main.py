@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -7,6 +7,7 @@ from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
 from .schemas import LoginIn, RegisterIn, GoogleOAuthIn
 from .auth import hash_password, verify_password, is_password_strong, make_jwt, decode_jwt, verify_recaptcha
+from .email_utils import send_email, get_welcome_email_template, get_login_email_template
 from jose import JWTError
 import os
 import requests
@@ -40,7 +41,7 @@ app.add_middleware(
 # -------------------------
 
 @app.post("/auth/register", response_model=dict)
-def register(body: RegisterIn, db: Session = Depends(get_db)):
+def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Register a new user"""
     # Verify reCAPTCHA (required)
     success, msg = verify_recaptcha(body.recaptchaToken)
@@ -50,6 +51,10 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     # Check if email already exists
     if db.query(models.User).filter(models.User.email == body.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Validate username - no commas allowed
+    if "," in body.name:
+        raise HTTPException(status_code=400, detail="Username cannot contain commas")
     
     # Validate password strength if password is provided
     if body.password:
@@ -70,11 +75,24 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     
+    # Send welcome email in background (don't block response)
+    try:
+        background_tasks.add_task(
+            send_email,
+            sender_email=os.getenv("SMTP_EMAIL"),
+            sender_password=os.getenv("SMTP_PASSWORD"),
+            recipient_email=body.email,
+            subject="Welcome to Trip2Gether! ✈️",
+            body=get_welcome_email_template(user.name)
+        )
+    except Exception as e:
+        print(f"Failed to queue welcome email: {e}")
+    
     return {"ok": True, "user": {"id": user.id, "email": user.email, "name": user.name}}
 
 
 @app.post("/auth/login", response_model=dict)
-def login(response: Response, body: LoginIn, db: Session = Depends(get_db)):
+def login(response: Response, body: LoginIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Login with email and password"""
     # Verify reCAPTCHA (required)
     success, msg = verify_recaptcha(body.recaptchaToken)
@@ -120,6 +138,19 @@ def login(response: Response, body: LoginIn, db: Session = Depends(get_db)):
     }
     
     response.set_cookie(**cookie_kwargs)
+    
+    # Send login notification email in background (don't block response)
+    try:
+        background_tasks.add_task(
+            send_email,
+            sender_email=os.getenv("SMTP_EMAIL"),
+            sender_password=os.getenv("SMTP_PASSWORD"),
+            recipient_email=user.email,
+            subject="Login Notification - Trip2Gether 🔐",
+            body=get_login_email_template(user.name)
+        )
+    except Exception as e:
+        print(f"Failed to queue login notification email: {e}")
     
     # Return token and user info
     result = {
