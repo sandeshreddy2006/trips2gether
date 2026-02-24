@@ -36,3 +36,17 @@ class UserOut(BaseModel):
     longitude: float | None = None
     created_at: datetime | None = None
 
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class VerifyResetCodeIn(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+
+
+class ResetPasswordIn(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+    new_password: str = Field(min_length=8)

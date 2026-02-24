@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { useAuth } from "../app/AuthContext";
 import { useGoogleLogin } from "@react-oauth/google";
 import ReCAPTCHA from "react-google-recaptcha";
+import ForgotPasswordModal from "./ForgotPasswordModal";
 import './SignInModal.css';
 
 type SignInModalProps = {
@@ -25,6 +26,7 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
     const [error, setError] = useState<string | null>(null);
     const [rememberMe, setRememberMe] = useState(false);
     const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+    const [showForgotPassword, setShowForgotPassword] = useState(false);
 
     const isValidEmail = (s: string) => /\S+@\S+\.\S+/.test(s.trim());
 
@@ -163,7 +165,7 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
                     <button className="signin-btn" onClick={handleSignIn} disabled={busy}>{busy ? 'Signing in…' : 'Sign In'}</button>
 
                     <div className="modal-footer">
-                        <button type="button" className="footer-btn">Forgot password?</button>
+                        <button type="button" className="footer-btn" onClick={() => setShowForgotPassword(true)}>Forgot password?</button>
                         <button type="button" className="footer-btn" onClick={onOpenSignUp}>Not registered?</button>
                     </div>
 
@@ -172,6 +174,15 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
                     </button>
                 </div>
             </div>
+            {showForgotPassword && (
+                <ForgotPasswordModal
+                    onClose={() => {
+                        setShowForgotPassword(false);
+                        onClose();
+                    }}
+                    onBackToSignIn={() => setShowForgotPassword(false)}
+                />
+            )}
         </div>
     );
 }
