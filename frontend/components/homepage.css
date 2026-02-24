@@ -424,43 +424,44 @@
 }
 
 .profile-section {
-    padding: 16px 12px;
+    padding: 10px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    margin: 0;
 }
 
 .profile-item {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 14px 12px;
-    min-height: 60px;
-    background: rgba(46, 107, 85, 0.3);
-    border: none;
-    border-radius: 8px;
-    color: rgba(255, 255, 255, 0.9);
+    padding: 12px 16px;
+    color: rgba(255, 255, 255, 0.85);
     text-decoration: none;
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: 500;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
     cursor: pointer;
-    margin: 0 8px;
-    width: calc(100% - 16px);
+    border: none;
+    background: transparent;
 }
 
 .profile-item:hover {
-    background: rgba(46, 107, 85, 0.5);
-    transform: translateY(-2px);
+    background: rgba(46, 107, 85, 0.4);
+    color: #ffffff;
+    padding-left: 20px;
 }
 
 .profile-sidebar-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    object-fit: cover;
+    font-size: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    display: block;
-    border: 2px solid rgba(242, 211, 79, 0.5);
+    width: 24px;
+    height: 24px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    object-fit: contain;
+    filter: brightness(1) drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
 }
 
 .profile-sidebar-name {
@@ -572,28 +573,11 @@
     flex: 1;
     transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     overflow-x: hidden;
-    overflow-y: visible;
-    clip-path: inset(0 0 0 0);
 }
 
 @media (min-width: 1px) {
     .homepage-root:has(.homepage-sidebar.open) .homepage-main {
         margin-left: 240px;
-        z-index: 1;
-        overflow: hidden;
-    }
-
-    /* Create barrier to hide white profile background in sidebar area */
-    .homepage-root:has(.homepage-sidebar.open) .profile-header::before {
-        content: '';
-        position: fixed;
-        top: 140px;
-        left: 0;
-        width: 240px;
-        height: calc(100vh - 140px);
-        background: #0E3F2E;
-        z-index: 250;
-        pointer-events: none;
     }
 
     /* Adjust profile content when sidebar is open */
@@ -605,15 +589,5 @@
     .homepage-root:has(.homepage-sidebar.open) .profile-tabs {
         margin: 0 -24px;
         padding: 0 24px;
-    }
-
-    .homepage-root:has(.homepage-sidebar.open) .profile-banner {
-        width: 100%;
-        z-index: 1;
-    }
-
-    .homepage-root:has(.homepage-sidebar.open) .profile-header {
-        z-index: 1;
-        position: relative;
     }
 }
