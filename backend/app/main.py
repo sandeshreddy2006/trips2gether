@@ -6,7 +6,7 @@ from datetime import datetime
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
 from .schemas import LoginIn, RegisterIn, GoogleOAuthIn
-from .auth import hash_password, verify_password, is_password_strong, make_jwt, decode_jwt
+from .auth import hash_password, verify_password, is_password_strong, make_jwt, decode_jwt, verify_recaptcha
 from jose import JWTError
 import os
 import requests
@@ -42,6 +42,12 @@ app.add_middleware(
 @app.post("/auth/register", response_model=dict)
 def register(body: RegisterIn, db: Session = Depends(get_db)):
     """Register a new user"""
+    # Verify reCAPTCHA if token provided
+    if body.recaptchaToken:
+        success, msg = verify_recaptcha(body.recaptchaToken)
+        if not success:
+            raise HTTPException(status_code=400, detail=msg)
+    
     # Check if email already exists
     if db.query(models.User).filter(models.User.email == body.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -71,6 +77,12 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 @app.post("/auth/login", response_model=dict)
 def login(response: Response, body: LoginIn, db: Session = Depends(get_db)):
     """Login with email and password"""
+    # Verify reCAPTCHA if token provided
+    if body.recaptchaToken:
+        success, msg = verify_recaptcha(body.recaptchaToken)
+        if not success:
+            raise HTTPException(status_code=400, detail=msg)
+    
     # Find user by email
     user = db.query(models.User).filter(models.User.email == body.email).first()
     

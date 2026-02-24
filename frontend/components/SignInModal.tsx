@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../app/AuthContext";
 import { useGoogleLogin } from "@react-oauth/google";
+import ReCAPTCHA from "react-google-recaptcha";
 import './SignInModal.css';
 
 type SignInModalProps = {
@@ -23,6 +24,7 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [rememberMe, setRememberMe] = useState(false);
+    const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
 
     const isValidEmail = (s: string) => /\S+@\S+\.\S+/.test(s.trim());
 
@@ -41,6 +43,7 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
                 latitude: locationData.latitude,
                 longitude: locationData.longitude,
                 location: locationData.location,
+                recaptchaToken,
             };
             const res = await fetch('/api/auth/login', {
                 method: 'POST',
@@ -144,6 +147,14 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
                     </div>
 
                     {error && <p className="error-text">{error}</p>}
+
+                    <div className="recaptcha-wrapper">
+                        <ReCAPTCHA
+                            sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ""}
+                            onChange={(token) => setRecaptchaToken(token)}
+                            theme="light"
+                        />
+                    </div>
 
                     <button className="signin-btn" onClick={handleSignIn} disabled={busy}>{busy ? 'Signing in…' : 'Sign In'}</button>
 

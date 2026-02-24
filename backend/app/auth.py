@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Any, Dict
 import re
+import requests
 
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -73,6 +74,46 @@ def decode_jwt(token: str) -> Dict[str, Any]:
     Decode & verify a JWT. Raises JWTError on invalid/expired tokens.
     """
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+
+
+# -------------------------
+# reCAPTCHA verification
+# -------------------------
+RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
+
+def verify_recaptcha(token: str) -> tuple[bool, str]:
+    """
+    Verify a reCAPTCHA v3 token with Google's API.
+    Returns (success: bool, message: str)
+    """
+    if not RECAPTCHA_SECRET_KEY:
+        return False, "reCAPTCHA is not configured on the server"
+    
+    if not token:
+        return False, "reCAPTCHA token is required"
+    
+    try:
+        response = requests.post(
+            "https://www.google.com/recaptcha/api/siteverify",
+            data={
+                "secret": RECAPTCHA_SECRET_KEY,
+                "response": token
+            },
+            timeout=5
+        )
+        
+        result = response.json()
+        
+        if result.get("success"):
+            return True, "reCAPTCHA verification successful"
+        else:
+            error_codes = result.get("error-codes", [])
+            return False, f"reCAPTCHA verification failed: {', '.join(error_codes)}"
+    
+    except requests.RequestException as e:
+        return False, f"reCAPTCHA verification error: {str(e)}"
+    except Exception as e:
+        return False, f"Unexpected error during reCAPTCHA verification: {str(e)}"
 
 
 # -------------------------

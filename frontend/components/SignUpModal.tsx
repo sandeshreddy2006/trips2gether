@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../app/AuthContext";
 import { useGoogleLogin } from "@react-oauth/google";
+import ReCAPTCHA from "react-google-recaptcha";
 import "./SignInModal.css";
 
 type SignUpModalProps = {
@@ -28,6 +29,7 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
 
     const isValidEmail = (s: string) => /\S+@\S+\.\S+/.test(s.trim());
     const canSubmit =
@@ -113,6 +115,7 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                     latitude: locationData.latitude,
                     longitude: locationData.longitude,
                     location: locationData.location,
+                    recaptchaToken,
                 }),
             });
 
@@ -229,6 +232,14 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                     )}
 
                     {error && <p className="error-text">{error}</p>}
+
+                    <div className="recaptcha-wrapper">
+                        <ReCAPTCHA
+                            sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ""}
+                            onChange={(token) => setRecaptchaToken(token)}
+                            theme="light"
+                        />
+                    </div>
 
                     <button className="signin-btn" onClick={handleSignUp} disabled={!canSubmit}>
                         {busy ? "Creating…" : "Create Account"}

@@ -235,3 +235,13 @@
         margin-bottom: 15px;
     }
 }
+
+.recaptcha-wrapper {
+    display: flex;
+    justify-content: center;
+    margin: 16px 0;
+    padding: 12px;
+    border: 1px solid #2E6B55;
+    border-radius: 5px;
+    background-color: #f0f9f7;
+}
