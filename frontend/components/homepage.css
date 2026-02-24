@@ -14,7 +14,7 @@
     padding: 0 48px;
     justify-content: space-between;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .homepage-header::before {
@@ -202,7 +202,7 @@
     top: 100%;
     right: 0;
     margin-top: 8px;
-    background: white;
+    background: #2E6B55;
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     z-index: 1000;
@@ -225,10 +225,10 @@
 
 .dropdown-user-name {
     padding: 12px 16px;
-    color: #333;
+    color: #ffffff;
     font-weight: 600;
     font-size: 14px;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .dropdown-location {
@@ -236,9 +236,9 @@
     align-items: center;
     gap: 10px;
     padding: 12px 16px;
-    color: #666;
+    color: rgba(255, 255, 255, 0.85);
     font-size: 13px;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .dropdown-icon {
@@ -246,6 +246,7 @@
     height: 16px;
     object-fit: contain;
     flex-shrink: 0;
+    filter: brightness(1.3) invert(1);
 }
 
 .dropdown-logout-btn {
@@ -253,7 +254,7 @@
     padding: 12px 16px;
     background: none;
     border: none;
-    color: #d32f2f;
+    color: #ff6b6b;
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
@@ -262,11 +263,11 @@
 }
 
 .dropdown-logout-btn:hover {
-    background-color: #fff3e0;
+    background-color: rgba(255, 107, 107, 0.15);
 }
 
 .dropdown-logout-btn:active {
-    background-color: #ffe0b2;
+    background-color: rgba(255, 107, 107, 0.25);
 }
 
 .logout-btn:active {
