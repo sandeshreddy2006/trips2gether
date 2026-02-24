@@ -3,6 +3,8 @@
     position: relative;
     min-height: 100vh;
     background: #ffffff;
+    display: flex;
+    flex-direction: column;
 }
 
 .homepage-header {
@@ -382,7 +384,7 @@
 }
 
 .homepage-sidebar {
-    position: absolute;
+    position: fixed;
     top: 140px;
     bottom: 0;
     left: 0;
@@ -392,6 +394,7 @@
     overflow: hidden;
     transform: translateX(-240px);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 100;
 }
 
 .homepage-sidebar.open {
@@ -558,4 +561,29 @@
     font-size: 1.1rem;
     font-weight: 700;
     color: #F2D34F;
+}
+
+/* Main content area */
+.homepage-main {
+    position: relative;
+    flex: 1;
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-x: hidden;
+}
+
+@media (min-width: 1px) {
+    .homepage-root:has(.homepage-sidebar.open) .homepage-main {
+        margin-left: 240px;
+    }
+
+    /* Adjust profile content when sidebar is open */
+    .homepage-root:has(.homepage-sidebar.open) .profile-content,
+    .homepage-root:has(.homepage-sidebar.open) .profile-body {
+        padding: 32px 24px;
+    }
+
+    .homepage-root:has(.homepage-sidebar.open) .profile-tabs {
+        margin: 0 -24px;
+        padding: 0 24px;
+    }
 }
