@@ -116,6 +116,15 @@ export default function Homepage() {
 
             <aside className={`homepage-sidebar ${sidebarOpen ? 'open' : ''}`}>
                 <nav className="sidebar-nav">
+                    {isAuthenticated && user && (
+                        <div className="nav-section profile-section">
+                            <a href="#" className="nav-item profile-item">
+                                <img src="/UserIcon.svg" alt="Profile" className="profile-sidebar-icon" />
+                                <span className="profile-sidebar-name">{user.name}</span>
+                            </a>
+                        </div>
+                    )}
+
                     <div className="nav-section">
                         <a href="/" className="nav-item home-item">
                             <img src="/home.svg" alt="Home" className="nav-icon home-icon" />
