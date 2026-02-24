@@ -2,15 +2,16 @@ from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
-from .schemas import LoginIn, RegisterIn, GoogleOAuthIn
+from .schemas import LoginIn, RegisterIn, GoogleOAuthIn, ForgotPasswordIn, VerifyResetCodeIn, ResetPasswordIn
 from .auth import hash_password, verify_password, is_password_strong, make_jwt, decode_jwt, verify_recaptcha
-from .email_utils import send_email, get_welcome_email_template, get_login_email_template
+from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template
 from jose import JWTError
 import os
 import requests
+from apscheduler.schedulers.background import BackgroundScheduler
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
@@ -21,6 +22,39 @@ Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
 
 app = FastAPI(title="trips2gether API")
+
+# Initialize scheduler for cleanup tasks
+scheduler = BackgroundScheduler()
+
+@app.on_event("startup")
+def start_scheduler():
+    """Start background scheduler for cleanup tasks"""
+    
+    def cleanup_job():
+        """Background job to clean up expired tokens"""
+        db = next(get_db())
+        try:
+            current_time = datetime.now()
+            deleted_count = db.query(models.PasswordResetToken).filter(
+                models.PasswordResetToken.expires_at < current_time
+            ).delete()
+            db.commit()
+            print(f"[Cleanup Job] Deleted {deleted_count} expired password reset tokens")
+        except Exception as e:
+            print(f"[Cleanup Job] Error: {e}")
+        finally:
+            db.close()
+    
+    # Schedule cleanup to run every 5 minutes
+    scheduler.add_job(cleanup_job, 'interval', minutes=5, id='cleanup_expired_tokens')
+    scheduler.start()
+    print("[Startup] Background scheduler started - cleanup job scheduled every 5 minutes")
+
+@app.on_event("shutdown")
+def stop_scheduler():
+    """Stop background scheduler on shutdown"""
+    scheduler.shutdown()
+    print("[Shutdown] Background scheduler stopped")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -103,11 +137,11 @@ def login(response: Response, body: LoginIn, background_tasks: BackgroundTasks, 
     user = db.query(models.User).filter(models.User.email == body.email).first()
     
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
     
     # Verify password (user must have password_hash set for password login)
     if not user.password_hash or not verify_password(body.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
     
     # Update user location if provided
     if body.latitude is not None:
@@ -296,3 +330,133 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     }
 
 
+@app.post("/auth/forgot-password", response_model=dict)
+def forgot_password(body: ForgotPasswordIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Request password reset - sends email with code and link"""
+    from .auth import generate_unique_reset_token, generate_reset_link
+    
+    user = db.query(models.User).filter(models.User.email == body.email).first()
+    
+    if not user:
+        # We protect email for privacy
+        return {"ok": True, "message": "If this email exists, a reset link will be sent."}
+    
+    # Delete any existing reset tokens for this email
+    db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.email == body.email
+    ).delete()
+    db.commit()
+    
+    # Generate unique 6-digit token
+    reset_token = generate_unique_reset_token(db)
+    reset_link = generate_reset_link(body.email, reset_token)
+    
+    # Create expiration time (1 hour from now)
+    expires_at = datetime.now() + timedelta(hours=1)
+    
+    # Store reset token in database
+    reset_record = models.PasswordResetToken(
+        email=body.email,
+        token=reset_token,
+        link=reset_link,
+        expires_at=expires_at
+    )
+    db.add(reset_record)
+    db.commit()
+    
+    # Send reset email in background
+    try:
+        background_tasks.add_task(
+            send_email,
+            sender_email=os.getenv("SMTP_EMAIL"),
+            sender_password=os.getenv("SMTP_PASSWORD"),
+            recipient_email=body.email,
+            subject="Password Reset - Trip2Gether 🔑",
+            body=get_password_reset_email_template(body.email, reset_token, reset_link)
+        )
+    except Exception as e:
+        print(f"Failed to queue reset email: {e}")
+    
+    return {"ok": True, "message": "If this email exists, a reset link will be sent."}
+
+
+@app.post("/auth/verify-reset-code", response_model=dict)
+def verify_reset_code(body: VerifyResetCodeIn, db: Session = Depends(get_db)):
+    """Verify that reset code is valid and not expired"""
+    reset_record = db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.email == body.email,
+        models.PasswordResetToken.token == body.code
+    ).first()
+    
+    if not reset_record:
+        raise HTTPException(status_code=400, detail="Invalid reset code")
+    
+    if reset_record.used:
+        raise HTTPException(status_code=400, detail="Reset code has already been used")
+    
+    if reset_record.expires_at < datetime.now():
+        raise HTTPException(status_code=400, detail="Reset code has expired")
+    
+    return {"ok": True, "message": "Code is valid"}
+
+
+@app.post("/auth/reset-password", response_model=dict)
+def reset_password(body: ResetPasswordIn, db: Session = Depends(get_db)):
+    """Reset password using valid code"""
+    # Find valid reset token
+    reset_record = db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.email == body.email,
+        models.PasswordResetToken.token == body.code
+    ).first()
+    
+    if not reset_record:
+        raise HTTPException(status_code=400, detail="Invalid reset code")
+    
+    if reset_record.used:
+        raise HTTPException(status_code=400, detail="Reset code has already been used")
+    
+    if reset_record.expires_at < datetime.now():
+        raise HTTPException(status_code=400, detail="Reset code expired")
+    
+    # Find user and validate new password
+    user = db.query(models.User).filter(models.User.email == body.email).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="User not found")
+    
+    # Validate new password strength
+    ok, msg = is_password_strong(body.new_password)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    
+    # Check if new password is same as current password
+    if user.password_hash and verify_password(body.new_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="New password cannot be the same as your current password")
+    
+    # Update password
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
+    
+    # Delete reset token after successful password reset
+    db.delete(reset_record)
+    db.commit()
+    
+    return {"ok": True, "message": "Password reset successful"}
+
+
+@app.post("/auth/cleanup-expired-tokens", response_model=dict)
+def cleanup_expired_tokens(db: Session = Depends(get_db)):
+    """
+    Delete all expired password reset tokens from database.
+    Can be called by a scheduled job or manually.
+    """
+    current_time = datetime.now()
+    
+    # Delete all tokens that have expired
+    deleted_count = db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.expires_at < current_time
+    ).delete()
+    
+    db.commit()
+    
+    return {"ok": True, "message": f"Deleted {deleted_count} expired tokens"}

@@ -313,3 +313,168 @@ def get_login_email_template(name):
     </body>
     </html>
     """
+
+
+def get_password_reset_email_template(email: str, reset_code: str, reset_link: str):
+    """Professional password reset email template with code and link"""
+    logo_url = get_logo_url()
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+                background: linear-gradient(135deg, #f5f5f5 0%, #f0f0f0 100%);
+            }}
+            .container {{
+                max-width: 600px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            }}
+            .header {{
+                background: linear-gradient(135deg, #0E3F2E 0%, #186C50 100%);
+                padding: 40px;
+                text-align: center;
+                color: white;
+            }}
+            .logo {{
+                max-width: 150px;
+                height: auto;
+                margin-bottom: 12px;
+            }}
+            .header h2 {{
+                margin: 0;
+                font-size: 22px;
+                font-weight: 600;
+            }}
+            .content {{
+                padding: 40px;
+                color: #333;
+            }}
+            .message {{
+                font-size: 15px;
+                line-height: 1.6;
+                color: #555;
+                margin: 16px 0;
+            }}
+            .code-box {{
+                background: #f9fafb;
+                border: 2px solid #186C50;
+                border-radius: 8px;
+                padding: 20px;
+                text-align: center;
+                margin: 24px 0;
+            }}
+            .code {{
+                font-size: 32px;
+                font-weight: 700;
+                color: #0E3F2E;
+                letter-spacing: 4px;
+                font-family: 'Courier New', monospace;
+            }}
+            .code-label {{
+                font-size: 12px;
+                color: #999;
+                margin-top: 8px;
+            }}
+            .cta-button {{
+                display: inline-block;
+                background: linear-gradient(135deg, #0E3F2E 0%, #186C50 100%);
+                color: white;
+                padding: 14px 32px;
+                border-radius: 8px;
+                text-decoration: none;
+                font-weight: 600;
+                margin: 16px 0;
+                transition: transform 0.2s, box-shadow 0.2s;
+                box-shadow: 0 4px 12px rgba(14, 63, 46, 0.3);
+            }}
+            .cta-button:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 6px 16px rgba(14, 63, 46, 0.4);
+            }}
+            .divider {{
+                text-align: center;
+                color: #999;
+                margin: 20px 0;
+                font-size: 14px;
+            }}
+            .footer {{
+                background: #f5f5f5;
+                padding: 20px 40px;
+                text-align: center;
+                font-size: 12px;
+                color: #999;
+                border-top: 1px solid #e0e0e0;
+            }}
+            .footer p {{
+                margin: 4px 0;
+            }}
+            .warning {{
+                background: #fffbea;
+                border-left: 4px solid #f59e0b;
+                padding: 12px;
+                border-radius: 4px;
+                color: #92400e;
+                font-size: 13px;
+                margin: 16px 0;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <img src="{logo_url}" alt="Trip2Gether" class="logo">
+                <h2>Password Reset</h2>
+            </div>
+            
+            <div class="content">
+                <div class="message">
+                    We received a request to reset the password for your Trip2Gether account. Click below or use the code to proceed.
+                </div>
+
+                <div class="code-box">
+                    <div class="code">{reset_code}</div>
+                    <div class="code-label">Your verification code (expires in 1 hour)</div>
+                </div>
+
+                <div style="text-align: center;">
+                    <a href="{reset_link}" class="cta-button" style="color: white; text-decoration: none;">Reset Password</a>
+                </div>
+
+                <div class="divider">Or enter your code manually</div>
+
+                <div class="message">
+                    <strong>How to use:</strong>
+                    <ul style="margin: 8px 0; padding-left: 20px;">
+                        <li>Click the button above, or</li>
+                        <li>Visit the password reset link, or</li>
+                        <li>Enter the 6-digit code: <strong>{reset_code}</strong></li>
+                    </ul>
+                </div>
+
+                <div class="warning">
+                    <strong>⚠️ Security Notice:</strong> This link and code expire in 1 hour. If you didn't request this, please ignore this email or contact our support team.
+                </div>
+
+                <div class="message" style="margin-top: 24px;">
+                    Trip2Gether Security Team
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p><strong>Trip2Gether</strong> © 2026</p>
+                <p>Keep your account secure</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
