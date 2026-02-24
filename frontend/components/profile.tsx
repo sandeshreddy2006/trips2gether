@@ -80,7 +80,7 @@ export default function Profile() {
                 <div className="profile-main">
                     {activeTab === "overview" && (
                         <>
-                            <div className="profile-section">
+                            <div className="profile-card">
                                 <div className="section-header">
                                     <h2>About Me</h2>
                                     <a href="#" className="edit-link">Edit</a>
@@ -109,7 +109,7 @@ export default function Profile() {
                                 </div>
                             </div>
 
-                            <div className="profile-section">
+                            <div className="profile-card">
                                 <h2>Photos</h2>
                                 <div className="photos-grid">
                                     <div className="photo-item placeholder">
@@ -121,21 +121,21 @@ export default function Profile() {
                     )}
 
                     {activeTab === "trips" && (
-                        <div className="profile-section">
+                        <div className="profile-card">
                             <h2>Upcoming Trips</h2>
                             <p className="placeholder-text">No upcoming trips scheduled</p>
                         </div>
                     )}
 
                     {activeTab === "friends" && (
-                        <div className="profile-section">
+                        <div className="profile-card">
                             <h2>Friends</h2>
                             <p className="placeholder-text">No friends added yet</p>
                         </div>
                     )}
 
                     {activeTab === "wishlist" && (
-                        <div className="profile-section">
+                        <div className="profile-card">
                             <h2>Wishlist</h2>
                             <p className="placeholder-text">No wishlist items yet</p>
                         </div>
