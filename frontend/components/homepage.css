@@ -396,6 +396,50 @@
     margin-top: auto;
 }
 
+.profile-section {
+    padding: 16px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 0;
+}
+
+.profile-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(46, 107, 85, 0.3);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+}
+
+.profile-item:hover {
+    background: rgba(46, 107, 85, 0.5);
+    transform: translateY(-2px);
+}
+
+.profile-sidebar-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    display: block;
+    border: 2px solid rgba(242, 211, 79, 0.5);
+}
+
+.profile-sidebar-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.9rem;
+}
+
 .nav-item {
     display: flex;
     align-items: center;
