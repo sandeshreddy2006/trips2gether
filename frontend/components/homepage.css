@@ -582,6 +582,19 @@
         overflow: hidden;
     }
 
+    /* Create barrier to hide white profile background in sidebar area */
+    .homepage-root:has(.homepage-sidebar.open) .profile-header::before {
+        content: '';
+        position: fixed;
+        top: 140px;
+        left: 0;
+        width: 240px;
+        height: calc(100vh - 140px);
+        background: #0E3F2E;
+        z-index: 250;
+        pointer-events: none;
+    }
+
     /* Adjust profile content when sidebar is open */
     .homepage-root:has(.homepage-sidebar.open) .profile-content,
     .homepage-root:has(.homepage-sidebar.open) .profile-body {
@@ -600,5 +613,6 @@
 
     .homepage-root:has(.homepage-sidebar.open) .profile-header {
         z-index: 1;
+        position: relative;
     }
 }
