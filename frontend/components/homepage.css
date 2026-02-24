@@ -580,6 +580,17 @@
         margin-left: 240px;
     }
 
+    /* Move profile banner away from sidebar when open */
+    .homepage-root:has(.homepage-sidebar.open) .profile-banner {
+        margin-left: -240px;
+        margin-right: 0;
+    }
+
+    /* Move profile header away from sidebar when open */
+    .homepage-root:has(.homepage-sidebar.open) .profile-header {
+        margin-left: -240px;
+    }
+
     /* Adjust profile content when sidebar is open */
     .homepage-root:has(.homepage-sidebar.open) .profile-content,
     .homepage-root:has(.homepage-sidebar.open) .profile-body {
