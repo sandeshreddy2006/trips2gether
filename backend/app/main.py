@@ -171,7 +171,7 @@ def logout(response: Response):
 
 
 @app.post("/auth/google", response_model=dict)
-def google_login(response: Response, body: GoogleOAuthIn, db: Session = Depends(get_db)):
+def google_login(response: Response, body: GoogleOAuthIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Google OAuth login/registration"""
     access_token = body.token
     latitude = body.latitude
@@ -247,6 +247,19 @@ def google_login(response: Response, body: GoogleOAuthIn, db: Session = Depends(
     }
     
     response.set_cookie(**cookie_kwargs)
+    
+    # Send login notification email in background (don't block response)
+    try:
+        background_tasks.add_task(
+            send_email,
+            sender_email=os.getenv("SMTP_EMAIL"),
+            sender_password=os.getenv("SMTP_PASSWORD"),
+            recipient_email=user.email,
+            subject="Login Notification - Trip2Gether 🔐",
+            body=get_login_email_template(user.name)
+        )
+    except Exception as e:
+        print(f"Failed to queue login notification email: {e}")
     
     return {
         "ok": True,
