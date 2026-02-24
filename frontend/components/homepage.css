@@ -357,6 +357,10 @@
     transform: rotate(180deg) translateX(-2px);
 }
 
+.sidebar-toggle[aria-expanded="true"] {
+    left: 260px;
+}
+
 .homepage-sidebar {
     position: absolute;
     top: 140px;
