@@ -443,7 +443,7 @@
     font-weight: 500;
     cursor: pointer;
     transition: background-color 0.3s ease;
-    aligned-self: flex-start;
+    align-self: flex-start;
 }
 
 .view-details-btn:hover {
