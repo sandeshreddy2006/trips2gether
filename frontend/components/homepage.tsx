@@ -4,8 +4,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../app/AuthContext";
 import Search from "./Search";
 import "./homepage.css";
+import "./dashboard.css";
 import SignInModal from "./SignInModal";
 import SignUpModal from "./SignUpModal";
+import Dashboard from "./dashboard";
 
 export default function Homepage() {
     const router = useRouter();
@@ -180,7 +182,16 @@ export default function Homepage() {
                     </div>
                 </nav>
             </aside>
-            <main className="homepage-main" />
+            <main className="homepage-main">
+                {isAuthenticated ? (
+                    <Dashboard />
+                ) : (
+                    <div style={{ padding: "2rem", textAlign: "center", color: "#666" }}>
+                        <h2>Welcome to Trips2gether</h2>
+                        <p>Sign in or register to start planning your next adventure with friends!</p>
+                    </div>
+                )}
+            </main>
 
             {showSignIn && (
                 <SignInModal
