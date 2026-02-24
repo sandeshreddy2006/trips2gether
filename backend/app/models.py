@@ -11,7 +11,7 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=True)
     google_client_id = Column(String(255), unique=True, nullable=True)
-    name = Column(String(120))
+    name = Column(String(120), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
