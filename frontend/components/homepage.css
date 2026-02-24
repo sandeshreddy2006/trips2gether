@@ -572,12 +572,14 @@
     flex: 1;
     transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     overflow-x: hidden;
+    overflow-y: visible;
 }
 
 @media (min-width: 1px) {
     .homepage-root:has(.homepage-sidebar.open) .homepage-main {
         margin-left: 240px;
         z-index: 1;
+        overflow: hidden;
     }
 
     /* Adjust profile content when sidebar is open */
@@ -593,6 +595,10 @@
 
     .homepage-root:has(.homepage-sidebar.open) .profile-banner {
         width: 100%;
+        z-index: 1;
+    }
+
+    .homepage-root:has(.homepage-sidebar.open) .profile-header {
         z-index: 1;
     }
 }
