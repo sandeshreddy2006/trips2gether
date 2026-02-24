@@ -34,6 +34,10 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
             setError('Please enter a valid email and password');
             return;
         }
+        if (!recaptchaToken) {
+            setError('Please complete the reCAPTCHA verification');
+            return;
+        }
         setBusy(true);
         try {
             const payload = {
@@ -148,7 +152,7 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
 
                     {error && <p className="error-text">{error}</p>}
 
-                    <div className="recaptcha-wrapper">
+                    <div>
                         <ReCAPTCHA
                             sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ""}
                             onChange={(token) => setRecaptchaToken(token)}
