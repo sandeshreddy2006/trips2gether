@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../app/AuthContext";
 import Search from "./Search";
 import "./homepage.css";
@@ -7,6 +8,7 @@ import SignInModal from "./SignInModal";
 import SignUpModal from "./SignUpModal";
 
 export default function Homepage() {
+    const router = useRouter();
     const { isAuthenticated, user, logout, locationData } = useAuth();
     const [showSignIn, setShowSignIn] = useState(false);
     const [showSignUp, setShowSignUp] = useState(false);
@@ -67,6 +69,15 @@ export default function Homepage() {
                                             </div>
                                         )}
                                         <button
+                                            className="dropdown-view-profile-link"
+                                            onClick={() => {
+                                                router.push("/profile");
+                                                setProfileDropdownOpen(false);
+                                            }}
+                                        >
+                                            View Profile
+                                        </button>
+                                        <button
                                             className="dropdown-logout-btn"
                                             onClick={() => {
                                                 logout();
@@ -118,10 +129,13 @@ export default function Homepage() {
                 <nav className="sidebar-nav">
                     {isAuthenticated && user && (
                         <div className="nav-section profile-section">
-                            <a href="#" className="nav-item profile-item">
+                            <button
+                                className="nav-item profile-item"
+                                onClick={() => router.push("/profile")}
+                            >
                                 <img src="/UserIcon.svg" alt="Profile" className="profile-sidebar-icon" />
                                 <span className="profile-sidebar-name">{user.name}</span>
-                            </a>
+                            </button>
                         </div>
                     )}
 
