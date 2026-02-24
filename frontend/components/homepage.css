@@ -573,6 +573,7 @@
     transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     overflow-x: hidden;
     overflow-y: visible;
+    clip-path: inset(0 0 0 0);
 }
 
 @media (min-width: 1px) {
