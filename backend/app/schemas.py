@@ -9,6 +9,7 @@ class RegisterIn(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     location: str | None = None
+    recaptchaToken: str | None = None
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -17,6 +18,7 @@ class LoginIn(BaseModel):
     longitude: float | None = None
     location: str | None = None
     rememberMe: bool = False
+    recaptchaToken: str | None = None
 
 class GoogleOAuthIn(BaseModel):
     token: str
