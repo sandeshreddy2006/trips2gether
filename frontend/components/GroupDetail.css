@@ -115,6 +115,29 @@
     color: #2d7a4a;
 }
 
+.group-member-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.group-remove-btn {
+    padding: 0.25rem 0.6rem;
+    border: 1px solid #d32f2f;
+    border-radius: 6px;
+    background: white;
+    color: #d32f2f;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.group-remove-btn:hover {
+    background: #d32f2f;
+    color: white;
+}
+
 @media (max-width: 480px) {
     .group-detail-container {
         padding: 1rem;

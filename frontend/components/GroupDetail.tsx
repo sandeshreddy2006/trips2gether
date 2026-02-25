@@ -25,6 +25,23 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [members, setMembers] = useState<Member[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const isOwner = group?.role === "owner";
+
+    async function handleRemoveMember(userId: number) {
+        try {
+            const res = await fetch(`/api/groups/${groupId}/members/${userId}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to remove member");
+            }
+            setMembers((prev) => prev.filter((m) => m.user_id !== userId));
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to remove member");
+        }
+    }
 
     useEffect(() => {
         async function fetchData() {
@@ -85,9 +102,19 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                     <span className="group-member-email">{m.email}</span>
                                 </div>
                             </div>
-                            <span className={`group-member-role ${m.role === "owner" ? "role-owner" : ""}`}>
-                                {m.role}
-                            </span>
+                            <div className="group-member-actions">
+                                <span className={`group-member-role ${m.role === "owner" ? "role-owner" : ""}`}>
+                                    {m.role}
+                                </span>
+                                {isOwner && m.role !== "owner" && (
+                                    <button
+                                        className="group-remove-btn"
+                                        onClick={() => handleRemoveMember(m.user_id)}
+                                    >
+                                        Remove
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>
