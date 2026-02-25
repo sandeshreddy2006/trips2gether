@@ -1,13 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
-from .schemas import LoginIn, RegisterIn, GoogleOAuthIn, ForgotPasswordIn, VerifyResetCodeIn, ResetPasswordIn
-from .auth import hash_password, verify_password, is_password_strong, make_jwt, decode_jwt, verify_recaptcha
+from .schemas import LoginIn, RegisterIn, GoogleOAuthIn, ForgotPasswordIn, VerifyResetCodeIn, ResetPasswordIn, ProfileOut, ProfileUpdate
+from .auth import hash_password, verify_password, is_password_strong, make_jwt, decode_jwt, verify_recaptcha, get_current_user_info
 from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template
+from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from jose import JWTError
 import os
 import requests
@@ -108,6 +109,15 @@ def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = 
     db.add(user)
     db.commit()
     db.refresh(user)
+    
+    # Create a profile for the new user
+    profile = models.Profile(
+        user_id=user.id,
+        email=user.email,
+        username=user.name
+    )
+    db.add(profile)
+    db.commit()
     
     # Send welcome email in background (don't block response)
     try:
