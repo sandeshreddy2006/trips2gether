@@ -90,6 +90,7 @@ class GroupOut(BaseModel):
     id: int
     name: str
     description: str | None = None
+    status: str = "planning"
     created_by: int
     created_at: datetime | None = None
     member_count: int = 0
@@ -98,6 +99,12 @@ class GroupOut(BaseModel):
 
 class GroupListOut(BaseModel):
     groups: list[GroupOut]
+
+
+class GroupUpdateIn(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = None
+    status: Literal["planning", "confirmed", "finalized"] | None = None
 
 
 class GroupAddMembersIn(BaseModel):
