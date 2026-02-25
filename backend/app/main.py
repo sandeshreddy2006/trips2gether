@@ -502,3 +502,26 @@ def create_profile(request: Request, db: Session = Depends(get_db)):
     db.refresh(new_profile)
     
     return new_profile
+
+
+@app.put("/api/profile/update", response_model=ProfileOut)
+async def update_profile(profile_update: ProfileUpdate, request: Request, db: Session = Depends(get_db)):
+    """
+    Update user's profile preferences
+    """
+    user = get_current_user_info(request, db)
+    
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    # Update only provided fields
+    update_data = profile_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(profile, field, value)
+    
+    profile.updated_at = datetime.now()
+    db.commit()
+    db.refresh(profile)
+    
+    return profile
