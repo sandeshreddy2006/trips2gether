@@ -19,6 +19,9 @@ from .schemas import (
     GroupCreateIn,
     GroupOut,
     GroupListOut,
+    GroupAddMembersIn,
+    GroupMemberOut,
+    GroupMemberListOut,
 )
 from .auth import (
     hash_password,
@@ -762,3 +765,170 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
         )
 
     return {"groups": result}
+
+
+@app.get("/groups/{group_id}/members", response_model=GroupMemberListOut)
+def list_group_members(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """List all members of a group. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.group_id == group_id)
+        .all()
+    )
+
+    user_ids = [m.user_id for m in memberships]
+    users = db.query(models.User).filter(models.User.id.in_(user_ids)).all()
+    users_by_id = {u.id: u for u in users}
+
+    members = []
+    for m in memberships:
+        u = users_by_id.get(m.user_id)
+        if u:
+            members.append(
+                GroupMemberOut(
+                    id=m.id,
+                    user_id=u.id,
+                    name=u.name,
+                    email=u.email,
+                    role=m.role,
+                )
+            )
+
+    return {"members": members}
+
+
+@app.post("/groups/{group_id}/members", response_model=dict)
+def add_group_members(
+    group_id: int, body: GroupAddMembersIn, request: Request, db: Session = Depends(get_db)
+):
+    """Add friends to a group. Caller must be a member. Users must be friends with caller."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    added = []
+    skipped = []
+
+    for uid in body.user_ids:
+        if uid == current_user.id:
+            skipped.append(uid)
+            continue
+
+        # Check that the target user is a friend
+        friendship = (
+            db.query(models.Friendship)
+            .filter(
+                models.Friendship.status == "accepted",
+                or_(
+                    and_(
+                        models.Friendship.requester_id == current_user.id,
+                        models.Friendship.addressee_id == uid,
+                    ),
+                    and_(
+                        models.Friendship.requester_id == uid,
+                        models.Friendship.addressee_id == current_user.id,
+                    ),
+                ),
+            )
+            .first()
+        )
+        if not friendship:
+            skipped.append(uid)
+            continue
+
+        # Check if already a member
+        existing = (
+            db.query(models.GroupMember)
+            .filter(
+                models.GroupMember.group_id == group_id,
+                models.GroupMember.user_id == uid,
+            )
+            .first()
+        )
+        if existing:
+            skipped.append(uid)
+            continue
+
+        member = models.GroupMember(
+            group_id=group_id,
+            user_id=uid,
+            role="member",
+        )
+        db.add(member)
+        added.append(uid)
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "added": added,
+        "skipped": skipped,
+        "message": f"Added {len(added)} member(s) to the group",
+    }
+
+
+@app.delete("/groups/{group_id}/members/{user_id}", response_model=dict)
+def remove_group_member(
+    group_id: int, user_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Remove a member from a group. Only the group owner can remove others."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    if my_membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the group owner can remove members")
+
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Owner cannot remove themselves")
+
+    target = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id,
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Member not found in this group")
+
+    db.delete(target)
+    db.commit()
+
+    return {"ok": True, "message": "Member removed from group"}
