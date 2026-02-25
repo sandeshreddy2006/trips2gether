@@ -3,9 +3,117 @@ import React, { useState } from "react";
 import { useAuth } from "../app/AuthContext";
 import "./profile.css";
 
+type Friend = {
+    id: number;
+    email: string;
+    name: string;
+    avatar_url?: string | null;
+    status: string;
+};
+
 export default function Profile() {
     const { user, locationData } = useAuth();
     const [activeTab, setActiveTab] = useState("overview");
+    const [friends, setFriends] = useState<Friend[]>([]);
+    const [friendsLoading, setFriendsLoading] = useState(false);
+    const [friendsError, setFriendsError] = useState<string | null>(null);
+    const [addModalOpen, setAddModalOpen] = useState(false);
+    const [friendLookup, setFriendLookup] = useState("");
+    const [addFriendBusy, setAddFriendBusy] = useState(false);
+    const [removeFriendId, setRemoveFriendId] = useState<number | null>(null);
+
+    async function loadFriends() {
+        setFriendsLoading(true);
+        setFriendsError(null);
+        try {
+            const res = await fetch("/api/friends", { credentials: "include" });
+            if (!res.ok) {
+                let msg = "Failed to load friends";
+                try {
+                    const data = await res.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+            const data = await res.json();
+            setFriends(Array.isArray(data.friends) ? data.friends : []);
+        } catch (err) {
+            setFriendsError(err instanceof Error ? err.message : "Failed to load friends");
+        } finally {
+            setFriendsLoading(false);
+        }
+    }
+
+    async function handleAddFriend() {
+        const identifier = friendLookup.trim();
+        if (!identifier) {
+            setFriendsError("Please enter a username or email");
+            return;
+        }
+
+        setAddFriendBusy(true);
+        setFriendsError(null);
+        try {
+            const res = await fetch("/api/friends/request", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ identifier }),
+            });
+            if (!res.ok) {
+                let msg = "Could not add friend";
+                try {
+                    const data = await res.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+            setFriendLookup("");
+            setAddModalOpen(false);
+            await loadFriends();
+        } catch (err) {
+            setFriendsError(err instanceof Error ? err.message : "Could not add friend");
+        } finally {
+            setAddFriendBusy(false);
+        }
+    }
+
+    async function handleRemoveFriend(friendId: number) {
+        setRemoveFriendId(friendId);
+        setFriendsError(null);
+        try {
+            const res = await fetch(`/api/friends/${friendId}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                let msg = "Failed to remove friend";
+                try {
+                    const data = await res.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+            setFriends((prev) => prev.filter((f) => f.id !== friendId));
+        } catch (err) {
+            setFriendsError(err instanceof Error ? err.message : "Failed to remove friend");
+        } finally {
+            setRemoveFriendId(null);
+        }
+    }
+
+    function onTabClick(tab: string) {
+        setActiveTab(tab);
+        if (tab === "friends" && !friendsLoading && friends.length === 0) {
+            void loadFriends();
+        }
+    }
 
     if (!user) {
         return <div className="profile-loading">Loading profile...</div>;
@@ -50,25 +158,25 @@ export default function Profile() {
                     <div className="profile-tabs">
                         <button
                             className={`tab ${activeTab === "overview" ? "active" : ""}`}
-                            onClick={() => setActiveTab("overview")}
+                            onClick={() => onTabClick("overview")}
                         >
                             Overview
                         </button>
                         <button
                             className={`tab ${activeTab === "trips" ? "active" : ""}`}
-                            onClick={() => setActiveTab("trips")}
+                            onClick={() => onTabClick("trips")}
                         >
                             Upcoming Trips
                         </button>
                         <button
                             className={`tab ${activeTab === "friends" ? "active" : ""}`}
-                            onClick={() => setActiveTab("friends")}
+                            onClick={() => onTabClick("friends")}
                         >
                             Friends
                         </button>
                         <button
                             className={`tab ${activeTab === "wishlist" ? "active" : ""}`}
-                            onClick={() => setActiveTab("wishlist")}
+                            onClick={() => onTabClick("wishlist")}
                         >
                             Wishlist
                         </button>
@@ -129,8 +237,45 @@ export default function Profile() {
 
                     {activeTab === "friends" && (
                         <div className="profile-card">
-                            <h2>Friends</h2>
-                            <p className="placeholder-text">No friends added yet</p>
+                            <div className="section-header">
+                                <h2>Friends</h2>
+                                <button className="add-friend-btn" onClick={() => setAddModalOpen(true)}>
+                                    + Add Friend
+                                </button>
+                            </div>
+
+                            {friendsError && <p className="friends-error">{friendsError}</p>}
+
+                            {friendsLoading ? (
+                                <p className="placeholder-text">Loading friends...</p>
+                            ) : friends.length === 0 ? (
+                                <p className="placeholder-text">No friends yet. Add your first friend.</p>
+                            ) : (
+                                <div className="friends-list">
+                                    {friends.map((friend) => (
+                                        <div key={friend.id} className="friend-row">
+                                            <div className="friend-main">
+                                                <img
+                                                    src={friend.avatar_url || "/UserIcon.svg"}
+                                                    alt={friend.name}
+                                                    className="friend-avatar"
+                                                />
+                                                <div className="friend-meta">
+                                                    <span className="friend-name">{friend.name}</span>
+                                                    <span className="friend-sub">{friend.email}</span>
+                                                </div>
+                                            </div>
+                                            <button
+                                                className="remove-friend-btn"
+                                                onClick={() => handleRemoveFriend(friend.id)}
+                                                disabled={removeFriendId === friend.id}
+                                            >
+                                                {removeFriendId === friend.id ? "Removing..." : "Remove"}
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -149,6 +294,35 @@ export default function Profile() {
                     </div>
                 </div>
             </div>
+
+            {addModalOpen && (
+                <div className="friends-modal-overlay" role="dialog" aria-modal="true">
+                    <div className="friends-modal">
+                        <div className="friends-modal-header">
+                            <h3>Add Friend</h3>
+                            <button className="friends-modal-close" onClick={() => setAddModalOpen(false)} aria-label="Close">
+                                &times;
+                            </button>
+                        </div>
+                        <p className="friends-modal-helper">Search by username or email.</p>
+                        <input
+                            className="friends-modal-input"
+                            type="text"
+                            placeholder="e.g. alex or alex@example.com"
+                            value={friendLookup}
+                            onChange={(e) => setFriendLookup(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" && !addFriendBusy) {
+                                    void handleAddFriend();
+                                }
+                            }}
+                        />
+                        <button className="friends-modal-submit" onClick={handleAddFriend} disabled={addFriendBusy}>
+                            {addFriendBusy ? "Adding..." : "Add Friend"}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
