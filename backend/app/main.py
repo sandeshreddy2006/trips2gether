@@ -17,10 +17,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
 
-print("[Startup] Dropping all existing tables...")
-
-Base.metadata.drop_all(bind=engine)
-
 print("[Startup] Running Base.metadata.create_all...")
 
 Base.metadata.create_all(bind=engine)
