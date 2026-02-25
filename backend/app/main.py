@@ -460,3 +460,45 @@ def cleanup_expired_tokens(db: Session = Depends(get_db)):
     db.commit()
     
     return {"ok": True, "message": f"Deleted {deleted_count} expired tokens"}
+
+@app.get("/api/profile/get", response_model=ProfileOut)
+def get_profile(request: Request, db: Session = Depends(get_db)):
+    """
+    Get user's profile by verifying JWT token
+    """
+    user = get_current_user_info(request, db)
+    
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    return profile
+
+
+@app.post("/api/profile/create", response_model=ProfileOut)
+def create_profile(request: Request, db: Session = Depends(get_db)):
+    """
+    Create a new profile for authenticated user.
+    Called when user registers or first time profile setup.
+    """
+    user = get_current_user_info(request, db)
+    
+    # Check if profile already exists
+    existing_profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if existing_profile:
+        raise HTTPException(status_code=400, detail="Profile already exists")
+    
+    # Create new profile with user's basic info
+    new_profile = models.Profile(
+        user_id=user.id,
+        email=user.email,
+        username=user.name,
+        avatar_url=None,
+        bio=None
+    )
+    
+    db.add(new_profile)
+    db.commit()
+    db.refresh(new_profile)
+    
+    return new_profile
