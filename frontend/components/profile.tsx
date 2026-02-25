@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import Cropper from "react-easy-crop";
 import { useAuth } from "../app/AuthContext";
 import "./profile.css";
 
@@ -227,6 +228,12 @@ export default function Profile() {
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
+    // Image cropping state
+    const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+    const [crop, setCrop] = useState({ x: 0, y: 0 });
+    const [zoom, setZoom] = useState(1);
+    const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+
     // Load profile from API on component mount
     useEffect(() => {
         const loadProfile = async () => {
@@ -374,32 +381,83 @@ export default function Profile() {
     const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            setIsUploadingAvatar(true);
-            setSaveError(null);
-            try {
-                const formData = new FormData();
-                formData.append("file", file);
+            // Show cropper instead of immediate upload
+            const reader = new FileReader();
+            reader.onload = () => {
+                setSelectedImageUrl(reader.result as string);
+                setCrop({ x: 0, y: 0 });
+                setZoom(1);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
 
-                const response = await fetch("/api/profile/upload-avatar", {
-                    method: "POST",
-                    credentials: "include",
-                    body: formData,
-                });
+    const handleCropComplete = (croppedArea: any, croppedAreaPixels: any) => {
+        setCroppedAreaPixels(croppedAreaPixels);
+    };
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || "Failed to upload avatar");
+    const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<Blob> => {
+        return new Promise((resolve) => {
+            const image = new Image();
+            image.src = imageSrc;
+            image.onload = () => {
+                const canvas = document.createElement("canvas");
+                canvas.width = pixelCrop.width;
+                canvas.height = pixelCrop.height;
+                const ctx = canvas.getContext("2d");
+
+                if (ctx) {
+                    ctx.drawImage(
+                        image,
+                        pixelCrop.x,
+                        pixelCrop.y,
+                        pixelCrop.width,
+                        pixelCrop.height,
+                        0,
+                        0,
+                        pixelCrop.width,
+                        pixelCrop.height
+                    );
                 }
 
-                const data = await response.json();
-                setProfile({ ...profile, avatar_url: data.avatar_url });
-                setIsEditingAvatar(false);
-            } catch (error: any) {
-                setSaveError(error.message || "Failed to upload avatar");
-                console.error("Error uploading avatar:", error);
-            } finally {
-                setIsUploadingAvatar(false);
+                canvas.toBlob((blob) => {
+                    resolve(blob as Blob);
+                }, "image/jpeg");
+            };
+        });
+    };
+
+    const handleUploadCroppedImage = async () => {
+        if (!selectedImageUrl || !croppedAreaPixels) return;
+
+        setIsUploadingAvatar(true);
+        setSaveError(null);
+
+        try {
+            const croppedBlob = await getCroppedImg(selectedImageUrl, croppedAreaPixels);
+            const formData = new FormData();
+            formData.append("file", croppedBlob, "avatar.jpg");
+
+            const response = await fetch("/api/profile/upload-avatar", {
+                method: "POST",
+                credentials: "include",
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || "Failed to upload avatar");
             }
+
+            const data = await response.json();
+            setProfile({ ...profile, avatar_url: data.avatar_url });
+            setSelectedImageUrl(null);
+            setIsEditingAvatar(false);
+        } catch (error: any) {
+            setSaveError(error.message || "Failed to upload avatar");
+            console.error("Error uploading avatar:", error);
+        } finally {
+            setIsUploadingAvatar(false);
         }
     };
 
@@ -419,7 +477,52 @@ export default function Profile() {
                                 <img src={profile.avatar_url || "/UserIcon.svg"} alt={profile.username} className="profile-photo" />
                                 {isEditingAvatar && (
                                     <div className="avatar-overlay">
-                                        {isUploadingAvatar ? (
+                                        {selectedImageUrl ? (
+                                            <div className="avatar-cropper">
+                                                <div className="cropper-container">
+                                                    <Cropper
+                                                        image={selectedImageUrl}
+                                                        crop={crop}
+                                                        zoom={zoom}
+                                                        aspect={1}
+                                                        cropShape="rect"
+                                                        showGrid={false}
+                                                        onCropChange={setCrop}
+                                                        onCropComplete={handleCropComplete}
+                                                        onZoomChange={setZoom}
+                                                    />
+                                                </div>
+                                                <div className="cropper-controls">
+                                                    <div className="zoom-slider">
+                                                        <label>Zoom:</label>
+                                                        <input
+                                                            type="range"
+                                                            min="1"
+                                                            max="3"
+                                                            step="0.1"
+                                                            value={zoom}
+                                                            onChange={(e) => setZoom(parseFloat(e.target.value))}
+                                                        />
+                                                    </div>
+                                                    <div className="cropper-buttons">
+                                                        <button
+                                                            className="btn btn-primary"
+                                                            onClick={handleUploadCroppedImage}
+                                                            disabled={isUploadingAvatar}
+                                                        >
+                                                            {isUploadingAvatar ? "Uploading..." : "Save Avatar"}
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-secondary"
+                                                            onClick={() => setSelectedImageUrl(null)}
+                                                            disabled={isUploadingAvatar}
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : isUploadingAvatar ? (
                                             <div className="avatar-loading">Uploading...</div>
                                         ) : (
                                             <>

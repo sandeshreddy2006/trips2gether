@@ -6,6 +6,7 @@ export type User = {
     id: number;
     email: string;
     name: string;
+    avatar_url?: string | null;
 };
 
 export type LocationData = {
@@ -89,6 +90,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
             if (response.ok) {
                 const userData = await response.json();
+
+                // Try to load user's profile to get avatar
+                try {
+                    const profileResponse = await fetch('/api/profile/get', {
+                        credentials: 'include',
+                    });
+                    if (profileResponse.ok) {
+                        const profileData = await profileResponse.json();
+                        userData.avatar_url = profileData.avatar_url;
+                    }
+                } catch (err) {
+                    console.log("Could not load profile avatar:", err);
+                }
+
                 setUser(userData);
                 setIsAuthenticated(true);
             } else {
