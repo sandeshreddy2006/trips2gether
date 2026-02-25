@@ -1,9 +1,27 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import CreateGroupModal from "./CreateGroupModal";
+
+type Group = {
+    id: number;
+    name: string;
+    description: string | null;
+    created_by: number;
+    created_at: string | null;
+    member_count: number;
+    role: string | null;
+};
 
 export default function Dashboard() {
     const [showCreateGroup, setShowCreateGroup] = useState(false);
+    const [groups, setGroups] = useState<Group[]>([]);
+
+    useEffect(() => {
+        fetch("/api/groups", { credentials: "include" })
+            .then((res) => (res.ok ? res.json() : { groups: [] }))
+            .then((data) => setGroups(data.groups || []))
+            .catch(() => {});
+    }, []);
 
     return (
         <div className="dashboard-container">
@@ -41,6 +59,31 @@ export default function Dashboard() {
                     </button>
                 </div>
             </div>
+
+            {/* Active Trips (real groups from API) */}
+            {groups.length > 0 && (
+                <div className="active-trips-section">
+                    <h2 className="active-trips-title">Active Trips</h2>
+                    <div className="active-trips-grid">
+                        {groups.map((g) => (
+                            <div key={g.id} className="active-trip-card">
+                                <div className="active-trip-info">
+                                    <h3 className="active-trip-name">{g.name}</h3>
+                                    {g.description && (
+                                        <p className="active-trip-desc">{g.description}</p>
+                                    )}
+                                </div>
+                                <div className="active-trip-meta">
+                                    <span className="active-trip-role">{g.role}</span>
+                                    <span className="active-trip-members">
+                                        {g.member_count} {g.member_count === 1 ? "member" : "members"}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Main Content Grid */}
             <div className="dashboard-grid">
@@ -191,7 +234,7 @@ export default function Dashboard() {
                 <CreateGroupModal
                     onClose={() => setShowCreateGroup(false)}
                     onGroupCreated={(group) => {
-                        console.log("Group created:", group);
+                        setGroups((prev) => [group, ...prev]);
                     }}
                 />
             )}
