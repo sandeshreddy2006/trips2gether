@@ -136,7 +136,7 @@ def verify_recaptcha(token: str) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Unexpected error during reCAPTCHA verification: {str(e)}"
 
-
+#Gets current user info from JWT token in cookies.
 # -------------------------
 # User info helpers
 # -------------------------
