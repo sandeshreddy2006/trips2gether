@@ -145,8 +145,8 @@ def get_welcome_email_template(name):
     <body>
         <div class="container">
             <div class="header">
-                <img src="{logo_url}" alt="Trip2Gether" class="logo">
-                <h1>Trip2Gether</h1>
+                <img src="{logo_url}" alt="Trips2Gether" class="logo">
+                <h1>Trips2Gether</h1>
                 <p>Your Adventure Awaits</p>
             </div>
             
@@ -182,7 +182,7 @@ def get_welcome_email_template(name):
             </div>
             
             <div class="footer">
-                <p><strong>Trip2Gether</strong> © 2026</p>
+                <p><strong>Trips2Gether</strong> © 2026</p>
                 <p>Made with ❤ for travelers, by travelers</p>
             </div>
         </div>
@@ -280,7 +280,7 @@ def get_login_email_template(name):
     <body>
         <div class="container">
             <div class="header">
-                <img src="{logo_url}" alt="Trip2Gether" class="logo">
+                <img src="{logo_url}" alt="Trips2Gether" class="logo">
                 <h2>Login Detected</h2>
             </div>
             
@@ -292,7 +292,7 @@ def get_login_email_template(name):
                 </div>
                 
                 <div class="message">
-                    We've detected a successful login to your Trip2Gether account. If this was you, great! You can safely ignore this email.
+                    We've detected a successful login to your Trips2Gether account. If this was you, great! You can safely ignore this email.
                 </div>
                 
                 <div class="info-box">
@@ -306,7 +306,7 @@ def get_login_email_template(name):
             </div>
             
             <div class="footer">
-                <p><strong>Trip2Gether</strong> © 2026</p>
+                <p><strong>Trips2Gether</strong> © 2026</p>
                 <p>Keeping your adventures secure</p>
             </div>
         </div>
@@ -432,13 +432,13 @@ def get_password_reset_email_template(email: str, reset_code: str, reset_link: s
     <body>
         <div class="container">
             <div class="header">
-                <img src="{logo_url}" alt="Trip2Gether" class="logo">
+                <img src="{logo_url}" alt="Trips2Gether" class="logo">
                 <h2>Password Reset</h2>
             </div>
             
             <div class="content">
                 <div class="message">
-                    We received a request to reset the password for your Trip2Gether account. Click below or use the code to proceed.
+                    We received a request to reset the password for your Trips2Gether account. Click below or use the code to proceed.
                 </div>
 
                 <div class="code-box">
@@ -466,12 +466,12 @@ def get_password_reset_email_template(email: str, reset_code: str, reset_link: s
                 </div>
 
                 <div class="message" style="margin-top: 24px;">
-                    Trip2Gether Security Team
+                    Trips2Gether Security Team
                 </div>
             </div>
             
             <div class="footer">
-                <p><strong>Trip2Gether</strong> © 2026</p>
+                <p><strong>Trips2Gether</strong> © 2026</p>
                 <p>Keep your account secure</p>
             </div>
         </div>
