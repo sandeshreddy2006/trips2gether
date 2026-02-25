@@ -15,6 +15,7 @@ type GroupInfo = {
     id: number;
     name: string;
     description: string | null;
+    status: string;
     member_count: number;
     role: string | null;
 };
@@ -34,6 +35,10 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [inviting, setInviting] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [editing, setEditing] = useState(false);
+    const [editName, setEditName] = useState("");
+    const [editStatus, setEditStatus] = useState("");
+    const [saving, setSaving] = useState(false);
     const isOwner = group?.role === "owner";
 
     const memberUserIds = new Set(members.map((m) => m.user_id));
@@ -94,11 +99,42 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
         }
     }
 
+    function startEditing() {
+        if (!group) return;
+        setEditName(group.name);
+        setEditStatus(group.status);
+        setEditing(true);
+    }
+
+    async function handleSave() {
+        if (!editName.trim()) return;
+        setSaving(true);
+        try {
+            const res = await fetch(`/api/groups/${groupId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ name: editName.trim(), status: editStatus }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to update group");
+            }
+            const data = await res.json();
+            setGroup(data.group);
+            setEditing(false);
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to update group");
+        } finally {
+            setSaving(false);
+        }
+    }
+
     useEffect(() => {
         async function fetchData() {
             try {
                 const [groupRes, membersRes, friendsRes] = await Promise.all([
-                    fetch("/api/groups", { credentials: "include" }),
+                    fetch(`/api/groups/${groupId}`, { credentials: "include" }),
                     fetch(`/api/groups/${groupId}/members`, { credentials: "include" }),
                     fetch("/api/friends", { credentials: "include" }),
                 ]);
@@ -108,10 +144,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 }
 
                 const groupData = await groupRes.json();
-                const found = groupData.groups?.find((g: GroupInfo) => g.id === groupId);
-                if (!found) throw new Error("Group not found");
-
-                setGroup(found);
+                setGroup(groupData);
                 const membersData = await membersRes.json();
                 setMembers(membersData.members || []);
 
@@ -139,9 +172,52 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             </button>
 
             <div className="group-detail-header">
-                <h1 className="group-detail-name">{group.name}</h1>
-                {group.description && (
-                    <p className="group-detail-desc">{group.description}</p>
+                {editing ? (
+                    <div className="group-edit-form">
+                        <label htmlFor="edit-name">Group Name</label>
+                        <input
+                            id="edit-name"
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            maxLength={255}
+                        />
+                        <label htmlFor="edit-status">Status</label>
+                        <select
+                            id="edit-status"
+                            value={editStatus}
+                            onChange={(e) => setEditStatus(e.target.value)}
+                        >
+                            <option value="planning">Planning</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="finalized">Finalized</option>
+                        </select>
+                        <div className="group-edit-actions">
+                            <button className="group-save-btn" onClick={handleSave} disabled={saving}>
+                                {saving ? "Saving..." : "Save"}
+                            </button>
+                            <button className="group-cancel-btn" onClick={() => setEditing(false)}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="group-detail-title-row">
+                            <h1 className="group-detail-name">{group.name}</h1>
+                            <span className={`group-detail-status status-${group.status}`}>
+                                {group.status}
+                            </span>
+                        </div>
+                        {group.description && (
+                            <p className="group-detail-desc">{group.description}</p>
+                        )}
+                        {isOwner && (
+                            <button className="group-edit-btn" onClick={startEditing}>
+                                Edit Group
+                            </button>
+                        )}
+                    </>
                 )}
             </div>
 

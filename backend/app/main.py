@@ -19,6 +19,7 @@ from .schemas import (
     GroupCreateIn,
     GroupOut,
     GroupListOut,
+    GroupUpdateIn,
     GroupAddMembersIn,
     GroupMemberOut,
     GroupMemberListOut,
@@ -727,6 +728,7 @@ def create_group(body: GroupCreateIn, request: Request, db: Session = Depends(ge
             "id": group.id,
             "name": group.name,
             "description": group.description,
+            "status": group.status,
             "created_by": group.created_by,
             "created_at": group.created_at.isoformat() if group.created_at else None,
             "member_count": 1,
@@ -769,6 +771,7 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
                 id=g.id,
                 name=g.name,
                 description=g.description,
+                status=g.status,
                 created_by=g.created_by,
                 created_at=g.created_at,
                 member_count=member_counts.get(g.id, 0),
@@ -777,6 +780,97 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
         )
 
     return {"groups": result}
+
+
+@app.get("/groups/{group_id}", response_model=dict)
+def get_group_detail(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Get full group metadata including members. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    member_count = (
+        db.query(func.count(models.GroupMember.id))
+        .filter(models.GroupMember.group_id == group_id)
+        .scalar()
+    )
+
+    return {
+        "id": group.id,
+        "name": group.name,
+        "description": group.description,
+        "status": group.status,
+        "created_by": group.created_by,
+        "created_at": group.created_at.isoformat() if group.created_at else None,
+        "member_count": member_count,
+        "role": my_membership.role,
+    }
+
+
+@app.patch("/groups/{group_id}", response_model=dict)
+def update_group(group_id: int, body: GroupUpdateIn, request: Request, db: Session = Depends(get_db)):
+    """Update group name, description, or status. Only the owner can edit."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+    if my_membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the group owner can edit group details")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if body.name is not None:
+        group.name = body.name.strip()
+    if body.description is not None:
+        group.description = body.description.strip() or None
+    if body.status is not None:
+        group.status = body.status
+
+    db.commit()
+    db.refresh(group)
+
+    member_count = (
+        db.query(func.count(models.GroupMember.id))
+        .filter(models.GroupMember.group_id == group_id)
+        .scalar()
+    )
+
+    return {
+        "ok": True,
+        "group": {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "status": group.status,
+            "created_by": group.created_by,
+            "created_at": group.created_at.isoformat() if group.created_at else None,
+            "member_count": member_count,
+            "role": my_membership.role,
+        },
+    }
 
 
 @app.get("/groups/{group_id}/members", response_model=GroupMemberListOut)
