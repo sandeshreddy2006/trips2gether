@@ -68,7 +68,7 @@ export default function AppLayout({
                                     aria-label="Profile menu"
                                 >
                                     <img
-                                        src="/UserIcon.svg"
+                                        src={user?.avatar_url || "/UserIcon.svg"}
                                         alt="Profile"
                                         className="profile-icon"
                                     />
@@ -152,7 +152,7 @@ export default function AppLayout({
                                 onClick={() => router.push("/profile")}
                             >
                                 <img
-                                    src="/UserIcon.svg"
+                                    src={user?.avatar_url || "/UserIcon.svg"}
                                     alt="Profile"
                                     className="profile-sidebar-icon"
                                 />

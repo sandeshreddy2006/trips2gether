@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -22,6 +22,8 @@ from .schemas import (
     GroupAddMembersIn,
     GroupMemberOut,
     GroupMemberListOut,
+    ProfileOut, 
+    ProfileUpdate,
 )
 from .auth import (
     hash_password,
@@ -33,6 +35,7 @@ from .auth import (
     get_current_user_info,
 )
 from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template
+from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from jose import JWTError
 import os
 import requests
@@ -134,6 +137,15 @@ def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = 
     db.commit()
     db.refresh(user)
     
+    # Create a profile for the new user
+    profile = models.Profile(
+        user_id=user.id,
+        email=user.email,
+        username=user.name
+    )
+    db.add(profile)
+    db.commit()
+    
     # Send welcome email in background (don't block response)
     try:
         background_tasks.add_task(
@@ -141,7 +153,7 @@ def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = 
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
             recipient_email=body.email,
-            subject="Welcome to Trip2Gether! ✈️",
+            subject="Welcome to Trips2Gether! ✈️",
             body=get_welcome_email_template(user.name)
         )
     except Exception as e:
@@ -205,7 +217,7 @@ def login(response: Response, body: LoginIn, background_tasks: BackgroundTasks, 
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
             recipient_email=user.email,
-            subject="Login Notification - Trip2Gether 🔐",
+            subject="Login Notification - Trips2Gether 🔐",
             body=get_login_email_template(user.name)
         )
     except Exception as e:
@@ -314,7 +326,7 @@ def google_login(response: Response, body: GoogleOAuthIn, background_tasks: Back
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
             recipient_email=user.email,
-            subject="Login Notification - Trip2Gether 🔐",
+            subject="Login Notification - Trips2Gether 🔐",
             body=get_login_email_template(user.name)
         )
     except Exception as e:
@@ -588,7 +600,7 @@ def forgot_password(body: ForgotPasswordIn, background_tasks: BackgroundTasks, d
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
             recipient_email=body.email,
-            subject="Password Reset - Trip2Gether 🔑",
+            subject="Password Reset - Trips2Gether 🔑",
             body=get_password_reset_email_template(body.email, reset_token, reset_link)
         )
     except Exception as e:
@@ -932,3 +944,114 @@ def remove_group_member(
     db.commit()
 
     return {"ok": True, "message": "Member removed from group"}
+# Profile Endpoints
+
+@app.get("/profile/get", response_model=ProfileOut)
+def get_profile(request: Request, db: Session = Depends(get_db)):
+    """
+    Get user's profile by verifying JWT token
+    """
+    user = get_current_user_info(request, db)
+    
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    return profile
+
+
+@app.post("/profile/create", response_model=ProfileOut)
+def create_profile(request: Request, db: Session = Depends(get_db)):
+    """
+    Create a new profile for authenticated user.
+    Called when user registers or first time profile setup.
+    """
+    user = get_current_user_info(request, db)
+    
+    # Check if profile already exists
+    existing_profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if existing_profile:
+        raise HTTPException(status_code=400, detail="Profile already exists")
+    
+    # Create new profile with user's basic info
+    new_profile = models.Profile(
+        user_id=user.id,
+        email=user.email,
+        username=user.name,
+        avatar_url=None,
+        bio=None
+    )
+    
+    db.add(new_profile)
+    db.commit()
+    db.refresh(new_profile)
+    
+    return new_profile
+
+
+@app.put("/profile/update", response_model=ProfileOut)
+async def update_profile(profile_update: ProfileUpdate, request: Request, db: Session = Depends(get_db)):
+    """
+    Update user's profile preferences
+    """
+    user = get_current_user_info(request, db)
+    
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    # Update only provided fields
+    update_data = profile_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(profile, field, value)
+    
+    profile.updated_at = datetime.now()
+    db.commit()
+    db.refresh(profile)
+    
+    return profile
+
+
+@app.post("/profile/upload-avatar")
+async def upload_avatar(file: UploadFile = File(...), request: Request = None, db: Session = Depends(get_db)):
+    """
+    Upload an avatar image to Cloudflare and update user's profile
+    """
+    user = get_current_user_info(request, db)
+    
+    # Validate file type
+    allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+    
+    # Validate file size (max 10MB)
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size must be less than 10MB")
+    
+    # Reset file position after reading
+    await file.seek(0)
+    
+    # Get user's profile
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    # Delete old avatar from Cloudflare if exists
+    if profile.avatar_url:
+        delete_image_from_cloudflare(profile.avatar_url)
+    
+    # Upload new image to Cloudflare
+    image_url = await upload_image_to_cloudflare(file)
+    
+    # Update profile with new avatar URL
+    profile.avatar_url = image_url
+    profile.updated_at = datetime.now()
+    db.commit()
+    db.refresh(profile)
+    
+    return {
+        "ok": True,
+        "avatar_url": image_url,
+        "profile": profile
+    }
