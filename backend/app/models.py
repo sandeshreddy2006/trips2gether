@@ -11,7 +11,7 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=True)
     google_client_id = Column(String(255), unique=True, nullable=True)
-    name = Column(String(120))
+    name = Column(String(120), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
@@ -20,3 +20,15 @@ class User(Base):
     last_failed_reset = Column(DateTime, nullable=True)
     location = Column(String(255), nullable=True)
     is_admin = Column(Boolean, default=False, nullable=False)
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), index=True, nullable=False)
+    token = Column(String(6), unique=True, nullable=False, index=True)
+    link = Column(String(255), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
