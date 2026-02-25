@@ -21,6 +21,7 @@ from .schemas import (
     GroupListOut,
     ProfileOut, 
     ProfileUpdate,
+    DestinationSearchResponse,
 )
 from .auth import (
     hash_password,
@@ -33,6 +34,7 @@ from .auth import (
 )
 from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
+from .google_places import get_places_service
 from jose import JWTError
 import os
 import requests
@@ -885,3 +887,41 @@ async def upload_avatar(file: UploadFile = File(...), request: Request = None, d
         "avatar_url": image_url,
         "profile": profile
     }
+
+
+# -------------------------
+# Destination Search Endpoints
+# -------------------------
+
+@app.get("/destinations/search", response_model=DestinationSearchResponse)
+def search_destinations(query: str = "", db: Session = Depends(get_db)):
+    """
+    Search for travel destinations using Google Places API
+    
+    Query parameters:
+    - query: Search string (e.g., "Paris", "beach destinations", "Tokyo")
+    
+    Returns:
+    - List of matching destinations with details
+    - Error message if search fails
+    - "No destinations found" if no results
+    """
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="Search query is required")
+    
+    try:
+        places_service = get_places_service()
+        result = places_service.search_destinations(query.strip())
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result.get("message", "Search failed"))
+        
+        return DestinationSearchResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An unexpected error occurred while searching for destinations: {str(e)}"
+        )

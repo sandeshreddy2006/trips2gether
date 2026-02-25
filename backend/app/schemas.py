@@ -148,3 +148,35 @@ class ProfileUpdate(BaseModel):
             if info.data['budget_min'] > v:
                 raise ValueError('Minimum budget cannot be greater than maximum budget')
         return v
+
+
+# -------------------------
+# Destination Search Schemas
+# -------------------------
+
+class DestinationLocation(BaseModel):
+    """Geographic location of a destination"""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class DestinationOut(BaseModel):
+    """Individual destination result"""
+    place_id: str
+    name: str
+    address: Optional[str] = None
+    rating: Optional[float] = None
+    user_ratings_total: Optional[int] = None
+    types: List[str] = []
+    photo_url: Optional[str] = None
+    location: Optional[DestinationLocation] = None
+    business_status: Optional[str] = None
+
+
+class DestinationSearchResponse(BaseModel):
+    """Response for destination search"""
+    status: str  # "success" or "error"
+    results: List[DestinationOut]
+    message: Optional[str] = None
+    cached: Optional[bool] = False
+    dummy: Optional[bool] = False
