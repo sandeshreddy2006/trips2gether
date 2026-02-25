@@ -1,0 +1,114 @@
+.create-group-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.create-group-modal {
+    background-color: white;
+    padding: 30px;
+    border-radius: 10px;
+    width: 400px;
+    box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.3);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.create-group-modal .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-weight: lighter;
+    font-size: 40px;
+    cursor: pointer;
+    color: #2E6B55;
+    background: none;
+    border: none;
+}
+
+.create-group-modal h2 {
+    color: #2E6B55;
+    margin: 0;
+    font-size: 1.4rem;
+}
+
+.create-group-modal label {
+    color: #2E6B55;
+    font-weight: 600;
+    font-size: 0.95rem;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.create-group-modal input,
+.create-group-modal textarea {
+    width: 100%;
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid #2E6B55;
+    color: #333;
+    font-size: 0.95rem;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.create-group-modal textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.create-group-modal input:focus,
+.create-group-modal textarea:focus {
+    outline: none;
+    border-color: #245c3a;
+    box-shadow: 0 0 0 2px rgba(46, 107, 85, 0.15);
+}
+
+.create-group-submit {
+    width: 100%;
+    padding: 10px;
+    margin-top: 5px;
+    border-radius: 5px;
+    border: none;
+    background-color: #2E6B55;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.create-group-submit:hover:not(:disabled) {
+    background-color: #245c3a;
+}
+
+.create-group-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.create-group-error {
+    color: #d32f2f;
+    font-size: 0.875rem;
+    margin: 0;
+    padding: 8px;
+    background-color: #ffebee;
+    border-radius: 4px;
+    border-left: 4px solid #d32f2f;
+}
+
+@media (max-width: 480px) {
+    .create-group-modal {
+        width: 90%;
+        padding: 20px;
+    }
+}

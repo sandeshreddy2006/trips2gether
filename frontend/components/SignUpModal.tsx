@@ -226,13 +226,13 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                     />
 
                     {!isValidEmail(email) && email !== "" && (
-                        <p className="hint-warn">Please enter a valid email.</p>
+                        <p className="hint-warn" style={{ color: '#186C50' }}>Please enter a valid email.</p>
                     )}
                     {pw !== "" && pw.length < 8 && (
-                        <p className="hint-warn">Password should be at least 8 characters.</p>
+                        <p className="hint-warn" style={{ color: '#186C50' }}>Password should be at least 8 characters.</p>
                     )}
                     {pw2 !== "" && pw !== pw2 && (
-                        <p className="hint-warn">Passwords do not match.</p>
+                        <p className="hint-warn" style={{ color: '#186C50' }}>Passwords do not match.</p>
                     )}
 
                     {error && <p className="error-text">{error}</p>}
@@ -264,7 +264,6 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                         className="toast success"
                         role="alert"
                         aria-live="assertive"
-                        style={{ color: "#082D57" }}
                     >
                         🎉 Account created! Redirecting...
                     </div>
