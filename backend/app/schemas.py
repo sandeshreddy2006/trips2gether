@@ -98,6 +98,14 @@ class GroupOut(BaseModel):
 
 class GroupListOut(BaseModel):
     groups: list[GroupOut]
+
+
+class GroupAddMembersIn(BaseModel):
+    user_ids: list[int] = Field(min_length=1, description="List of user IDs to invite")
+
+
+class GroupMemberListOut(BaseModel):
+    members: list[GroupMemberOut]
 class ProfileOut(BaseModel):
     id: int
     user_id: int
