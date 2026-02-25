@@ -47,6 +47,36 @@ class Friendship(Base):
     __table_args__ = (
         UniqueConstraint("requester_id", "addressee_id", name="uq_friendships_requester_addressee"),
     )
+
+
+class Group(Base):
+    __tablename__ = "groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    role = Column(String(20), nullable=False, default="member")
+    joined_at = Column(DateTime, server_default=func.now())
+
+    group = relationship("Group", back_populates="members")
+    user = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_group_members_group_user"),
+    )
 class Profile(Base):
     __tablename__ = "profiles"
 
