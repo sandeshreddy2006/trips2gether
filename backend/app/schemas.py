@@ -52,6 +52,25 @@ class ResetPasswordIn(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class FriendRequestIn(BaseModel):
+    identifier: str = Field(min_length=1, description="Friend email or username")
+
+
+class FriendOut(BaseModel):
+    id: int
+    email: str
+    name: str
+    avatar_url: str | None = None
+    status: str
+
+
+class FriendsListOut(BaseModel):
+    friends: list[FriendOut]
+
+
+class FriendRequestListOut(BaseModel):
+    incoming: list[FriendOut]
+    outgoing: list[FriendOut]
 class ProfileOut(BaseModel):
     id: int
     user_id: int

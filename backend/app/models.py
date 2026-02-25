@@ -34,6 +34,19 @@ class PasswordResetToken(Base):
     used = Column(Boolean, default=False, nullable=False)
 
 
+class Friendship(Base):
+    __tablename__ = "friendships"
+
+    id = Column(Integer, primary_key=True, index=True, unique=True)
+    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    addressee_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="pending")
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("requester_id", "addressee_id", name="uq_friendships_requester_addressee"),
+    )
 class Profile(Base):
     __tablename__ = "profiles"
 
