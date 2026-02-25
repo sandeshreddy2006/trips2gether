@@ -1,6 +1,10 @@
 "use client";
+import React, { useState } from "react";
+import CreateGroupModal from "./CreateGroupModal";
 
 export default function Dashboard() {
+    const [showCreateGroup, setShowCreateGroup] = useState(false);
+
     return (
         <div className="dashboard-container">
             {/* Welcome Section */}
@@ -17,6 +21,10 @@ export default function Dashboard() {
                     <button className="action-btn create-poll-btn">
                         <span className="btn-icon">+</span>
                         Create Poll
+                    </button>
+                    <button className="action-btn create-poll-btn" onClick={() => setShowCreateGroup(true)}>
+                        <span className="btn-icon">+</span>
+                        Create Group
                     </button>
                     <button className="action-btn search-flights-btn">
                         Search Flights
@@ -178,6 +186,15 @@ export default function Dashboard() {
                     </div>
                 </aside>
             </div>
+
+            {showCreateGroup && (
+                <CreateGroupModal
+                    onClose={() => setShowCreateGroup(false)}
+                    onGroupCreated={(group) => {
+                        console.log("Group created:", group);
+                    }}
+                />
+            )}
         </div>
     );
 }
