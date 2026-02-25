@@ -2,11 +2,32 @@ from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, func
 from datetime import datetime, timedelta
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
-from .schemas import LoginIn, RegisterIn, GoogleOAuthIn, ForgotPasswordIn, VerifyResetCodeIn, ResetPasswordIn, ProfileOut, ProfileUpdate
-from .auth import hash_password, verify_password, is_password_strong, make_jwt, decode_jwt, verify_recaptcha, get_current_user_info
+from .schemas import (
+    LoginIn,
+    RegisterIn,
+    GoogleOAuthIn,
+    ForgotPasswordIn,
+    VerifyResetCodeIn,
+    ResetPasswordIn,
+    FriendRequestIn,
+    FriendsListOut,
+    FriendRequestListOut,
+    ProfileOut, 
+    ProfileUpdate,
+)
+from .auth import (
+    hash_password,
+    verify_password,
+    is_password_strong,
+    make_jwt,
+    decode_jwt,
+    verify_recaptcha,
+    get_current_user_info,
+)
 from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from jose import JWTError
@@ -338,6 +359,198 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
         "latitude": user.latitude,
         "longitude": user.longitude,
     }
+
+
+def _friend_out(user: models.User, status: str) -> dict:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "avatar_url": "/UserIcon.svg",
+        "status": status,
+    }
+
+
+@app.get("/friends", response_model=FriendsListOut)
+def list_friends(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+
+    friendships = (
+        db.query(models.Friendship)
+        .filter(
+            models.Friendship.status == "accepted",
+            or_(
+                models.Friendship.requester_id == current_user.id,
+                models.Friendship.addressee_id == current_user.id,
+            ),
+        )
+        .all()
+    )
+
+    friend_ids: list[int] = []
+    for row in friendships:
+        friend_ids.append(row.addressee_id if row.requester_id == current_user.id else row.requester_id)
+
+    if not friend_ids:
+        return {"friends": []}
+
+    users = db.query(models.User).filter(models.User.id.in_(friend_ids)).all()
+    users_by_id = {u.id: u for u in users}
+
+    friends = []
+    for friend_id in friend_ids:
+        friend_user = users_by_id.get(friend_id)
+        if friend_user:
+            friends.append(_friend_out(friend_user, "accepted"))
+
+    return {"friends": friends}
+
+
+@app.get("/friends/requests", response_model=FriendRequestListOut)
+def list_friend_requests(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+
+    incoming_rows = (
+        db.query(models.Friendship)
+        .filter(
+            models.Friendship.status == "pending",
+            models.Friendship.addressee_id == current_user.id,
+        )
+        .all()
+    )
+    outgoing_rows = (
+        db.query(models.Friendship)
+        .filter(
+            models.Friendship.status == "pending",
+            models.Friendship.requester_id == current_user.id,
+        )
+        .all()
+    )
+
+    incoming_ids = [row.requester_id for row in incoming_rows]
+    outgoing_ids = [row.addressee_id for row in outgoing_rows]
+    lookup_ids = list(set(incoming_ids + outgoing_ids))
+    users = db.query(models.User).filter(models.User.id.in_(lookup_ids)).all() if lookup_ids else []
+    users_by_id = {u.id: u for u in users}
+
+    incoming = [_friend_out(users_by_id[u], "pending") for u in incoming_ids if u in users_by_id]
+    outgoing = [_friend_out(users_by_id[u], "pending") for u in outgoing_ids if u in users_by_id]
+
+    return {"incoming": incoming, "outgoing": outgoing}
+
+
+@app.post("/friends/request", response_model=dict)
+def send_friend_request(body: FriendRequestIn, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    identifier = body.identifier.strip()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="Please enter a username or email")
+
+    target_user = (
+        db.query(models.User)
+        .filter(
+            or_(
+                func.lower(models.User.email) == identifier.lower(),
+                func.lower(models.User.name) == identifier.lower(),
+            )
+        )
+        .first()
+    )
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot add yourself")
+
+    existing = (
+        db.query(models.Friendship)
+        .filter(
+            or_(
+                and_(
+                    models.Friendship.requester_id == current_user.id,
+                    models.Friendship.addressee_id == target_user.id,
+                ),
+                and_(
+                    models.Friendship.requester_id == target_user.id,
+                    models.Friendship.addressee_id == current_user.id,
+                ),
+            )
+        )
+        .first()
+    )
+
+    if existing and existing.status == "accepted":
+        raise HTTPException(status_code=400, detail="You are already friends")
+
+    if existing and existing.status == "pending":
+        if existing.requester_id == current_user.id:
+            raise HTTPException(status_code=400, detail="Friend request already sent")
+        existing.status = "accepted"
+        db.commit()
+        return {"ok": True, "message": "Friend request accepted", "status": "accepted"}
+
+    friendship = models.Friendship(
+        requester_id=current_user.id,
+        addressee_id=target_user.id,
+        status="pending",
+    )
+    db.add(friendship)
+    db.commit()
+
+    return {"ok": True, "message": "Friend request sent", "status": "pending"}
+
+
+@app.post("/friends/accept/{requester_user_id}", response_model=dict)
+def accept_friend_request(requester_user_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+
+    if requester_user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Invalid requester")
+
+    friendship = (
+        db.query(models.Friendship)
+        .filter(
+            models.Friendship.requester_id == requester_user_id,
+            models.Friendship.addressee_id == current_user.id,
+            models.Friendship.status == "pending",
+        )
+        .first()
+    )
+    if not friendship:
+        raise HTTPException(status_code=404, detail="Friend request not found")
+
+    friendship.status = "accepted"
+    db.commit()
+    return {"ok": True, "message": "Friend request accepted"}
+
+
+@app.delete("/friends/{other_user_id}", response_model=dict)
+def remove_friendship(other_user_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    if other_user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot remove yourself")
+
+    friendship = (
+        db.query(models.Friendship)
+        .filter(
+            or_(
+                and_(
+                    models.Friendship.requester_id == current_user.id,
+                    models.Friendship.addressee_id == other_user_id,
+                ),
+                and_(
+                    models.Friendship.requester_id == other_user_id,
+                    models.Friendship.addressee_id == current_user.id,
+                ),
+            )
+        )
+        .first()
+    )
+    if not friendship:
+        raise HTTPException(status_code=404, detail="Friendship not found")
+
+    db.delete(friendship)
+    db.commit()
+    return {"ok": True, "message": "Friend removed"}
 
 
 @app.post("/auth/forgot-password", response_model=dict)
