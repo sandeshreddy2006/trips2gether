@@ -687,7 +687,7 @@ def cleanup_expired_tokens(db: Session = Depends(get_db)):
 
 # Profile Endpoints
 
-@app.get("/api/profile/get", response_model=ProfileOut)
+@app.get("/profile/get", response_model=ProfileOut)
 def get_profile(request: Request, db: Session = Depends(get_db)):
     """
     Get user's profile by verifying JWT token
@@ -701,7 +701,7 @@ def get_profile(request: Request, db: Session = Depends(get_db)):
     return profile
 
 
-@app.post("/api/profile/create", response_model=ProfileOut)
+@app.post("/profile/create", response_model=ProfileOut)
 def create_profile(request: Request, db: Session = Depends(get_db)):
     """
     Create a new profile for authenticated user.
@@ -730,7 +730,7 @@ def create_profile(request: Request, db: Session = Depends(get_db)):
     return new_profile
 
 
-@app.put("/api/profile/update", response_model=ProfileOut)
+@app.put("/profile/update", response_model=ProfileOut)
 async def update_profile(profile_update: ProfileUpdate, request: Request, db: Session = Depends(get_db)):
     """
     Update user's profile preferences
@@ -753,7 +753,7 @@ async def update_profile(profile_update: ProfileUpdate, request: Request, db: Se
     return profile
 
 
-@app.post("/api/profile/upload-avatar")
+@app.post("/profile/upload-avatar")
 async def upload_avatar(file: UploadFile = File(...), request: Request = None, db: Session = Depends(get_db)):
     """
     Upload an avatar image to Cloudflare and update user's profile
