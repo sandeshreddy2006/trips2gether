@@ -525,3 +525,47 @@ async def update_profile(profile_update: ProfileUpdate, request: Request, db: Se
     db.refresh(profile)
     
     return profile
+
+@app.post("/api/profile/upload-avatar")
+async def upload_avatar(file: UploadFile = File(...), request: Request = None, db: Session = Depends(get_db)):
+    """
+    Upload an avatar image to Cloudflare and update user's profile
+    """
+    user = get_current_user_info(request, db)
+    
+    # Validate file type
+    allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+    
+    # Validate file size (max 10MB)
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size must be less than 10MB")
+    
+    # Reset file position after reading
+    await file.seek(0)
+    
+    # Get user's profile
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    # Delete old avatar from Cloudflare if exists
+    if profile.avatar_url:
+        delete_image_from_cloudflare(profile.avatar_url)
+    
+    # Upload new image to Cloudflare
+    image_url = await upload_image_to_cloudflare(file)
+    
+    # Update profile with new avatar URL
+    profile.avatar_url = image_url
+    profile.updated_at = datetime.now()
+    db.commit()
+    db.refresh(profile)
+    
+    return {
+        "ok": True,
+        "avatar_url": image_url,
+        "profile": profile
+    }
