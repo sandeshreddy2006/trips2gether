@@ -7,6 +7,7 @@ type Group = {
     id: number;
     name: string;
     description: string | null;
+    status: string;
     created_by: number;
     created_at: string | null;
     member_count: number;
@@ -76,6 +77,9 @@ export default function Dashboard() {
                                     )}
                                 </div>
                                 <div className="active-trip-meta">
+                                    <span className={`active-trip-status status-${g.status}`}>
+                                        {g.status}
+                                    </span>
                                     <span className="active-trip-role">{g.role}</span>
                                     <span className="active-trip-members">
                                         {g.member_count} {g.member_count === 1 ? "member" : "members"}
