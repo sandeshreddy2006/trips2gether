@@ -16,6 +16,9 @@ from .schemas import (
     FriendRequestIn,
     FriendsListOut,
     FriendRequestListOut,
+    GroupCreateIn,
+    GroupOut,
+    GroupListOut,
 )
 from .auth import (
     hash_password,
@@ -671,3 +674,91 @@ def cleanup_expired_tokens(db: Session = Depends(get_db)):
     db.commit()
     
     return {"ok": True, "message": f"Deleted {deleted_count} expired tokens"}
+
+
+# -------------------------
+# Group endpoints
+# -------------------------
+
+@app.post("/groups", response_model=dict)
+def create_group(body: GroupCreateIn, request: Request, db: Session = Depends(get_db)):
+    """Create a new travel group. The creator is automatically assigned as Owner."""
+    current_user = get_current_user_info(request, db)
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Group name is required")
+
+    group = models.Group(
+        name=name,
+        description=body.description.strip() if body.description else None,
+        created_by=current_user.id,
+    )
+    db.add(group)
+    db.flush()
+
+    owner = models.GroupMember(
+        group_id=group.id,
+        user_id=current_user.id,
+        role="owner",
+    )
+    db.add(owner)
+    db.commit()
+    db.refresh(group)
+
+    return {
+        "ok": True,
+        "group": {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "created_by": group.created_by,
+            "created_at": group.created_at.isoformat() if group.created_at else None,
+            "member_count": 1,
+            "role": "owner",
+        },
+    }
+
+
+@app.get("/groups", response_model=GroupListOut)
+def list_my_groups(request: Request, db: Session = Depends(get_db)):
+    """List all groups the current user belongs to."""
+    current_user = get_current_user_info(request, db)
+
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+
+    if not memberships:
+        return {"groups": []}
+
+    group_ids = [m.group_id for m in memberships]
+    role_map = {m.group_id: m.role for m in memberships}
+
+    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+
+    member_counts = {}
+    for gid in group_ids:
+        member_counts[gid] = (
+            db.query(func.count(models.GroupMember.id))
+            .filter(models.GroupMember.group_id == gid)
+            .scalar()
+        )
+
+    result = []
+    for g in groups:
+        result.append(
+            GroupOut(
+                id=g.id,
+                name=g.name,
+                description=g.description,
+                created_by=g.created_by,
+                created_at=g.created_at,
+                member_count=member_counts.get(g.id, 0),
+                role=role_map.get(g.id),
+            )
+        )
+
+    return {"groups": result}

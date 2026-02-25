@@ -71,3 +71,30 @@ class FriendsListOut(BaseModel):
 class FriendRequestListOut(BaseModel):
     incoming: list[FriendOut]
     outgoing: list[FriendOut]
+
+
+class GroupCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+
+
+class GroupMemberOut(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    email: str
+    role: str
+
+
+class GroupOut(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    created_by: int
+    created_at: datetime | None = None
+    member_count: int = 0
+    role: str | None = None
+
+
+class GroupListOut(BaseModel):
+    groups: list[GroupOut]
