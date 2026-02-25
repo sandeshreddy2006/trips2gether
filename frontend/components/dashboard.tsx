@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import CreateGroupModal from "./CreateGroupModal";
 
 type Group = {
@@ -13,6 +14,7 @@ type Group = {
 };
 
 export default function Dashboard() {
+    const router = useRouter();
     const [showCreateGroup, setShowCreateGroup] = useState(false);
     const [groups, setGroups] = useState<Group[]>([]);
 
@@ -66,7 +68,7 @@ export default function Dashboard() {
                     <h2 className="active-trips-title">Active Trips</h2>
                     <div className="active-trips-grid">
                         {groups.map((g) => (
-                            <div key={g.id} className="active-trip-card">
+                            <div key={g.id} className="active-trip-card" onClick={() => router.push(`/group/${g.id}`)} style={{ cursor: "pointer" }}>
                                 <div className="active-trip-info">
                                     <h3 className="active-trip-name">{g.name}</h3>
                                     {g.description && (
