@@ -3,12 +3,13 @@ from datetime import datetime, timedelta
 from typing import Any, Dict
 import re
 import requests
+import random
 
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
-from .models import User
+from .models import User, PasswordResetToken
 
 # Using Argon2id for password hashing. Byscrypt is not working
 
@@ -44,6 +45,26 @@ def is_password_strong(password: str):
     if not re.search(r"[!@#$%^&*(),.?\":{}|<>_\-+=\[\]\\/'~`]", password):
         return False, "Password must include a special character."
     return True, None
+
+
+def generate_unique_reset_token(db: Session) -> str:
+    """
+    Generate a unique 6-digit reset token that doesn't already exist in the database.
+    """
+    while True:
+        token = ''.join(random.choices('0123456789', k=6))
+        # Check if token already exists
+        if not db.query(PasswordResetToken).filter(PasswordResetToken.token == token).first():
+            return token
+
+
+def generate_reset_link(email: str, token: str) -> str:
+    """
+    Generate a reset link (can be used in email).
+    In production, this should point to your frontend domain.
+    """
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    return f"{frontend_url}/reset-password?email={email}&code={token}"
 
 
 # -------------------------
@@ -115,7 +136,7 @@ def verify_recaptcha(token: str) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Unexpected error during reCAPTCHA verification: {str(e)}"
 
-
+#Gets current user info from JWT token in cookies.
 # -------------------------
 # User info helpers
 # -------------------------

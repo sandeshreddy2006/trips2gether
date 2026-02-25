@@ -1,10 +1,11 @@
 /* Styles extracted from homepage.tsx */
 .homepage-root {
     position: relative;
-    min-height: 100vh;
+    height: 100vh;
     background: #ffffff;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .homepage-header {
@@ -15,8 +16,12 @@
     align-items: center;
     padding: 0 48px;
     justify-content: space-between;
-    position: relative;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
     overflow: visible;
+    z-index: 300;
 }
 
 .homepage-header::before {
@@ -391,7 +396,7 @@
     width: 240px;
     background: #0E3F2E;
     border-right: 1px solid rgba(0, 0, 0, 0.12);
-    overflow: hidden;
+    overflow-y: auto;
     transform: translateX(-240px);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 200;
@@ -571,8 +576,36 @@
 .homepage-main {
     position: relative;
     flex: 1;
-    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-top: 140px;
+    margin-left: 0;
+    height: calc(100vh - 140px);
+    overflow-y: auto;
     overflow-x: hidden;
+    background: #f5f5f5;
+}
+
+/* Scrollbar Styling */
+.homepage-main::-webkit-scrollbar {
+    width: 10px;
+}
+
+.homepage-main::-webkit-scrollbar-track {
+    background: #f5f5f5;
+}
+
+.homepage-main::-webkit-scrollbar-thumb {
+    background: #2E6B55;
+    border-radius: 5px;
+}
+
+.homepage-main::-webkit-scrollbar-thumb:hover {
+    background: #186C50;
+}
+
+/* Firefox */
+.homepage-main {
+    scrollbar-color: #2E6B55 #f5f5f5;
+    scrollbar-width: thin;
 }
 
 @media (min-width: 1px) {
