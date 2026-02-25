@@ -153,7 +153,7 @@ def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = 
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
             recipient_email=body.email,
-            subject="Welcome to Trips2Gether! ✈️",
+            subject="Welcome to Trips2gether! ✈️",
             body=get_welcome_email_template(user.name)
         )
     except Exception as e:
@@ -217,7 +217,7 @@ def login(response: Response, body: LoginIn, background_tasks: BackgroundTasks, 
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
             recipient_email=user.email,
-            subject="Login Notification - Trips2Gether 🔐",
+            subject="Login Notification - Trips2gether 🔐",
             body=get_login_email_template(user.name)
         )
     except Exception as e:
@@ -326,7 +326,7 @@ def google_login(response: Response, body: GoogleOAuthIn, background_tasks: Back
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
             recipient_email=user.email,
-            subject="Login Notification - Trips2Gether 🔐",
+            subject="Login Notification - Trips2gether 🔐",
             body=get_login_email_template(user.name)
         )
     except Exception as e:
@@ -600,7 +600,7 @@ def forgot_password(body: ForgotPasswordIn, background_tasks: BackgroundTasks, d
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
             recipient_email=body.email,
-            subject="Password Reset - Trips2Gether 🔑",
+            subject="Password Reset - Trips2gether 🔑",
             body=get_password_reset_email_template(body.email, reset_token, reset_link)
         )
     except Exception as e:
