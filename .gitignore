@@ -28,6 +28,8 @@ Thumbs.db
 # Local development
 trips2gether.db
 backend/run_local_sqlite.sh
+backend/run_sqlite_local.sh
+backend/run_sqlite.sh
 
 # Python
 __pycache__/

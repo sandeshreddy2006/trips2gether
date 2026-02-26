@@ -46,6 +46,123 @@
     margin: 0.5rem 0 0 0;
 }
 
+.group-detail-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.group-detail-status {
+    padding: 0.25rem 0.7rem;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: capitalize;
+}
+
+.status-planning {
+    background-color: #fff3e0;
+    color: #e65100;
+}
+
+.status-confirmed {
+    background-color: #e8f5e9;
+    color: #2d7a4a;
+}
+
+.status-finalized {
+    background-color: #e3f2fd;
+    color: #1565c0;
+}
+
+.group-edit-btn {
+    margin-top: 0.75rem;
+    padding: 0.4rem 1rem;
+    background: none;
+    border: 1px solid #2E6B55;
+    border-radius: 6px;
+    color: #2E6B55;
+    font-weight: 500;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.group-edit-btn:hover {
+    background: #2E6B55;
+    color: white;
+}
+
+.group-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.group-edit-form label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #2E6B55;
+}
+
+.group-edit-form input,
+.group-edit-form select {
+    padding: 0.5rem;
+    border: 1px solid #2E6B55;
+    border-radius: 5px;
+    font-size: 0.95rem;
+    color: #333;
+}
+
+.group-edit-form input:focus,
+.group-edit-form select:focus {
+    outline: none;
+    border-color: #245c3a;
+    box-shadow: 0 0 0 2px rgba(46, 107, 85, 0.15);
+}
+
+.group-edit-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.group-save-btn {
+    padding: 0.45rem 1rem;
+    background-color: #2E6B55;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.group-save-btn:hover:not(:disabled) {
+    background-color: #245c3a;
+}
+
+.group-save-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.group-cancel-btn {
+    padding: 0.45rem 1rem;
+    background: none;
+    border: 1px solid #999;
+    border-radius: 6px;
+    color: #666;
+    font-weight: 500;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.group-cancel-btn:hover {
+    border-color: #666;
+    color: #333;
+}
+
 .group-members-section {
     background: white;
     border-radius: 12px;
@@ -200,6 +317,54 @@
 .group-invite-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* Role selector */
+.group-role-select {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background: white;
+    cursor: pointer;
+}
+
+/* Danger zone */
+.group-danger-zone {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.group-leave-btn,
+.group-delete-btn {
+    padding: 0.6rem 1.4rem;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.group-leave-btn {
+    background-color: #f0ad4e;
+    color: #fff;
+}
+
+.group-leave-btn:hover {
+    background-color: #ec971f;
+}
+
+.group-delete-btn {
+    background-color: #d9534f;
+    color: #fff;
+}
+
+.group-delete-btn:hover {
+    background-color: #c9302c;
 }
 
 @media (max-width: 480px) {
