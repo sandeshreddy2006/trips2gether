@@ -151,7 +151,7 @@ export default function Dashboard() {
             <div className="dashboard-grid">
                 {/* Left Column */}
                 <div className="dashboard-main">
-                    <h2 className="active-trips-title">Active Trips</h2>
+                    <h2 className="active-trips-title">Upcoming Trips</h2>
 
                     {/* Trip Cards */}
                     {destinationData.maldives && (
