@@ -4,6 +4,7 @@ import { useAuth } from "../app/AuthContext";
 import { useGoogleLogin } from "@react-oauth/google";
 import ReCAPTCHA from "react-google-recaptcha";
 import ForgotPasswordModal from "./ForgotPasswordModal";
+import LinkAccountModal from "./LinkAccountModal";
 import FaceVerificationLogin from "./FaceVerificationLogin";
 import './SignInModal.css';
 
@@ -31,6 +32,9 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp, is
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [showFaceVerification, setShowFaceVerification] = useState(false);
     const [passwordVerified, setPasswordVerified] = useState(false);
+    const [showLinkModal, setShowLinkModal] = useState(false);
+    const [pendingGoogleToken, setPendingGoogleToken] = useState<string | null>(null);
+    const [linkingEmail, setLinkingEmail] = useState<string | null>(null);
 
     const isValidEmail = (s: string) => /\S+@\S+\.\S+/.test(s.trim());
 
@@ -138,12 +142,25 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp, is
                     throw new Error(msg);
                 }
 
-                login();
-                onSignInSuccess();
-                onClose();
+                const data = await res.json();
+
+                // Check if account linking is needed
+                if (data.needs_linking) {
+                    // Show linking modal instead of logging in
+                    setPendingGoogleToken(tokenResponse.access_token);
+                    setLinkingEmail(data.email);
+                    setShowLinkModal(true);
+                    setBusy(false);
+                } else if (data.ok) {
+                    // Account linked or new account, proceed with login
+                    login();
+                    onSignInSuccess();
+                    onClose();
+                } else {
+                    throw new Error('Sign in failed');
+                }
             } catch (err) {
                 setError(getErrorMessage(err));
-            } finally {
                 setBusy(false);
             }
         },
@@ -228,6 +245,52 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp, is
                         login();
                         onSignInSuccess();
                         onClose();
+                    }}
+                />
+            )}
+
+            {showLinkModal && linkingEmail && pendingGoogleToken && (
+                <LinkAccountModal
+                    email={linkingEmail}
+                    onLink={async () => {
+                        const payload: any = {
+                            token: pendingGoogleToken,
+                            rememberMe,
+                        };
+                        if (locationData.latitude !== null) payload.latitude = locationData.latitude;
+                        if (locationData.longitude !== null) payload.longitude = locationData.longitude;
+                        if (locationData.location) payload.location = locationData.location;
+
+                        const res = await fetch('/api/auth/google/merge', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify(payload),
+                        });
+
+                        if (!res.ok) {
+                            let msg = 'Failed to link account';
+                            try {
+                                const data = await res.json();
+                                msg = data.detail || data.message || msg;
+                            } catch {
+                                try { msg = await res.text() } catch { }
+                            }
+                            throw new Error(msg);
+                        }
+
+                        // Success - proceed with login
+                        login();
+                        setShowLinkModal(false);
+                        setPendingGoogleToken(null);
+                        setLinkingEmail(null);
+                        onSignInSuccess();
+                        onClose();
+                    }}
+                    onCancel={() => {
+                        setShowLinkModal(false);
+                        setPendingGoogleToken(null);
+                        setLinkingEmail(null);
                     }}
                 />
             )}

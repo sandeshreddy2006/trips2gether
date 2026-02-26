@@ -56,7 +56,7 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
 
 print("[Startup] Running Base.metadata.create_all...")
-
+Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
 
@@ -281,34 +281,48 @@ def google_login(response: Response, body: GoogleOAuthIn, background_tasks: Back
     if not email or not google_id:
         raise HTTPException(status_code=400, detail="Google account info incomplete")
 
-    # Check if user already exists (by email or google_client_id)
-    user = db.query(models.User).filter(
-        (models.User.email == email) | (models.User.google_client_id == google_id)
-    ).first()
+    # Check if user exists by google_client_id (already linked)
+    user = db.query(models.User).filter(models.User.google_client_id == google_id).first()
     
     if user:
-        # Existing user - update google_client_id if not set, and location if provided
-        if not user.google_client_id:
-            user.google_client_id = google_id
+        # Already linked with Google, proceed with login
+        is_new = False
+    else:
+        # Check if email exists (potentially needs linking)
+        user = db.query(models.User).filter(models.User.email == email).first()
         
+        if user and not user.google_client_id:
+            # Account exists but not linked to Google - need user consent
+            return {
+                "ok": False,
+                "needs_linking": True,
+                "email": email,
+                "google_id": google_id,
+                "name": name,
+                "message": "An account with this email already exists. Would you like to link your Google account?"
+            }
+        elif not user:
+            # New user - create account via Google
+            user = models.User(
+                email=email,
+                name=name,
+                google_client_id=google_id,
+                password_hash=None,
+                latitude=latitude,
+                longitude=longitude,
+                location=location_str
+            )
+            db.add(user)
+            is_new = True
+    
+    if user:
+        # Update location if provided
         if latitude is not None:
             user.latitude = latitude
         if longitude is not None:
             user.longitude = longitude
         if location_str:
             user.location = location_str
-    else:
-        # New user - create account via Google (no password)
-        user = models.User(
-            email=email,
-            name=name,
-            google_client_id=google_id,
-            password_hash=None,
-            latitude=latitude,
-            longitude=longitude,
-            location=location_str
-        )
-        db.add(user)
     
     db.commit()
     db.refresh(user)
@@ -346,7 +360,95 @@ def google_login(response: Response, body: GoogleOAuthIn, background_tasks: Back
     
     return {
         "ok": True,
-        "user": {"id": user.id, "email": user.email, "name": user.name}
+        "user": {"id": user.id, "email": user.email, "name": user.name},
+        "message": "Login successful"
+    }
+
+
+@app.post("/auth/google/merge", response_model=dict)
+def merge_google_account(response: Response, body: GoogleOAuthIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Merge Google account with existing email account after user consent"""
+    access_token = body.token
+    latitude = body.latitude
+    longitude = body.longitude
+    location_str = body.location
+    remember_me = body.rememberMe
+
+    # Verify token and get user info from Google
+    try:
+        userinfo_response = requests.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        if not userinfo_response.ok:
+            raise HTTPException(status_code=401, detail="Invalid Google token")
+        userinfo = userinfo_response.json()
+    except requests.RequestException:
+        raise HTTPException(status_code=400, detail="Failed to verify Google token")
+    
+    email = userinfo.get("email")
+    name = userinfo.get("name")
+    google_id = userinfo.get("sub")
+    
+    if not email or not google_id:
+        raise HTTPException(status_code=400, detail="Google account info incomplete")
+
+    # Find user by email
+    user = db.query(models.User).filter(models.User.email == email).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="User not found")
+    
+    if user.google_client_id:
+        raise HTTPException(status_code=400, detail="Google account already linked")
+    
+    # Link the Google account
+    user.google_client_id = google_id
+    if latitude is not None:
+        user.latitude = latitude
+    if longitude is not None:
+        user.longitude = longitude
+    if location_str:
+        user.location = location_str
+    
+    db.commit()
+    db.refresh(user)
+    
+    # Create JWT token
+    token = make_jwt(str(user.id), user_type="google", extra_claims={"email": user.email})
+    
+    # Set cookie with TTL based on remember_me
+    ttl_seconds = 7 * 24 * 60 * 60 if remember_me else 24 * 60 * 60
+    
+    cookie_kwargs = {
+        "key": "authToken",
+        "value": token,
+        "httponly": True,
+        "secure": os.getenv("ENVIRONMENT") == "production",
+        "samesite": "lax",
+        "path": "/",
+        "max_age": ttl_seconds,
+    }
+    
+    response.set_cookie(**cookie_kwargs)
+    
+    # Send account linked notification email
+    try:
+        background_tasks.add_task(
+            send_email,
+            sender_email=os.getenv("SMTP_EMAIL"),
+            sender_password=os.getenv("SMTP_PASSWORD"),
+            recipient_email=user.email,
+            subject="Google Account Linked - Trips2gether 🔐",
+            body=f"Your account has been successfully linked with Google. You can now sign in using either your email/password or Google account.\n\nIf you did not authorize this, please contact our support team."
+        )
+    except Exception as e:
+        print(f"Failed to queue account linked email: {e}")
+    
+    return {
+        "ok": True,
+        "user": {"id": user.id, "email": user.email, "name": user.name},
+        "message": "Account linked successfully"
     }
 
 
