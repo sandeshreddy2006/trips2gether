@@ -16,8 +16,8 @@ class GooglePlacesService:
     BASE_URL = "https://places.googleapis.com/v1"
     
     def __init__(self):
-        self.api_key = os.getenv("GOOGLE_MAPS_API")
-        if not self.api_key or self.api_key == "your_google_maps_api_here":
+        self.api_key = os.getenv("GOOGLE_PLACES_API")
+        if not self.api_key or self.api_key == "your_google_places_api_here":
             print("[WARNING] Google Places API key not configured. Will use dummy data mode.")
             self.api_key = None
         else:
@@ -82,7 +82,8 @@ class GooglePlacesService:
             
             headers = {
                 "Content-Type": "application/json",
-                "X-Goog-Api-Key": self.api_key
+                "X-Goog-Api-Key": self.api_key,
+                "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location,places.id,places.photos,places.types,places.businessStatus"
             }
             
             payload = {
