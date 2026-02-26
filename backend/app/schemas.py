@@ -190,6 +190,7 @@ class DestinationOut(BaseModel):
     user_ratings_total: Optional[int] = None
     types: List[str] = []
     photo_url: Optional[str] = None
+    photo_reference: Optional[str] = None
     location: Optional[DestinationLocation] = None
     business_status: Optional[str] = None
 

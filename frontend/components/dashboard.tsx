@@ -23,8 +23,25 @@ type Destination = {
     user_ratings_total?: number;
     types: string[];
     photo_url?: string;
+    photo_reference?: string;
     location?: { lat: number | null; lng: number | null };
     business_status?: string;
+};
+
+// Helper function to get the image URL (using proxy for Safari compatibility)
+const getImageUrl = (destination: Destination | null): string => {
+    if (!destination) return '/trip-marseille.jpg';
+
+    // Use proxy endpoint if photo_reference is available
+    if (destination.photo_reference) {
+        return `/api/destinations/image?photo_reference=${encodeURIComponent(destination.photo_reference)}&width=800&height=600`;
+    }
+    // Fallback to direct photo_url if available
+    if (destination.photo_url) {
+        return destination.photo_url;
+    }
+    // Default image
+    return '/trip-marseille.jpg';
 };
 
 export default function Dashboard() {
@@ -127,7 +144,7 @@ export default function Dashboard() {
                     {/* Trip Cards */}
                     {destinationData.maldives && (
                         <div className="trip-card large-card">
-                            <div className="trip-image" style={{ backgroundImage: `url('${destinationData.maldives.photo_url || '/trip-marseille.jpg'}')` }}>
+                            <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.maldives)}')` }}>
                                 <div className="trip-overlay" />
                             </div>
                             <div className="trip-content">
@@ -223,7 +240,7 @@ export default function Dashboard() {
                         <div className="suggested-trips">
                             {destinationData.santorini && (
                                 <div className="suggested-trip">
-                                    <div className="trip-image" style={{ backgroundImage: `url('${destinationData.santorini.photo_url || '/trip-santorini.jpg'}')` }}>
+                                    <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.santorini)}')` }}>
                                         <div className="trip-overlay" />
                                         <span className="trip-percentage">85%</span>
                                     </div>
@@ -233,7 +250,7 @@ export default function Dashboard() {
 
                             {destinationData.kyoto && (
                                 <div className="suggested-trip">
-                                    <div className="trip-image" style={{ backgroundImage: `url('${destinationData.kyoto.photo_url || '/trip-kyoto.jpg'}')` }}>
+                                    <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.kyoto)}')` }}>
                                         <div className="trip-overlay" />
                                         <span className="trip-percentage">81%</span>
                                     </div>
@@ -243,7 +260,7 @@ export default function Dashboard() {
 
                             {destinationData.prague && (
                                 <div className="suggested-trip">
-                                    <div className="trip-image" style={{ backgroundImage: `url('${destinationData.prague.photo_url || '/trip-prague.jpg'}')` }}>
+                                    <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.prague)}')` }}>
                                         <div className="trip-overlay" />
                                         <span className="trip-percentage">79%</span>
                                     </div>
@@ -257,7 +274,7 @@ export default function Dashboard() {
                     <div className="bookings-section">
                         <h3 className="sidebar-title">My Bookings</h3>
                         <div className="booking-card">
-                            <div className="booking-image" style={{ backgroundImage: `url('${destinationData.barcelona?.photo_url || '/booking-barcelona.jpg'}')` }} />
+                            <div className="booking-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.barcelona)}')` }} />
                             <div className="booking-content">
                                 <h4 className="booking-title">{destinationData.barcelona?.name || 'Barcelona'} Adventure</h4>
                                 <p className="booking-dates">May 15 - May 21</p>
