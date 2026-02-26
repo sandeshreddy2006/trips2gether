@@ -144,6 +144,7 @@ class ProfileOut(BaseModel):
 
 class ProfileUpdate(BaseModel):
     username: Optional[Annotated[str, StringConstraints(min_length=1, max_length=100)]] = None
+    email: Optional[str] = None
     bio: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
     budget_min: Optional[int] = Field(None, ge=0, description="Minimum budget must be non-negative")
     budget_max: Optional[int] = Field(None, ge=0, description="Maximum budget must be non-negative")
