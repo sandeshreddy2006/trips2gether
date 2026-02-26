@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, text, inspect
 from datetime import datetime, timedelta
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
@@ -53,6 +53,33 @@ print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
 
+
+def run_database_migrations():
+    """Run one-time database migrations"""
+    print("[Migration] Starting database migrations...")
+    
+    try:
+        with engine.connect() as conn:
+            # Check if 'status' column exists in 'groups' table
+            inspector = inspect(engine)
+            columns = [col['name'] for col in inspector.get_columns('groups')]
+            
+            if 'status' not in columns:
+                print("[Migration] Adding 'status' column to 'groups' table...")
+                sql = text("""
+                    ALTER TABLE groups 
+                    ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'planning'
+                """)
+                conn.execute(sql)
+                conn.commit()
+                print("[Migration] ✓ Successfully added 'status' column to 'groups' table")
+            else:
+                print("[Migration] ✓ Column 'status' already exists in 'groups' table")
+    except Exception as e:
+        print(f"[Migration] Error: {e}")
+        raise
+
+
 app = FastAPI(title="trips2gether API")
 
 # Initialize scheduler for cleanup tasks
@@ -61,6 +88,9 @@ scheduler = BackgroundScheduler()
 @app.on_event("startup")
 def start_scheduler():
     """Start background scheduler for cleanup tasks"""
+    
+    # Run database migrations first
+    run_database_migrations()
     
     def cleanup_job():
         """Background job to clean up expired tokens"""
