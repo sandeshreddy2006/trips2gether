@@ -197,18 +197,52 @@ export default function ExploreDestinations() {
     };
 
     const applyFilters = async () => {
-        if (!searchQuery.trim()) {
-            setError("Please search for a destination first");
-            return;
-        }
-
         setLoading(true);
         setError(null);
 
         try {
+            let queryString = searchQuery.trim();
+
+            // If there's no search query, get user's location
+            if (!queryString) {
+                setError(null);
+
+                // Get user's geolocation
+                const coords = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
+                    if (!navigator.geolocation) {
+                        setError("Geolocation is not supported by your browser");
+                        resolve(null);
+                        return;
+                    }
+
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            resolve({
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude,
+                            });
+                        },
+                        (err) => {
+                            console.error("Geolocation error:", err);
+                            setError("Could not access your location. Please search for a destination instead.");
+                            resolve(null);
+                        },
+                        { timeout: 5000 }
+                    );
+                });
+
+                if (!coords) {
+                    setLoading(false);
+                    return;
+                }
+
+                // Use coordinates as query for nearby destinations
+                queryString = `${coords.lat},${coords.lng}`;
+            }
+
             // Build query params
             const params = new URLSearchParams();
-            params.append("query", searchQuery.trim());
+            params.append("query", queryString);
 
             if (minRating) {
                 params.append("min_rating", minRating.toString());

@@ -1578,7 +1578,7 @@ def filter_destinations(
     Search for destinations and apply filters
     
     Query parameters:
-    - query: Search string (required)
+    - query: Search string (optional, if empty returns popular destinations)
     - min_rating: Minimum rating filter (0-5, optional)
     - types: Comma-separated place types to filter by (optional, e.g., "tourist_attraction,restaurant")
     
@@ -1586,14 +1586,15 @@ def filter_destinations(
     - Up to 6 matching destinations with filters applied
     - Error message if search fails
     """
-    if not query or not query.strip():
-        raise HTTPException(status_code=400, detail="Search query is required")
-    
     try:
         places_service = get_places_service()
         
-        # First, search for destinations
-        result = places_service.search_destinations(query.strip())
+        # If no query provided, get popular destinations
+        if not query or not query.strip():
+            result = places_service.get_popular_destinations()
+        else:
+            # Otherwise search for destinations
+            result = places_service.search_destinations(query.strip())
         
         if result["status"] == "error":
             raise HTTPException(status_code=500, detail=result.get("message", "Search failed"))
