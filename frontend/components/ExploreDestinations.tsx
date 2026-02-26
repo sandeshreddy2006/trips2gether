@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import "./ExploreDestinations.css";
 
 // Types for destination data
@@ -30,15 +31,57 @@ interface SearchResponse {
 }
 
 export default function ExploreDestinations() {
+    const searchParams = useSearchParams();
     const [searchQuery, setSearchQuery] = useState("");
     const [destinations, setDestinations] = useState<Destination[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [hasSearched, setHasSearched] = useState(false);
-    const [cacheInfo, setCacheInfo] = useState<string | null>(null);
 
     // Debounce search to avoid too many API calls
     const [debouncedQuery, setDebouncedQuery] = useState("");
+
+    // Check for query parameter on mount
+    useEffect(() => {
+        const queryParam = searchParams.get("query");
+        if (queryParam) {
+            setSearchQuery(queryParam);
+            setDebouncedQuery(queryParam);
+        } else {
+            // Load popular destinations by default
+            loadDefaultDestinations();
+        }
+    }, [searchParams]);
+
+    const loadDefaultDestinations = useCallback(async () => {
+        setLoading(true);
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+            const popularPlaces = ["Paris", "Tokyo", "Bali", "London", "Goa", "Barcelona"];
+            const allResults: Destination[] = [];
+
+            // Fetch results for each popular place
+            for (const place of popularPlaces) {
+                const response = await fetch(
+                    `${apiUrl}/destinations/search?query=${encodeURIComponent(place)}`,
+                    { method: "GET", headers: { "Content-Type": "application/json" } }
+                );
+                if (response.ok) {
+                    const data: SearchResponse = await response.json();
+                    if (data.results && data.results.length > 0) {
+                        allResults.push(data.results[0]);
+                    }
+                }
+            }
+
+            setDestinations(allResults);
+            setHasSearched(true);
+        } catch (err) {
+            console.error("Error loading default destinations:", err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -53,13 +96,11 @@ export default function ExploreDestinations() {
             setDestinations([]);
             setError(null);
             setHasSearched(false);
-            setCacheInfo(null);
             return;
         }
 
         setLoading(true);
         setError(null);
-        setCacheInfo(null);
 
         try {
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -88,18 +129,11 @@ export default function ExploreDestinations() {
 
             setDestinations(data.results);
             setHasSearched(true);
-
-            // Show cache/dummy info
-            if (data.cached) {
-                setCacheInfo("Results loaded from cache ⚡");
-            } else if (data.dummy) {
-                setCacheInfo("⚠️ Using demo data (Google Places API key not configured)");
-            }
         } catch (err: any) {
             console.error("Search error:", err);
             setError(
                 err.message ||
-                    "Failed to search destinations. Please check your connection and try again."
+                "Failed to search destinations. Please check your connection and try again."
             );
             setDestinations([]);
             setHasSearched(true);
@@ -159,32 +193,6 @@ export default function ExploreDestinations() {
                 </p>
             </div>
 
-            <form onSubmit={handleSearchSubmit} className="search-form">
-                <div className="search-input-wrapper">
-                    <input
-                        type="text"
-                        className="search-input"
-                        placeholder="Search for destinations (e.g., Paris, Tokyo, beaches in Bali)..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        disabled={loading}
-                    />
-                    <button
-                        type="submit"
-                        className="search-button"
-                        disabled={loading || !searchQuery.trim()}
-                    >
-                        {loading ? "Searching..." : "Search"}
-                    </button>
-                </div>
-            </form>
-
-            {cacheInfo && (
-                <div className="cache-info">
-                    <span>{cacheInfo}</span>
-                </div>
-            )}
-
             {error && (
                 <div className="error-message">
                     <strong>Error:</strong> {error}
@@ -210,8 +218,9 @@ export default function ExploreDestinations() {
                 <div className="results-container">
                     <div className="results-header">
                         <h2>
-                            Found {destinations.length} destination
-                            {destinations.length !== 1 ? "s" : ""}
+                            {searchQuery
+                                ? `Found ${destinations.length} destination${destinations.length !== 1 ? "s" : ""}`
+                                : "Popular Destinations"}
                         </h2>
                     </div>
                     <div className="destinations-grid">
@@ -262,45 +271,7 @@ export default function ExploreDestinations() {
                 </div>
             )}
 
-            {!loading && !hasSearched && (
-                <div className="initial-state">
-                    <div className="initial-icon">🌍</div>
-                    <h3>Start your adventure</h3>
-                    <p>
-                        Enter a destination name or type of place to discover amazing
-                        locations
-                    </p>
-                    <div className="search-examples">
-                        <p>Try searching for:</p>
-                        <div className="example-tags">
-                            <button
-                                className="example-tag"
-                                onClick={() => setSearchQuery("Paris")}
-                            >
-                                Paris
-                            </button>
-                            <button
-                                className="example-tag"
-                                onClick={() => setSearchQuery("Tokyo")}
-                            >
-                                Tokyo
-                            </button>
-                            <button
-                                className="example-tag"
-                                onClick={() => setSearchQuery("beaches in Bali")}
-                            >
-                                Beaches in Bali
-                            </button>
-                            <button
-                                className="example-tag"
-                                onClick={() => setSearchQuery("London")}
-                            >
-                                London
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+
         </div>
     );
 }
