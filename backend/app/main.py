@@ -1593,8 +1593,21 @@ def filter_destinations(
         if not query or not query.strip():
             result = places_service.get_popular_destinations()
         else:
-            # Otherwise search for destinations
-            result = places_service.search_destinations(query.strip())
+            # Check if query is coordinates (format: "lat,lng")
+            query_clean = query.strip()
+            try:
+                parts = query_clean.split(",")
+                if len(parts) == 2:
+                    lat = float(parts[0].strip())
+                    lng = float(parts[1].strip())
+                    # It's coordinates, get nearby destinations
+                    result = places_service.get_nearby_destinations(lat, lng)
+                else:
+                    # Regular text search
+                    result = places_service.search_destinations(query_clean)
+            except ValueError:
+                # Not coordinates, do regular text search
+                result = places_service.search_destinations(query_clean)
         
         if result["status"] == "error":
             raise HTTPException(status_code=500, detail=result.get("message", "Search failed"))
