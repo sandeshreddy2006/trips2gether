@@ -70,7 +70,6 @@ export default function Dashboard() {
     useEffect(() => {
         const fetchDestinations = async () => {
             try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
                 const destinations = ["Panama", "Maldives", "Santorini", "Kyoto", "Prague", "Barcelona"];
                 const results: { [key: string]: Destination | null } = {
                     panama: null,
@@ -83,7 +82,7 @@ export default function Dashboard() {
 
                 for (const destination of destinations) {
                     const response = await fetch(
-                        `${apiUrl}/destinations/search?query=${encodeURIComponent(destination)}`
+                        `/api/destinations/search?query=${encodeURIComponent(destination)}`
                     );
                     if (response.ok) {
                         const data = await response.json();
