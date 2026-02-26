@@ -297,6 +297,24 @@ class GooglePlacesService:
         # Return max_results items
         return filtered[:max_results]
     
+    def get_popular_destinations(self) -> Dict[str, Any]:
+        """
+        Get random popular destinations
+        Used when no search query is provided
+        """
+        popular_queries = [
+            "Paris tourist attractions",
+            "Tokyo landmarks",
+            "New York must-see",
+            "London historic sites",
+            "Barcelona beaches",
+            "Dubai attractions"
+        ]
+        
+        import random
+        random_query = random.choice(popular_queries)
+        return self.search_destinations(random_query)
+    
     def clear_cache(self):
         """Clear all cached results"""
         self._cache.clear()
