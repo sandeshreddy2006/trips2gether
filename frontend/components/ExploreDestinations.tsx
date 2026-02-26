@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import "./ExploreDestinations.css";
 
 // Types for destination data
@@ -47,6 +47,7 @@ const getImageUrl = (destination: Destination): string => {
 
 export default function ExploreDestinations() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const [searchQuery, setSearchQuery] = useState("");
     const [destinations, setDestinations] = useState<Destination[]>([]);
     const [loading, setLoading] = useState(false);
@@ -55,6 +56,18 @@ export default function ExploreDestinations() {
 
     // Debounce search to avoid too many API calls
     const [debouncedQuery, setDebouncedQuery] = useState("");
+
+    const handleDestinationClick = (destination: Destination) => {
+        // Save destination data to sessionStorage
+        if (typeof window !== "undefined") {
+            sessionStorage.setItem(
+                `destination_${destination.place_id}`,
+                JSON.stringify(destination)
+            );
+        }
+        // Navigate to destination details page
+        router.push(`/destination/${destination.place_id}`);
+    };
 
     // Check for query parameter on mount
     useEffect(() => {
@@ -238,7 +251,11 @@ export default function ExploreDestinations() {
                     </div>
                     <div className="destinations-grid">
                         {destinations.map((destination) => (
-                            <div key={destination.place_id} className="destination-card">
+                            <div
+                                key={destination.place_id}
+                                className="destination-card"
+                                onClick={() => handleDestinationClick(destination)}
+                            >
                                 <div className="destination-image">
                                     {destination.photo_url || destination.photo_reference ? (
                                         <img
