@@ -315,6 +315,15 @@ class GooglePlacesService:
         random_query = random.choice(popular_queries)
         return self.search_destinations(random_query)
     
+    def get_nearby_destinations(self, latitude: float, longitude: float) -> Dict[str, Any]:
+        """
+        Get nearby destinations based on user coordinates
+        Returns popular destinations as fallback since Nearby Search requires different API setup
+        """
+        # For now, return popular destinations regardless of coordinates
+        # In production, this would use the Nearby Search endpoint
+        return self.get_popular_destinations()
+    
     def clear_cache(self):
         """Clear all cached results"""
         self._cache.clear()
