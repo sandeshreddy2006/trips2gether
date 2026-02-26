@@ -4,12 +4,14 @@ import { useAuth } from "../app/AuthContext";
 import { useGoogleLogin } from "@react-oauth/google";
 import ReCAPTCHA from "react-google-recaptcha";
 import ForgotPasswordModal from "./ForgotPasswordModal";
+import FaceVerificationLogin from "./FaceVerificationLogin";
 import './SignInModal.css';
 
 type SignInModalProps = {
     onClose: () => void;
     onSignInSuccess: () => void;
     onOpenSignUp?: () => void;
+    isSignUpOpen?: boolean;
 };
 
 const getErrorMessage = (err: unknown): string => {
@@ -18,7 +20,7 @@ const getErrorMessage = (err: unknown): string => {
     try { return JSON.stringify(err); } catch { return 'Sign in failed'; }
 };
 
-export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: SignInModalProps) {
+export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp, isSignUpOpen }: SignInModalProps) {
     const { login, locationData } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -27,6 +29,8 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
     const [rememberMe, setRememberMe] = useState(false);
     const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
+    const [showFaceVerification, setShowFaceVerification] = useState(false);
+    const [passwordVerified, setPasswordVerified] = useState(false);
 
     const isValidEmail = (s: string) => /\S+@\S+\.\S+/.test(s.trim());
 
@@ -62,13 +66,40 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
                 try { const data = await res.json(); msg = data.detail || data.message || msg; } catch { try { msg = await res.text() } catch { } }
                 throw new Error(msg);
             }
-            // Update auth context
-            login();
-            onSignInSuccess();
-            onClose();
+
+            // Password verified - now check if face verification is required
+            setPasswordVerified(true);
+
+            // Check if user has face verification enabled
+            try {
+                const checkRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/face-verification/check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email.trim() }),
+                });
+                const checkData = await checkRes.json();
+
+                if (checkData.face_verification_enabled) {
+                    // Show face verification modal
+                    setShowFaceVerification(true);
+                    setBusy(false);
+                } else {
+                    // No face verification needed, proceed with login
+                    login();
+                    onSignInSuccess();
+                    onClose();
+                }
+            } catch (err) {
+                // If check fails, proceed without face verification
+                console.error('Face verification check failed:', err);
+                login();
+                onSignInSuccess();
+                onClose();
+            }
         } catch (err) {
             setError(getErrorMessage(err));
-        } finally { setBusy(false); }
+            setBusy(false);
+        }
     }
 
     function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -122,67 +153,84 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp }: 
     });
 
     return (
-        <div className="modal-overlay">
-            <div className="modal" role="dialog" aria-modal="true">
-                <button className="close-btn" onClick={onClose} aria-label="Close">&times;</button>
+        <>
+            <div className="modal-overlay" style={{ display: showFaceVerification || isSignUpOpen ? 'none' : 'flex' }}>
+                <div className="modal" role="dialog" aria-modal="true">
+                    <button className="close-btn" onClick={onClose} aria-label="Close">&times;</button>
 
-                <img src="/logo.png" alt="Logo" className="logo" />
+                    <img src="/logo.png" alt="Logo" className="logo" />
 
-                <div className="modal-body">
-                    <h2>Email</h2>
-                    <input
-                        type="email"
-                        placeholder="Enter your email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        onKeyDown={onKeyDown}
-                    />
-
-                    <h2>Password</h2>
-                    <input
-                        type="password"
-                        placeholder="Enter your password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        onKeyDown={onKeyDown}
-                    />
-
-                    <div className="remember-me-container">
-                        <input id="rememberMe" className="remember-me-checkbox" type="checkbox" checked={rememberMe} onChange={() => setRememberMe(!rememberMe)} />
-                        <label htmlFor="rememberMe" className="remember-me-label">Remember Me</label>
-                    </div>
-
-                    {error && <p className="error-text">{error}</p>}
-
-                    <div>
-                        <ReCAPTCHA
-                            sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ""}
-                            onChange={(token) => setRecaptchaToken(token)}
-                            theme="light"
+                    <div className="modal-body">
+                        <h2>Email</h2>
+                        <input
+                            type="email"
+                            placeholder="Enter your email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            onKeyDown={onKeyDown}
                         />
+
+                        <h2>Password</h2>
+                        <input
+                            type="password"
+                            placeholder="Enter your password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            onKeyDown={onKeyDown}
+                        />
+
+                        <div className="remember-me-container">
+                            <input id="rememberMe" className="remember-me-checkbox" type="checkbox" checked={rememberMe} onChange={() => setRememberMe(!rememberMe)} />
+                            <label htmlFor="rememberMe" className="remember-me-label">Remember Me</label>
+                        </div>
+
+                        {error && <p className="error-text">{error}</p>}
+
+                        <div>
+                            <ReCAPTCHA
+                                sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ""}
+                                onChange={(token) => setRecaptchaToken(token)}
+                                theme="light"
+                            />
+                        </div>
+
+                        <button className="signin-btn" onClick={handleSignIn} disabled={busy}>{busy ? 'Signing in…' : 'Sign In'}</button>
+
+                        <div className="modal-footer">
+                            <button type="button" className="footer-btn" onClick={() => setShowForgotPassword(true)}>Forgot password?</button>
+                            <button type="button" className="footer-btn" onClick={onOpenSignUp}>Not registered?</button>
+                        </div>
+
+                        <button className="google-btn" title="Sign in with Google" onClick={() => googleLogin()} disabled={busy}>
+                            <img src="/google-signin.png" alt="Sign in with Google" />
+                        </button>
                     </div>
-
-                    <button className="signin-btn" onClick={handleSignIn} disabled={busy}>{busy ? 'Signing in…' : 'Sign In'}</button>
-
-                    <div className="modal-footer">
-                        <button type="button" className="footer-btn" onClick={() => setShowForgotPassword(true)}>Forgot password?</button>
-                        <button type="button" className="footer-btn" onClick={onOpenSignUp}>Not registered?</button>
-                    </div>
-
-                    <button className="google-btn" title="Sign in with Google" onClick={() => googleLogin()} disabled={busy}>
-                        <img src="/google-signin.png" alt="Sign in with Google" />
-                    </button>
                 </div>
+                {showForgotPassword && (
+                    <ForgotPasswordModal
+                        onClose={() => {
+                            setShowForgotPassword(false);
+                            onClose();
+                        }}
+                        onBackToSignIn={() => setShowForgotPassword(false)}
+                    />
+                )}
             </div>
-            {showForgotPassword && (
-                <ForgotPasswordModal
-                    onClose={() => {
-                        setShowForgotPassword(false);
+
+            {showFaceVerification && (
+                <FaceVerificationLogin
+                    onSuccess={() => {
+                        login();
+                        onSignInSuccess();
                         onClose();
                     }}
-                    onBackToSignIn={() => setShowForgotPassword(false)}
+                    onSkip={() => {
+                        login();
+                        onSignInSuccess();
+                        onClose();
+                    }}
                 />
             )}
-        </div>
+        </>
     );
 }

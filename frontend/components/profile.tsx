@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../app/AuthContext";
+import FaceVerificationSetup from "./FaceVerificationSetup";
 import "./profile.css";
 
 type Friend = {
@@ -26,6 +27,9 @@ export default function Profile() {
     const [addFriendBusy, setAddFriendBusy] = useState(false);
     const [removeFriendId, setRemoveFriendId] = useState<number | null>(null);
     const [requestActionUserId, setRequestActionUserId] = useState<number | null>(null);
+    const [showFaceSetup, setShowFaceSetup] = useState(false);
+    const [faceVerificationEnabled, setFaceVerificationEnabled] = useState(false);
+    const [faceVerificationLoading, setFaceVerificationLoading] = useState(false);
 
     async function loadFriends(keepFeedback = true) {
         setFriendsLoading(true);
@@ -263,6 +267,48 @@ export default function Profile() {
             loadProfile();
         }
     }, [user]);
+
+    // Load face verification status
+    useEffect(() => {
+        const loadFaceVerificationStatus = async () => {
+            try {
+                setFaceVerificationLoading(true);
+                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/face-verification/check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: user?.email }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    setFaceVerificationEnabled(data.face_verification_enabled);
+                }
+            } catch (error) {
+                console.error('Failed to load face verification status:', error);
+            } finally {
+                setFaceVerificationLoading(false);
+            }
+        };
+
+        if (user?.email) {
+            loadFaceVerificationStatus();
+        }
+    }, [user?.email]);
+
+    async function handleDisableFaceVerification() {
+        try {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/face-verification/disable`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+
+            if (response.ok) {
+                setFaceVerificationEnabled(false);
+            }
+        } catch (error) {
+            console.error('Failed to disable face verification:', error);
+        }
+    }
 
     if (!user) {
         return <div className="profile-loading">Loading profile...</div>;
@@ -585,6 +631,45 @@ export default function Profile() {
                                         </div>
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Security Section */}
+                            <div className="profile-card">
+                                <div className="section-header">
+                                    <h2>Security</h2>
+                                </div>
+                                <div className="security-content">
+                                    <div className="security-item">
+                                        <div className="security-info">
+                                            <h3>Face Verification</h3>
+                                            <p className="security-description">
+                                                Add biometric authentication to your account for extra security
+                                            </p>
+                                            <p className="security-status">
+                                                Status: {faceVerificationLoading ? 'Loading...' : faceVerificationEnabled ? '✓ Enabled' : 'Disabled'}
+                                            </p>
+                                        </div>
+                                        <div className="security-actions">
+                                            {!faceVerificationEnabled ? (
+                                                <button
+                                                    onClick={() => setShowFaceSetup(true)}
+                                                    className="btn btn-primary"
+                                                    disabled={faceVerificationLoading}
+                                                >
+                                                    Enable Face Verification
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={handleDisableFaceVerification}
+                                                    className="btn btn-secondary"
+                                                    disabled={faceVerificationLoading}
+                                                >
+                                                    Disable Face Verification
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </>
                     )}
@@ -1020,6 +1105,16 @@ export default function Profile() {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {showFaceSetup && (
+                <FaceVerificationSetup
+                    onSuccess={() => {
+                        setShowFaceSetup(false);
+                        setFaceVerificationEnabled(true);
+                    }}
+                    onCancel={() => setShowFaceSetup(false)}
+                />
             )}
         </div>
     );

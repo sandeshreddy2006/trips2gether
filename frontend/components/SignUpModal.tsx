@@ -8,6 +8,7 @@ import "./SignInModal.css";
 type SignUpModalProps = {
     onClose: () => void;
     onBackToSignIn: () => void;
+    onSignUpSuccess: () => void;
 };
 
 const getErrorMessage = (err: unknown): string => {
@@ -20,7 +21,7 @@ const getErrorMessage = (err: unknown): string => {
     }
 };
 
-export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProps) {
+export default function SignUpModal({ onClose, onBackToSignIn, onSignUpSuccess }: SignUpModalProps) {
     const { login, locationData } = useAuth();
     const [email, setEmail] = useState("");
     const [username, setUsername] = useState("");
@@ -71,7 +72,7 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
                 }
 
                 login();
-                onBackToSignIn();
+                onSignUpSuccess();
             } catch (err) {
                 setError(getErrorMessage(err));
             } finally {
@@ -87,10 +88,10 @@ export default function SignUpModal({ onClose, onBackToSignIn }: SignUpModalProp
         if (!success) return;
         const t = setTimeout(() => {
             login();
-            onBackToSignIn();
+            onSignUpSuccess();
         }, 1200);
         return () => clearTimeout(t);
-    }, [success, onBackToSignIn, login]);
+    }, [success, onSignUpSuccess, login]);
 
     async function handleSignUp(): Promise<void> {
         setError(null);

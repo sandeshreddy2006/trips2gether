@@ -946,3 +946,78 @@
     transform: translateY(0);
     box-shadow: 0 1px 2px rgba(46, 107, 85, 0.1);
 }
+
+/* Security Section Styles */
+.security-content {
+    padding: 16px 0;
+}
+
+.security-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.security-item:last-child {
+    border-bottom: none;
+}
+
+.security-info h3 {
+    margin: 0 0 4px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+}
+
+.security-description {
+    margin: 0;
+    font-size: 14px;
+    color: #666;
+}
+
+.security-status {
+    margin: 8px 0 0 0;
+    font-size: 13px;
+    color: #1f5632;
+    font-weight: 500;
+}
+
+.security-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: #1f5632;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #2d7a4a;
+}
+
+.btn-secondary {
+    background: #e8e8e8;
+    color: #333;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #d8d8d8;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}

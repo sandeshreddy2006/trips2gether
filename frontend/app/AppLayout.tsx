@@ -233,6 +233,7 @@ export default function AppLayout({
                         setShowSignIn(false);
                         setShowSignUp(true);
                     }}
+                    isSignUpOpen={showSignUp}
                 />
             )}
 
@@ -243,6 +244,7 @@ export default function AppLayout({
                         setShowSignUp(false);
                         setShowSignIn(true);
                     }}
+                    onSignUpSuccess={() => setShowSignUp(false)}
                 />
             )}
         </div>

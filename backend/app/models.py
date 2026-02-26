@@ -103,5 +103,10 @@ class Profile(Base):
     cuisine_preference = Column(String(255), nullable=True)  # e.g., "Italian, Asian, Mediterranean"
     dietary_restrictions = Column(String(255), nullable=True)  # e.g., "vegetarian, gluten-free, vegan"
     
+    # Face Verification (2FA)
+    face_encoding = Column(Text, nullable=True)  # Stored as JSON array of face descriptor
+    face_verification_enabled = Column(Boolean, default=False, nullable=False)
+    face_last_verified_at = Column(DateTime, nullable=True)
+    
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

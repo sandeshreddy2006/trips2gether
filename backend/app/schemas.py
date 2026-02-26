@@ -202,3 +202,35 @@ class DestinationSearchResponse(BaseModel):
     message: Optional[str] = None
     cached: Optional[bool] = False
     dummy: Optional[bool] = False
+
+
+# -------------------------
+# Face Verification Schemas
+# -------------------------
+
+class FaceEncodingIn(BaseModel):
+    """Submit face encoding for storage"""
+    face_encoding: List[float] = Field(..., description="Face descriptor array from face-api.js")
+
+
+class FaceVerificationCheckIn(BaseModel):
+    """Check if user has face verification enabled"""
+    email: EmailStr
+
+
+class FaceVerificationCheckOut(BaseModel):
+    """Response indicating if face verification is required"""
+    face_verification_enabled: bool
+    message: str
+
+
+class FaceVerificationIn(BaseModel):
+    """Submit face encoding for verification during login"""
+    face_encoding: List[float] = Field(..., description="Face descriptor array from face-api.js")
+
+
+class FaceVerificationOut(BaseModel):
+    """Response from face verification"""
+    success: bool
+    message: str
+    distance: Optional[float] = None  # For debugging
