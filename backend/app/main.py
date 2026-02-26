@@ -42,7 +42,7 @@ from .auth import (
     verify_recaptcha,
     get_current_user_info,
 )
-from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template, get_email_verification_template
+from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template, get_email_verification_template, get_account_deletion_email_template
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
 from jose import JWTError
@@ -973,6 +973,96 @@ def cleanup_expired_tokens(db: Session = Depends(get_db)):
     db.commit()
     
     return {"ok": True, "message": f"Deleted {deleted_count} expired tokens"}
+
+
+@app.delete("/auth/delete-account", response_model=dict)
+def delete_account(response: Response, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Permanently delete the authenticated user's account and all related data.
+    Deletes in safe order to avoid foreign key violations:
+      1. Profile (+ Cloudflare avatar cleanup)
+      2. Friendships
+      3. Owned groups (all their members first), then non-owner memberships
+      4. Password reset tokens
+      5. Email verification tokens
+      6. The user record itself
+    Then clears the auth cookie and sends a confirmation email.
+    """
+    current_user = get_current_user_info(request, db)
+
+    user_email = current_user.email
+    user_name = current_user.name
+    deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # 1. Delete profile
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if profile:
+        if profile.avatar_url:
+            try:
+                delete_image_from_cloudflare(profile.avatar_url)
+            except Exception as e:
+                print(f"[delete_account] Failed to delete avatar from Cloudflare: {e}")
+        db.delete(profile)
+
+    # 2. Delete friendships
+    db.query(models.Friendship).filter(
+        or_(
+            models.Friendship.requester_id == current_user.id,
+            models.Friendship.addressee_id == current_user.id,
+        )
+    ).delete(synchronize_session=False)
+
+    # 3. Delete groups the user owns (members first, then the group)
+    owned_group_ids = [
+        m.group_id for m in db.query(models.GroupMember).filter(
+            models.GroupMember.user_id == current_user.id,
+            models.GroupMember.role == "owner"
+        ).all()
+    ]
+    if owned_group_ids:
+        db.query(models.GroupMember).filter(
+            models.GroupMember.group_id.in_(owned_group_ids)
+        ).delete(synchronize_session=False)
+        db.query(models.Group).filter(
+            models.Group.id.in_(owned_group_ids)
+        ).delete(synchronize_session=False)
+
+    # Remove user from any groups they are a non-owner member of
+    db.query(models.GroupMember).filter(
+        models.GroupMember.user_id == current_user.id
+    ).delete(synchronize_session=False)
+
+    # 4. Delete password reset tokens
+    db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.email == user_email
+    ).delete(synchronize_session=False)
+
+    # 5. Delete email verification tokens
+    db.query(models.EmailVerificationToken).filter(
+        models.EmailVerificationToken.email == user_email
+    ).delete(synchronize_session=False)
+
+    # 6. Delete the user record
+    db.delete(current_user)
+    db.commit()
+
+    # Clear the auth cookie
+    response.delete_cookie("authToken", path="/")
+
+    # Send confirmation email
+    try:
+        background_tasks.add_task(
+            send_email,
+            sender_email=os.getenv("SMTP_EMAIL"),
+            sender_password=os.getenv("SMTP_PASSWORD"),
+            recipient_email=user_email,
+            subject="Your Trips2gether account has been deleted 🗑️",
+            body=get_account_deletion_email_template(user_name, deleted_at)
+        )
+    except Exception as e:
+        print(f"[delete_account] Failed to queue deletion confirmation email: {e}")
+
+    return {"ok": True, "message": "Account permanently deleted."}
 
 
 # -------------------------

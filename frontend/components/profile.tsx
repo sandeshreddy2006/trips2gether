@@ -449,7 +449,7 @@ export default function Profile() {
 
         setDeleteLoading(true);
         try {
-          const res = await fetch(`${API_BASE}/auth/delete-account`, {
+          const res = await fetch(`/api/auth/delete-account`, {
             method: "DELETE",
             credentials: "include",
         });
