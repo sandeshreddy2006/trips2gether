@@ -319,6 +319,54 @@
     cursor: not-allowed;
 }
 
+/* Role selector */
+.group-role-select {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background: white;
+    cursor: pointer;
+}
+
+/* Danger zone */
+.group-danger-zone {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.group-leave-btn,
+.group-delete-btn {
+    padding: 0.6rem 1.4rem;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.group-leave-btn {
+    background-color: #f0ad4e;
+    color: #fff;
+}
+
+.group-leave-btn:hover {
+    background-color: #ec971f;
+}
+
+.group-delete-btn {
+    background-color: #d9534f;
+    color: #fff;
+}
+
+.group-delete-btn:hover {
+    background-color: #c9302c;
+}
+
 @media (max-width: 480px) {
     .group-detail-container {
         padding: 1rem;
