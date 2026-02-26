@@ -222,7 +222,7 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
         setStatus('Verifying face...');
 
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/face-verification/verify`, {
+            const response = await fetch(`/api/face-verification/verify`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

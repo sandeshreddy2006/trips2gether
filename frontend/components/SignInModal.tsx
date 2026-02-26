@@ -76,7 +76,7 @@ export default function SignInModal({ onClose, onSignInSuccess, onOpenSignUp, is
 
             // Check if user has face verification enabled
             try {
-                const checkRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/face-verification/check`, {
+                const checkRes = await fetch(`/api/face-verification/check`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: email.trim() }),

@@ -262,6 +262,41 @@ class GooglePlacesService:
             "message": "Using dummy data (Google Places API key not configured)"
         }
     
+    def apply_filters(
+        self,
+        results: List[Dict],
+        min_rating: Optional[float] = None,
+        place_types: Optional[List[str]] = None,
+        max_results: int = 6
+    ) -> List[Dict]:
+        """
+        Apply filters to destination results.
+        
+        Args:
+            results: List of destination results to filter
+            min_rating: Minimum rating threshold (0-5)
+            place_types: List of place types to filter by (AND logic - must match at least one)
+            max_results: Maximum number of results to return (default 6)
+        
+        Returns:
+            Filtered list of destinations, max max_results items
+        """
+        filtered = results
+        
+        # Filter by minimum rating
+        if min_rating is not None and min_rating > 0:
+            filtered = [d for d in filtered if d.get("rating") and d["rating"] >= min_rating]
+        
+        # Filter by place types (AND logic - destination must have at least one matching type)
+        if place_types and len(place_types) > 0:
+            filtered = [
+                d for d in filtered
+                if any(ptype in d.get("types", []) for ptype in place_types)
+            ]
+        
+        # Return max_results items
+        return filtered[:max_results]
+    
     def clear_cache(self):
         """Clear all cached results"""
         self._cache.clear()

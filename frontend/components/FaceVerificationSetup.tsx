@@ -228,7 +228,7 @@ export default function FaceVerificationSetup({ onSuccess, onCancel }: FaceVerif
         try {
             setStatus('Saving face verification...');
             console.log('Saving face encoding to backend...');
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/face-verification/enable`, {
+            const response = await fetch(`/api/face-verification/enable`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -251,9 +251,9 @@ export default function FaceVerificationSetup({ onSuccess, onCancel }: FaceVerif
                 stopCameraStream();
                 if (onSuccess) {
                     onSuccess();
-                } else {
-                    console.warn('onSuccess callback not provided');
                 }
+                // Reload page to reflect face verification status
+                window.location.reload();
             }, 1000);
         } catch (err) {
             console.error('Error saving face:', err);
@@ -368,9 +368,9 @@ export default function FaceVerificationSetup({ onSuccess, onCancel }: FaceVerif
                                 <p className="text-green-600 text-sm mt-1">Your face will be used for verification on future logins.</p>
                             </div>
 
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                <p className="text-blue-700 font-semibold text-sm">💡 Tips for best results:</p>
-                                <ul className="text-blue-600 text-sm mt-2 space-y-1">
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                <p className="text-green-700 font-semibold text-sm">💡 Tips for best results:</p>
+                                <ul className="text-green-600 text-sm mt-2 space-y-1">
                                     <li>• Ensure good lighting on your face</li>
                                     <li>• Look directly at the camera</li>
                                     <li>• Avoid glasses or sunglasses for first setup</li>
