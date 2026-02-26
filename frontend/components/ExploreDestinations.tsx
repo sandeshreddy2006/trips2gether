@@ -57,6 +57,22 @@ export default function ExploreDestinations() {
     // Debounce search to avoid too many API calls
     const [debouncedQuery, setDebouncedQuery] = useState("");
 
+    // Filter state
+    const [showFilters, setShowFilters] = useState(false);
+    const [minRating, setMinRating] = useState<number | null>(null);
+    const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+    const [filtersApplied, setFiltersApplied] = useState(false);
+
+    // Common place types for filter options
+    const placeTypeOptions = [
+        { label: "Tourist Attraction", value: "tourist_attraction" },
+        { label: "Museum", value: "museum" },
+        { label: "Restaurant", value: "restaurant" },
+        { label: "Hotel", value: "lodging" },
+        { label: "Shopping", value: "shopping_mall" },
+        { label: "Park", value: "park" },
+    ];
+
     const handleDestinationClick = (destination: Destination) => {
         // Save destination data to sessionStorage
         if (typeof window !== "undefined") {
@@ -180,6 +196,86 @@ export default function ExploreDestinations() {
         performSearch(searchQuery);
     };
 
+    const applyFilters = async () => {
+        if (!searchQuery.trim()) {
+            setError("Please search for a destination first");
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+
+        try {
+            // Build query params
+            const params = new URLSearchParams();
+            params.append("query", searchQuery.trim());
+
+            if (minRating) {
+                params.append("min_rating", minRating.toString());
+            }
+
+            if (selectedTypes.length > 0) {
+                params.append("types", selectedTypes.join(","));
+            }
+
+            const response = await fetch(
+                `/api/destinations/filter?${params.toString()}`,
+                {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(
+                    errorData.detail || `Filter failed with status ${response.status}`
+                );
+            }
+
+            const data: SearchResponse = await response.json();
+
+            if (data.status === "error") {
+                throw new Error(data.message || "Filter failed");
+            }
+
+            setDestinations(data.results);
+            setFiltersApplied(true);
+            setShowFilters(false);
+
+            if (data.results.length === 0) {
+                setError("No matching destinations found");
+            }
+        } catch (err: any) {
+            console.error("Filter error:", err);
+            setError(
+                err.message ||
+                "Failed to apply filters. Please try again."
+            );
+            setDestinations([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const clearFilters = () => {
+        setMinRating(null);
+        setSelectedTypes([]);
+        setFiltersApplied(false);
+        setShowFilters(false);
+        performSearch(searchQuery);
+    };
+
+    const handleTypeChange = (type: string) => {
+        setSelectedTypes(prev =>
+            prev.includes(type)
+                ? prev.filter(t => t !== type)
+                : [...prev, type]
+        );
+    };
+
     const formatRating = (rating?: number, total?: number) => {
         if (!rating) return null;
         return (
@@ -229,6 +325,76 @@ export default function ExploreDestinations() {
                 <div className="loading-container">
                     <div className="loading-spinner"></div>
                     <p className="loading-text">Searching for destinations...</p>
+                </div>
+            )}
+
+            {/* Filter Panel - Only show after search */}
+            {hasSearched && !loading && destinations.length > 0 && (
+                <div className="filter-panel">
+                    <button
+                        className="filter-toggle-btn"
+                        onClick={() => setShowFilters(!showFilters)}
+                    >
+                        {showFilters ? "▼ Hide Filters" : "▶ Show Filters"}
+                    </button>
+
+                    {showFilters && (
+                        <div className="filter-options">
+                            {/* Rating Filter */}
+                            <div className="filter-group">
+                                <label>Minimum Rating</label>
+                                <select
+                                    value={minRating ?? ""}
+                                    onChange={(e) => setMinRating(e.target.value ? parseFloat(e.target.value) : null)}
+                                    className="filter-select"
+                                >
+                                    <option value="">Any Rating</option>
+                                    <option value="3">3★ and up</option>
+                                    <option value="3.5">3.5★ and up</option>
+                                    <option value="4">4★ and up</option>
+                                    <option value="4.5">4.5★ and up</option>
+                                </select>
+                            </div>
+
+                            {/* Types Filter */}
+                            <div className="filter-group">
+                                <label>Place Types</label>
+                                <div className="filter-checkboxes">
+                                    {placeTypeOptions.map((option) => (
+                                        <label key={option.value} className="checkbox-label">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedTypes.includes(option.value)}
+                                                onChange={() => handleTypeChange(option.value)}
+                                                className="filter-checkbox"
+                                            />
+                                            {option.label}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="filter-actions">
+                                <button
+                                    className="btn btn-apply-filter"
+                                    onClick={applyFilters}
+                                    disabled={loading}
+                                >
+                                    Apply Filters
+                                </button>
+                                {filtersApplied && (
+                                    <button
+                                        className="btn btn-clear-filter"
+                                        onClick={clearFilters}
+                                        disabled={loading}
+                                    >
+                                        Clear Filters
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

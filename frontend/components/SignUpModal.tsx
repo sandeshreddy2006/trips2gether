@@ -4,6 +4,7 @@ import { useAuth } from "../app/AuthContext";
 import { useGoogleLogin } from "@react-oauth/google";
 import ReCAPTCHA from "react-google-recaptcha";
 import LinkAccountModal from "./LinkAccountModal";
+import EmailVerificationModal from "./EmailVerificationModal";
 import "./SignInModal.css";
 
 type SignUpModalProps = {
@@ -30,11 +31,12 @@ export default function SignUpModal({ onClose, onBackToSignIn, onSignUpSuccess }
     const [pw2, setPw2] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState(false);
     const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
     const [showLinkModal, setShowLinkModal] = useState(false);
     const [pendingGoogleToken, setPendingGoogleToken] = useState<string | null>(null);
     const [linkingEmail, setLinkingEmail] = useState<string | null>(null);
+    const [showVerification, setShowVerification] = useState(false);
+    const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
     const isValidEmail = (s: string) => /\S+@\S+\.\S+/.test(s.trim());
     const canSubmit =
@@ -102,15 +104,6 @@ export default function SignUpModal({ onClose, onBackToSignIn, onSignUpSuccess }
         },
     });
 
-    useEffect(() => {
-        if (!success) return;
-        const t = setTimeout(() => {
-            login();
-            onSignUpSuccess();
-        }, 1200);
-        return () => clearTimeout(t);
-    }, [success, onSignUpSuccess, login]);
-
     async function handleSignUp(): Promise<void> {
         setError(null);
         if (!canSubmit) {
@@ -155,7 +148,9 @@ export default function SignUpModal({ onClose, onBackToSignIn, onSignUpSuccess }
                 throw new Error(msg);
             }
 
-            setSuccess(true);
+            // Show verification modal instead of auto-login
+            setPendingEmail(email.trim());
+            setShowVerification(true);
         } catch (err) {
             setError(getErrorMessage(err));
         } finally {
@@ -277,17 +272,24 @@ export default function SignUpModal({ onClose, onBackToSignIn, onSignUpSuccess }
                         <img src="/google-signin.png" alt="Sign in with Google" />
                     </button>
                 </div>
-
-                {success && (
-                    <div
-                        className="toast success"
-                        role="alert"
-                        aria-live="assertive"
-                    >
-                        🎉 Account created! Redirecting...
-                    </div>
-                )}
             </div>
+
+            {showVerification && pendingEmail && (
+                <EmailVerificationModal
+                    email={pendingEmail}
+                    onVerificationSuccess={() => {
+                        // After verification, auto-login and close
+                        login();
+                        setShowVerification(false);
+                        setPendingEmail(null);
+                        onSignUpSuccess();
+                    }}
+                    onClose={() => {
+                        setShowVerification(false);
+                        setPendingEmail(null);
+                    }}
+                />
+            )}
 
             {showLinkModal && linkingEmail && pendingGoogleToken && (
                 <LinkAccountModal

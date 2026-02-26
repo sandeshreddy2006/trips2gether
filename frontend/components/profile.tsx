@@ -273,7 +273,7 @@ export default function Profile() {
         const loadFaceVerificationStatus = async () => {
             try {
                 setFaceVerificationLoading(true);
-                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/face-verification/check`, {
+                const response = await fetch(`/api/face-verification/check`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: user?.email }),
@@ -297,13 +297,15 @@ export default function Profile() {
 
     async function handleDisableFaceVerification() {
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/face-verification/disable`, {
+            const response = await fetch(`/api/face-verification/disable`, {
                 method: 'POST',
                 credentials: 'include',
             });
 
             if (response.ok) {
                 setFaceVerificationEnabled(false);
+                // Reload page to reflect updated status
+                window.location.reload();
             }
         } catch (error) {
             console.error('Failed to disable face verification:', error);
@@ -546,7 +548,12 @@ export default function Profile() {
             </div>
 
             <div className="profile-body">
-                {successMessage && <div className="form-success">{successMessage}</div>}
+                {successMessage && (
+                    <div className="form-success">
+                        <span className="success-icon">✓</span>
+                        {successMessage}
+                    </div>
+                )}
                 <div className="profile-main">
                     {activeTab === "overview" && (
                         <>

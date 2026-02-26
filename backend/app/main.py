@@ -42,7 +42,7 @@ from .auth import (
     verify_recaptcha,
     get_current_user_info,
 )
-from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template
+from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template, get_email_verification_template
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
 from jose import JWTError
@@ -115,7 +115,9 @@ app.add_middleware(
 
 @app.post("/auth/register", response_model=dict)
 def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Register a new user"""
+    """Register a new user with email verification required"""
+    from .auth import generate_unique_reset_token, generate_reset_link
+    
     # Verify reCAPTCHA (required)
     success, msg = verify_recaptcha(body.recaptchaToken)
     if not success:
@@ -135,11 +137,12 @@ def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = 
         if not ok:
             raise HTTPException(status_code=400, detail=msg)
     
-    # Create new user
+    # Create new user but mark as unverified
     user = models.User(
         email=body.email,
         password_hash=hash_password(body.password) if body.password else None,
         name=body.name or body.email.split("@")[0],
+        email_verified=False,
         latitude=body.latitude,
         longitude=body.longitude,
         location=body.location
@@ -148,7 +151,84 @@ def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = 
     db.commit()
     db.refresh(user)
     
-    # Create a profile for the new user
+    # Generate unique 6-digit verification token
+    verification_token = generate_unique_reset_token(db)
+    verification_link = generate_reset_link(body.email, verification_token)
+    
+    # Create expiration time (1 hour from now)
+    expires_at = datetime.now() + timedelta(hours=1)
+    
+    # Store verification token in database
+    verification_record = models.EmailVerificationToken(
+        email=body.email,
+        token=verification_token,
+        link=verification_link,
+        expires_at=expires_at
+    )
+    db.add(verification_record)
+    db.commit()
+    
+    # Send verification email in background
+    try:
+        verification_body = get_email_verification_template(
+            name=user.name,
+            verification_code=verification_token,
+            verification_link=verification_link
+        )
+        
+        background_tasks.add_task(
+            send_email,
+            sender_email=os.getenv("SMTP_EMAIL"),
+            sender_password=os.getenv("SMTP_PASSWORD"),
+            recipient_email=body.email,
+            subject="Verify Your Trips2gether Email 📧",
+            body=verification_body
+        )
+    except Exception as e:
+        print(f"Failed to queue verification email: {e}")
+    
+    return {
+        "ok": True,
+        "message": "Signup successful! Please check your email to verify your account.",
+        "email": body.email
+    }
+
+
+@app.post("/auth/verify-signup", response_model=dict)
+def verify_signup(body: dict, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Verify email and complete signup"""
+    email = body.get("email", "").strip()
+    code = body.get("code", "").strip()
+    
+    if not email or not code:
+        raise HTTPException(status_code=400, detail="Email and code are required")
+    
+    # Find verification record
+    verification_record = db.query(models.EmailVerificationToken).filter(
+        models.EmailVerificationToken.email == email,
+        models.EmailVerificationToken.token == code
+    ).first()
+    
+    if not verification_record:
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+    
+    if verification_record.used:
+        raise HTTPException(status_code=400, detail="Verification code has already been used")
+    
+    if verification_record.expires_at < datetime.now():
+        raise HTTPException(status_code=400, detail="Verification code has expired")
+    
+    # Find user
+    user = db.query(models.User).filter(models.User.email == email).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="User not found")
+    
+    # Mark email as verified
+    user.email_verified = True
+    db.commit()
+    
+    # Create profile for the user
     profile = models.Profile(
         user_id=user.id,
         email=user.email,
@@ -157,20 +237,95 @@ def register(body: RegisterIn, background_tasks: BackgroundTasks, db: Session = 
     db.add(profile)
     db.commit()
     
-    # Send welcome email in background (don't block response)
+    # Mark verification code as used
+    verification_record.used = True
+    db.commit()
+    
+    # Send welcome email in background
     try:
         background_tasks.add_task(
             send_email,
             sender_email=os.getenv("SMTP_EMAIL"),
             sender_password=os.getenv("SMTP_PASSWORD"),
-            recipient_email=body.email,
+            recipient_email=email,
             subject="Welcome to Trips2gether! ✈️",
             body=get_welcome_email_template(user.name)
         )
     except Exception as e:
         print(f"Failed to queue welcome email: {e}")
     
-    return {"ok": True, "user": {"id": user.id, "email": user.email, "name": user.name}}
+    return {
+        "ok": True,
+        "message": "Email verified successfully! Your account is now active.",
+        "user": {"id": user.id, "email": user.email, "name": user.name}
+    }
+
+
+@app.post("/auth/resend-verification", response_model=dict)
+def resend_verification(body: dict, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Resend verification code to user's email"""
+    from .auth import generate_unique_reset_token, generate_reset_link
+    
+    email = body.get("email", "").strip()
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    # Find user
+    user = db.query(models.User).filter(models.User.email == email).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="User not found")
+    
+    if user.email_verified:
+        raise HTTPException(status_code=400, detail="Email is already verified")
+    
+    # Delete any existing verification tokens for this email
+    db.query(models.EmailVerificationToken).filter(
+        models.EmailVerificationToken.email == email
+    ).delete()
+    db.commit()
+    
+    # Generate new verification token
+    verification_token = generate_unique_reset_token(db)
+    verification_link = generate_reset_link(email, verification_token)
+    
+    # Create expiration time (1 hour from now)
+    expires_at = datetime.now() + timedelta(hours=1)
+    
+    # Store verification token in database
+    verification_record = models.EmailVerificationToken(
+        email=email,
+        token=verification_token,
+        link=verification_link,
+        expires_at=expires_at
+    )
+    db.add(verification_record)
+    db.commit()
+    
+    # Send verification email in background
+    try:
+        verification_body = get_email_verification_template(
+            name=user.name,
+            verification_code=verification_token,
+            verification_link=verification_link
+        )
+        
+        background_tasks.add_task(
+            send_email,
+            sender_email=os.getenv("SMTP_EMAIL"),
+            sender_password=os.getenv("SMTP_PASSWORD"),
+            recipient_email=email,
+            subject="New Verification Code - Trips2gether 📧",
+            body=verification_body
+        )
+    except Exception as e:
+        print(f"Failed to queue verification email: {e}")
+    
+    return {
+        "ok": True,
+        "message": "Verification code sent to your email. Please check your inbox."
+    }
 
 
 @app.post("/auth/login", response_model=dict)
@@ -190,6 +345,10 @@ def login(response: Response, body: LoginIn, background_tasks: BackgroundTasks, 
     # Verify password (user must have password_hash set for password login)
     if not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
+    
+    # Check if email is verified
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail="Please verify your email before logging in. Check your inbox for verification code.")
     
     # Update user location if provided
     if body.latitude is not None:
@@ -301,12 +460,13 @@ def google_login(response: Response, body: GoogleOAuthIn, background_tasks: Back
                 "message": "An account with this email already exists. Would you like to link your Google account?"
             }
         elif not user:
-            # New user - create account via Google
+            # New user - create account via Google (auto-verified)
             user = models.User(
                 email=email,
                 name=name,
                 google_client_id=google_id,
                 password_hash=None,
+                email_verified=True,  # Google users auto-verified
                 latitude=latitude,
                 longitude=longitude,
                 location=location_str
@@ -325,6 +485,17 @@ def google_login(response: Response, body: GoogleOAuthIn, background_tasks: Back
     
     db.commit()
     db.refresh(user)
+    
+    # Create profile if it doesn't exist (for new Google users or linked accounts)
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        profile = models.Profile(
+            user_id=user.id,
+            email=user.email,
+            username=user.name
+        )
+        db.add(profile)
+        db.commit()
     
     # Create JWT token
     token = make_jwt(str(user.id), user_type="google", extra_claims={"email": user.email})
@@ -1393,6 +1564,78 @@ def search_destinations(query: str = "", db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=500, 
             detail=f"An unexpected error occurred while searching for destinations: {str(e)}"
+        )
+
+
+@app.get("/destinations/filter", response_model=DestinationSearchResponse)
+def filter_destinations(
+    query: str = "",
+    min_rating: float = None,
+    types: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Search for destinations and apply filters
+    
+    Query parameters:
+    - query: Search string (required)
+    - min_rating: Minimum rating filter (0-5, optional)
+    - types: Comma-separated place types to filter by (optional, e.g., "tourist_attraction,restaurant")
+    
+    Returns:
+    - Up to 6 matching destinations with filters applied
+    - Error message if search fails
+    """
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="Search query is required")
+    
+    try:
+        places_service = get_places_service()
+        
+        # First, search for destinations
+        result = places_service.search_destinations(query.strip())
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result.get("message", "Search failed"))
+        
+        # Apply filters if provided
+        results = result.get("results", [])
+        
+        # Parse types filter
+        types_list = None
+        if types:
+            types_list = [t.strip() for t in types.split(",") if t.strip()]
+        
+        # Apply filters
+        filtered_results = places_service.apply_filters(
+            results,
+            min_rating=min_rating,
+            place_types=types_list,
+            max_results=6
+        )
+        
+        # Determine if filters were applied
+        filters_applied = min_rating is not None or types_list
+        
+        if not filtered_results:
+            return DestinationSearchResponse(
+                status="success",
+                results=[],
+                message="No matching destinations found" if filters_applied else "No destinations found"
+            )
+        
+        return DestinationSearchResponse(
+            status="success",
+            results=filtered_results,
+            message=f"Found {len(filtered_results)} destination(s)" if filters_applied else None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An unexpected error occurred while filtering destinations: {str(e)}"
         )
 
 

@@ -478,3 +478,197 @@ def get_password_reset_email_template(email: str, reset_code: str, reset_link: s
     </body>
     </html>
     """
+
+
+def get_email_verification_template(name: str, verification_code: str, verification_link: str):
+    """Professional email verification template"""
+    logo_url = get_logo_url()
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+                background: linear-gradient(135deg, #f5f5f5 0%, #f0f0f0 100%);
+            }}
+            .container {{
+                max-width: 600px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            }}
+            .header {{
+                background: linear-gradient(135deg, #0E3F2E 0%, #186C50 100%);
+                padding: 40px;
+                text-align: center;
+                color: white;
+            }}
+            .logo {{
+                max-width: 150px;
+                height: auto;
+                margin-bottom: 12px;
+            }}
+            .header h2 {{
+                margin: 0;
+                font-size: 22px;
+                font-weight: 600;
+            }}
+            .content {{
+                padding: 40px;
+                color: #333;
+            }}
+            .greeting {{
+                font-size: 18px;
+                font-weight: 600;
+                color: #0E3F2E;
+                margin-bottom: 16px;
+            }}
+            .message {{
+                font-size: 15px;
+                line-height: 1.6;
+                color: #555;
+                margin: 16px 0;
+            }}
+            .code-box {{
+                background: #f9fafb;
+                border: 2px solid #186C50;
+                border-radius: 8px;
+                padding: 24px;
+                text-align: center;
+                margin: 24px 0;
+            }}
+            .code {{
+                font-size: 36px;
+                font-weight: 700;
+                color: #0E3F2E;
+                letter-spacing: 6px;
+                font-family: 'Courier New', monospace;
+            }}
+            .code-label {{
+                font-size: 12px;
+                color: #999;
+                margin-top: 12px;
+            }}
+            .cta-button {{
+                display: inline-block;
+                background: linear-gradient(135deg, #0E3F2E 0%, #186C50 100%);
+                color: white;
+                padding: 14px 32px;
+                border-radius: 8px;
+                text-decoration: none;
+                font-weight: 600;
+                margin: 16px 0;
+                transition: transform 0.2s, box-shadow 0.2s;
+                box-shadow: 0 4px 12px rgba(14, 63, 46, 0.3);
+            }}
+            .cta-button:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 6px 16px rgba(14, 63, 46, 0.4);
+            }}
+            .divider {{
+                text-align: center;
+                color: #999;
+                margin: 20px 0;
+                font-size: 14px;
+            }}
+            .steps {{
+                background: #f0f4f8;
+                padding: 16px;
+                border-radius: 6px;
+                margin: 16px 0;
+            }}
+            .step {{
+                margin: 8px 0;
+                font-size: 14px;
+                color: #555;
+            }}
+            .step-number {{
+                display: inline-block;
+                background: #186C50;
+                color: white;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                text-align: center;
+                line-height: 24px;
+                font-weight: 600;
+                margin-right: 8px;
+            }}
+            .warning {{
+                background: #fffbea;
+                border-left: 4px solid #f59e0b;
+                padding: 12px;
+                border-radius: 4px;
+                color: #92400e;
+                font-size: 13px;
+                margin: 16px 0;
+            }}
+            .footer {{
+                background: #f5f5f5;
+                padding: 20px 40px;
+                text-align: center;
+                font-size: 12px;
+                color: #999;
+                border-top: 1px solid #e0e0e0;
+            }}
+            .footer p {{
+                margin: 4px 0;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <img src="{logo_url}" alt="Trips2gether" class="logo">
+                <h2>Verify Your Email</h2>
+            </div>
+            
+            <div class="content">
+                <div class="greeting">Hi {name},</div>
+                
+                <div class="message">
+                    Welcome to Trips2gether! We're excited to have you on board. To get started, please verify your email address using the code below.
+                </div>
+
+                <div class="code-box">
+                    <div class="code">{verification_code}</div>
+                    <div class="code-label">Your verification code (expires in 1 hour)</div>
+                </div>
+
+                <div style="text-align: center;">
+                    <a href="{verification_link}" class="cta-button" style="color: white; text-decoration: none;">Verify Email</a>
+                </div>
+
+                <div class="divider">Or use the code manually</div>
+
+                <div class="steps">
+                    <div class="step"><span class="step-number">1</span> Go to the verification page</div>
+                    <div class="step"><span class="step-number">2</span> Enter the code: <strong>{verification_code}</strong></div>
+                    <div class="step"><span class="step-number">3</span> Start planning your adventure!</div>
+                </div>
+
+                <div class="warning">
+                    ⏰ <strong>Code expires in 1 hour.</strong> If you didn't create this account, please contact our support team.
+                </div>
+
+                <div class="message" style="margin-top: 24px; color: #999; font-size: 14px;">
+                    Happy travels!<br>
+                    The Trips2gether Team ✈️
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p><strong>Trips2gether</strong> © 2026</p>
+                <p>Your adventure awaits</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
