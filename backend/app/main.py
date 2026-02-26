@@ -27,6 +27,11 @@ from .schemas import (
     ProfileOut, 
     ProfileUpdate,
     DestinationSearchResponse,
+    FaceEncodingIn,
+    FaceVerificationCheckIn,
+    FaceVerificationCheckOut,
+    FaceVerificationIn,
+    FaceVerificationOut,
 )
 from .auth import (
     hash_password,
@@ -43,6 +48,8 @@ from .google_places import get_places_service
 from jose import JWTError
 import os
 import requests
+import json
+import math
 from apscheduler.schedulers.background import BackgroundScheduler
 
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -1378,4 +1385,143 @@ def get_destination_image(
         raise HTTPException(
             status_code=500,
             detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+# -------------------------
+# Face Verification Endpoints
+# -------------------------
+
+def calculate_face_distance(encoding1_json: str, encoding2: list) -> float:
+    """Calculate Euclidean distance between two face encodings"""
+    try:
+        encoding1 = json.loads(encoding1_json)
+        if not encoding1 or not encoding2 or len(encoding1) != len(encoding2):
+            return float('inf')
+        
+        sum_sq = sum((a - b) ** 2 for a, b in zip(encoding1, encoding2))
+        return math.sqrt(sum_sq)
+    except Exception:
+        return float('inf')
+
+
+@app.post("/face-verification/check", response_model=FaceVerificationCheckOut)
+def check_face_verification(body: FaceVerificationCheckIn, db: Session = Depends(get_db)):
+    """Check if a user has face verification enabled (public endpoint for login flow)"""
+    user = db.query(models.User).filter(models.User.email == body.email).first()
+    
+    if not user:
+        return FaceVerificationCheckOut(
+            face_verification_enabled=False,
+            message="User not found or face verification not enabled"
+        )
+    
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    
+    if not profile or not profile.face_verification_enabled:
+        return FaceVerificationCheckOut(
+            face_verification_enabled=False,
+            message="Face verification not enabled"
+        )
+    
+    return FaceVerificationCheckOut(
+        face_verification_enabled=True,
+        message="Face verification is enabled for this account"
+    )
+
+
+@app.post("/face-verification/verify", response_model=FaceVerificationOut)
+def verify_face(body: FaceVerificationIn, request: Request, db: Session = Depends(get_db)):
+    """Verify user's face during login (must be done after password verification)"""
+    current_user = get_current_user_info(request, db)
+    
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    if not profile.face_verification_enabled or not profile.face_encoding:
+        raise HTTPException(status_code=400, detail="Face verification not enabled for this user")
+    
+    # Calculate distance between stored encoding and provided encoding
+    distance = calculate_face_distance(profile.face_encoding, body.face_encoding)
+    
+    # Distance threshold: 0.6 is standard for face-api.js (lower = stricter match)
+    # Typical range: 0.3 (very strict) to 0.7 (looser)
+    FACE_MATCH_THRESHOLD = 0.5
+    
+    if distance <= FACE_MATCH_THRESHOLD:
+        # Update last verified timestamp
+        profile.face_last_verified_at = datetime.utcnow()
+        db.commit()
+        
+        return FaceVerificationOut(
+            success=True,
+            message="Face verification successful",
+            distance=distance
+        )
+    else:
+        return FaceVerificationOut(
+            success=False,
+            message=f"Face verification failed. Face does not match stored encoding.",
+            distance=distance
+        )
+
+
+@app.post("/face-verification/enable", response_model=dict)
+def enable_face_verification(body: FaceEncodingIn, request: Request, db: Session = Depends(get_db)):
+    """Enable face verification and store face encoding in profile"""
+    current_user = get_current_user_info(request, db)
+    
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    # Store face encoding as JSON string
+    try:
+        profile.face_encoding = json.dumps(body.face_encoding)
+        profile.face_verification_enabled = True
+        profile.face_last_verified_at = datetime.utcnow()
+        db.commit()
+        
+        return {
+            "ok": True,
+            "message": "Face verification enabled successfully",
+            "face_verification_enabled": True
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to enable face verification: {str(e)}"
+        )
+
+
+@app.post("/face-verification/disable", response_model=dict)
+def disable_face_verification(request: Request, db: Session = Depends(get_db)):
+    """Disable face verification for the user"""
+    current_user = get_current_user_info(request, db)
+    
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    try:
+        profile.face_encoding = None
+        profile.face_verification_enabled = False
+        profile.face_last_verified_at = None
+        db.commit()
+        
+        return {
+            "ok": True,
+            "message": "Face verification disabled successfully",
+            "face_verification_enabled": False
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to disable face verification: {str(e)}"
         )
