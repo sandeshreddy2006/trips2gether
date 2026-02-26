@@ -1476,7 +1476,11 @@ async def update_profile(profile_update: ProfileUpdate, request: Request, db: Se
     update_data = profile_update.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(profile, field, value)
-    
+
+    # Sync username change back to users table so it shows everywhere
+    if "username" in update_data:
+        user.name = update_data["username"]
+
     profile.updated_at = datetime.now()
     db.commit()
     db.refresh(profile)
