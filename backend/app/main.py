@@ -67,7 +67,7 @@ def run_database_migrations():
             if 'status' not in columns:
                 print("[Migration] Adding 'status' column to 'groups' table...")
                 sql = text("""
-                    ALTER TABLE groups 
+                    ALTER TABLE `groups` 
                     ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'planning'
                 """)
                 conn.execute(sql)
