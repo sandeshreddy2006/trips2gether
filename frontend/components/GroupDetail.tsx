@@ -9,6 +9,7 @@ type Member = {
     name: string;
     email: string;
     role: string;
+    avatar_url?: string | null;
 };
 
 type GroupInfo = {
@@ -24,6 +25,7 @@ type Friend = {
     id: number;
     name: string;
     email: string;
+    avatar_url?: string | null;
 };
 
 export default function GroupDetail({ groupId }: { groupId: number }) {
@@ -283,7 +285,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                     {members.map((m) => (
                         <div key={m.id} className="group-member-row">
                             <div className="group-member-info">
-                                <img src="/UserIcon.svg" alt={m.name} className="group-member-avatar" />
+                                <img src={m.avatar_url || "/UserIcon.svg"} alt={m.name} className="group-member-avatar" />
                                 <div>
                                     <span className="group-member-name">{m.name}</span>
                                     <span className="group-member-email">{m.email}</span>
@@ -330,7 +332,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                     checked={selectedIds.has(f.id)}
                                     onChange={() => toggleSelect(f.id)}
                                 />
-                                <img src="/UserIcon.svg" alt={f.name} className="group-member-avatar" />
+                                <img src={f.avatar_url || "/UserIcon.svg"} alt={f.name} className="group-member-avatar" />
                                 <div>
                                     <span className="group-member-name">{f.name}</span>
                                     <span className="group-member-email">{f.email}</span>

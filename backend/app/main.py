@@ -651,12 +651,12 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     }
 
 
-def _friend_out(user: models.User, status: str) -> dict:
+def _friend_out(user: models.User, status: str, avatar_url: str | None = None) -> dict:
     return {
         "id": user.id,
         "email": user.email,
         "name": user.name,
-        "avatar_url": "/UserIcon.svg",
+        "avatar_url": avatar_url,
         "status": status,
     }
 
@@ -687,11 +687,14 @@ def list_friends(request: Request, db: Session = Depends(get_db)):
     users = db.query(models.User).filter(models.User.id.in_(friend_ids)).all()
     users_by_id = {u.id: u for u in users}
 
+    profiles = db.query(models.Profile).filter(models.Profile.user_id.in_(friend_ids)).all()
+    avatar_by_user_id = {p.user_id: p.avatar_url for p in profiles}
+
     friends = []
     for friend_id in friend_ids:
         friend_user = users_by_id.get(friend_id)
         if friend_user:
-            friends.append(_friend_out(friend_user, "accepted"))
+            friends.append(_friend_out(friend_user, "accepted", avatar_by_user_id.get(friend_id)))
 
     return {"friends": friends}
 
@@ -723,8 +726,11 @@ def list_friend_requests(request: Request, db: Session = Depends(get_db)):
     users = db.query(models.User).filter(models.User.id.in_(lookup_ids)).all() if lookup_ids else []
     users_by_id = {u.id: u for u in users}
 
-    incoming = [_friend_out(users_by_id[u], "pending") for u in incoming_ids if u in users_by_id]
-    outgoing = [_friend_out(users_by_id[u], "pending") for u in outgoing_ids if u in users_by_id]
+    profiles = db.query(models.Profile).filter(models.Profile.user_id.in_(lookup_ids)).all() if lookup_ids else []
+    avatar_by_user_id = {p.user_id: p.avatar_url for p in profiles}
+
+    incoming = [_friend_out(users_by_id[u], "pending", avatar_by_user_id.get(u)) for u in incoming_ids if u in users_by_id]
+    outgoing = [_friend_out(users_by_id[u], "pending", avatar_by_user_id.get(u)) for u in outgoing_ids if u in users_by_id]
 
     return {"incoming": incoming, "outgoing": outgoing}
 
@@ -1272,6 +1278,9 @@ def list_group_members(group_id: int, request: Request, db: Session = Depends(ge
     users = db.query(models.User).filter(models.User.id.in_(user_ids)).all()
     users_by_id = {u.id: u for u in users}
 
+    profiles = db.query(models.Profile).filter(models.Profile.user_id.in_(user_ids)).all()
+    avatar_by_user_id = {p.user_id: p.avatar_url for p in profiles}
+
     members = []
     for m in memberships:
         u = users_by_id.get(m.user_id)
@@ -1283,6 +1292,7 @@ def list_group_members(group_id: int, request: Request, db: Session = Depends(ge
                     name=u.name,
                     email=u.email,
                     role=m.role,
+                    avatar_url=avatar_by_user_id.get(m.user_id),
                 )
             )
 
