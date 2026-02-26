@@ -56,7 +56,6 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
 
 print("[Startup] Running Base.metadata.create_all...")
-Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
 
