@@ -212,6 +212,7 @@ export default function Profile() {
     // Mock profile data - replace with API call once endpoints are ready
     const [profile, setProfile] = useState({
         username: user?.name || "User",
+        email: user?.email || "",
         avatar_url: "/UserIcon.svg",
         bio: "Travel enthusiast and foodie. Love exploring new destinations and meeting new people!",
         budget_min: 1000,
@@ -228,6 +229,7 @@ export default function Profile() {
     const [editData, setEditData] = useState({ ...profile });
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [bioError, setBioError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
@@ -319,11 +321,13 @@ export default function Profile() {
     const handleEditStart = (section: string) => {
         setEditingSection(section);
         setEditData({ ...profile });
+        setBioError(null);
     };
 
     const handleEditCancel = () => {
         setEditingSection(null);
         setEditData({ ...profile });
+        setBioError(null);
     };
 
     const handleEditSave = async () => {
@@ -342,11 +346,16 @@ export default function Profile() {
                 if (editData.username.length > 100) {
                     throw new Error("Username must be 100 characters or less");
                 }
+                // Validate email
+                if (!editData.email || !editData.email.endsWith("@gmail.com")) {
+                    throw new Error("Email is invalid!");
+                }
                 // Validate bio
                 if (editData.bio && editData.bio.length > 500) {
                     throw new Error("Bio must be 500 characters or less");
                 }
                 fieldsToUpdate.username = editData.username;
+                fieldsToUpdate.email = editData.email;
                 fieldsToUpdate.bio = editData.bio;
             } else if (editingSection === "travel") {
                 // Validate budget values
@@ -573,8 +582,8 @@ export default function Profile() {
                                             <label className="form-label">Email</label>
                                             <input
                                                 type="email"
-                                                value={editData.username}
-                                                onChange={(e) => handleInputChange("username", e.target.value)}
+                                                value={editData.email}
+                                                onChange={(e) => handleInputChange("email", e.target.value)}
                                                 className="form-input"
                                             />
                                         </div>
@@ -594,10 +603,17 @@ export default function Profile() {
                                             <label className="form-label">Bio</label>
                                             <textarea
                                                 value={editData.bio}
-                                                onChange={(e) => handleInputChange("bio", e.target.value)}
-                                                maxLength={500}
+                                                onChange={(e) => {
+                                                    handleInputChange("bio", e.target.value);
+                                                    if (e.target.value.length > 500) {
+                                                        setBioError("Bio cannot exceed 500 characters");
+                                                    } else {
+                                                        setBioError(null);
+                                                    }
+                                                }}
                                                 className="form-input form-textarea"
                                             />
+                                            {bioError && <div className="form-error">{bioError}</div>}
                                             <small className="form-hint">{editData.bio?.length || 0}/500 characters</small>
                                         </div>
                                         {saveError && <div className="form-error">{saveError}</div>}
@@ -622,7 +638,7 @@ export default function Profile() {
                                     <div className="about-content">
                                         <div className="about-item">
                                             <span className="about-label">Email:</span>
-                                            <span className="about-value">{user.email}</span>
+                                            <span className="about-value">{profile.email || user.email}</span>
                                         </div>
                                         <div className="about-item">
                                             <span className="about-label">Username:</span>

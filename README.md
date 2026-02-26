@@ -3,6 +3,7 @@
 How to run (local testing):
 
 1) pip install -r requirements.txt
+npm install face-api.js 
 
 2) On Terminal 1, cd into backend
     - source run_local_sqlite.sh
