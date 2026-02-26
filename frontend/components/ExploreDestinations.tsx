@@ -18,6 +18,7 @@ interface Destination {
     user_ratings_total?: number;
     types: string[];
     photo_url?: string;
+    photo_reference?: string;
     location?: DestinationLocation;
     business_status?: string;
 }
@@ -29,6 +30,20 @@ interface SearchResponse {
     cached?: boolean;
     dummy?: boolean;
 }
+
+// Helper function to get the image URL (using proxy for Safari compatibility)
+const getImageUrl = (destination: Destination): string => {
+    // Use proxy endpoint if photo_reference is available
+    if (destination.photo_reference) {
+        return `/api/destinations/image?photo_reference=${encodeURIComponent(destination.photo_reference)}&width=800&height=600`;
+    }
+    // Fallback to direct photo_url if available
+    if (destination.photo_url) {
+        return destination.photo_url;
+    }
+    // Return placeholder
+    return "https://via.placeholder.com/400x300?text=No+Image";
+};
 
 export default function ExploreDestinations() {
     const searchParams = useSearchParams();
@@ -56,14 +71,13 @@ export default function ExploreDestinations() {
     const loadDefaultDestinations = useCallback(async () => {
         setLoading(true);
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
             const popularPlaces = ["Paris", "Tokyo", "Bali", "London", "Goa", "Barcelona"];
             const allResults: Destination[] = [];
 
             // Fetch results for each popular place
             for (const place of popularPlaces) {
                 const response = await fetch(
-                    `${apiUrl}/destinations/search?query=${encodeURIComponent(place)}`,
+                    `/api/destinations/search?query=${encodeURIComponent(place)}`,
                     { method: "GET", headers: { "Content-Type": "application/json" } }
                 );
                 if (response.ok) {
@@ -103,9 +117,8 @@ export default function ExploreDestinations() {
         setError(null);
 
         try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
             const response = await fetch(
-                `${apiUrl}/destinations/search?query=${encodeURIComponent(query)}`,
+                `/api/destinations/search?query=${encodeURIComponent(query)}`,
                 {
                     method: "GET",
                     headers: {
@@ -227,9 +240,9 @@ export default function ExploreDestinations() {
                         {destinations.map((destination) => (
                             <div key={destination.place_id} className="destination-card">
                                 <div className="destination-image">
-                                    {destination.photo_url ? (
+                                    {destination.photo_url || destination.photo_reference ? (
                                         <img
-                                            src={destination.photo_url}
+                                            src={getImageUrl(destination)}
                                             alt={destination.name}
                                             onError={(e) => {
                                                 e.currentTarget.src =
