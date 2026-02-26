@@ -59,6 +59,19 @@ export default function Dashboard() {
     });
     const [loadingDestinations, setLoadingDestinations] = useState(true);
 
+    const handleDestinationClick = (destination: Destination | null) => {
+        if (!destination) return;
+        // Save destination data to sessionStorage
+        if (typeof window !== "undefined") {
+            sessionStorage.setItem(
+                `destination_${destination.place_id}`,
+                JSON.stringify(destination)
+            );
+        }
+        // Navigate to destination details page
+        router.push(`/destination/${destination.place_id}`);
+    };
+
     useEffect(() => {
         fetch("/api/groups", { credentials: "include" })
             .then((res) => (res.ok ? res.json() : { groups: [] }))
@@ -142,7 +155,11 @@ export default function Dashboard() {
 
                     {/* Trip Cards */}
                     {destinationData.maldives && (
-                        <div className="trip-card large-card">
+                        <div
+                            className="trip-card large-card"
+                            onClick={() => handleDestinationClick(destinationData.maldives)}
+                            style={{ cursor: "pointer" }}
+                        >
                             <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.maldives)}')` }}>
                                 <div className="trip-overlay" />
                             </div>
@@ -238,7 +255,11 @@ export default function Dashboard() {
                         <h3 className="sidebar-title">Suggested Trips for Your Group</h3>
                         <div className="suggested-trips">
                             {destinationData.santorini && (
-                                <div className="suggested-trip">
+                                <div
+                                    className="suggested-trip"
+                                    onClick={() => handleDestinationClick(destinationData.santorini)}
+                                    style={{ cursor: "pointer" }}
+                                >
                                     <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.santorini)}')` }}>
                                         <div className="trip-overlay" />
                                         <span className="trip-percentage">85%</span>
@@ -248,7 +269,11 @@ export default function Dashboard() {
                             )}
 
                             {destinationData.kyoto && (
-                                <div className="suggested-trip">
+                                <div
+                                    className="suggested-trip"
+                                    onClick={() => handleDestinationClick(destinationData.kyoto)}
+                                    style={{ cursor: "pointer" }}
+                                >
                                     <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.kyoto)}')` }}>
                                         <div className="trip-overlay" />
                                         <span className="trip-percentage">81%</span>
@@ -258,7 +283,11 @@ export default function Dashboard() {
                             )}
 
                             {destinationData.prague && (
-                                <div className="suggested-trip">
+                                <div
+                                    className="suggested-trip"
+                                    onClick={() => handleDestinationClick(destinationData.prague)}
+                                    style={{ cursor: "pointer" }}
+                                >
                                     <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.prague)}')` }}>
                                         <div className="trip-overlay" />
                                         <span className="trip-percentage">79%</span>
@@ -272,7 +301,11 @@ export default function Dashboard() {
                     {/* My Bookings */}
                     <div className="bookings-section">
                         <h3 className="sidebar-title">My Bookings</h3>
-                        <div className="booking-card">
+                        <div
+                            className="booking-card"
+                            onClick={() => handleDestinationClick(destinationData.barcelona)}
+                            style={{ cursor: destinationData.barcelona ? "pointer" : "default" }}
+                        >
                             <div className="booking-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.barcelona)}')` }} />
                             <div className="booking-content">
                                 <h4 className="booking-title">{destinationData.barcelona?.name || 'Barcelona'} Adventure</h4>
