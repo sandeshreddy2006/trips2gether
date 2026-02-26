@@ -233,6 +233,12 @@ export default function Profile() {
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
+    // for account deletion
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
+    const [deleteError, setDeleteError] = useState("");
+    const [deleteLoading, setDeleteLoading] = useState(false);
+
     // Load profile from API on component mount
     useEffect(() => {
         const loadProfile = async () => {
@@ -426,6 +432,41 @@ export default function Profile() {
 
     const handleInputChange = (field: string, value: string | number) => {
         setEditData({ ...editData, [field]: value });
+    };
+
+    const handleDeleteAccount = async () => {
+        setDeleteError("");
+
+        if (!deleteConfirmEmail.trim()) {
+            setDeleteError("Please enter your email to confirm.");
+            return;
+        }
+
+        if (deleteConfirmEmail.trim().toLowerCase() !== (profile.email || user?.email || "").toLowerCase()) {
+            setDeleteError("Email does not match your account email.");
+            return;
+        }
+
+        setDeleteLoading(true);
+        try {
+          const res = await fetch(`/api/auth/delete-account`, {
+            method: "DELETE",
+            credentials: "include",
+        });
+        
+        if (!res.ok) {
+            const data = await res.json();
+            setDeleteError(data.detail || "Failed to delete account.");
+            setDeleteLoading(false);
+            return;
+        }
+
+        // Session is invalidated server-side; redirect to landing page
+        window.location.href = "/";
+        } catch {
+            setDeleteError("Network error. Please try again.");
+            setDeleteLoading(false);
+        }
     };
 
     const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1096,6 +1137,64 @@ export default function Profile() {
                     </div>
                 </div>
             </div>
+
+            {/* Danger Zone */}
+            <div className="danger-zone-section">
+                <h3 className="danger-zone-title">Danger Zone</h3>
+                <p className="danger-zone-description">
+                    Permanently delete your account and all associated data. This action cannot be undone.
+                </p>
+                <button
+                    className="delete-account-btn"
+                    onClick={() => {
+                        setShowDeleteModal(true);
+                        setDeleteConfirmEmail("");
+                        setDeleteError("");
+                    }}
+                >
+                    Delete My Account
+                </button>
+            </div>
+
+            {/* Delete Account Confirmation Modal */}
+            {showDeleteModal && (
+                <div className="modal-overlay">
+                    <div className="modal-container">
+                        <h2 className="modal-title">Delete Account</h2>
+                        <p className="modal-body-text">
+                            This will <strong>permanently delete</strong> your account, profile, and all associated data.
+                            You will receive a confirmation email. This cannot be undone.
+                        </p>
+                        <p className="modal-body-text">
+                            To confirm, type your account email: <strong>{profile.email || user?.email}</strong>
+                        </p>
+                        <input
+                            type="email"
+                            className="form-input"
+                            placeholder="Enter your email"
+                            value={deleteConfirmEmail}
+                            onChange={(e) => setDeleteConfirmEmail(e.target.value)}
+                        />
+                        {deleteError && <p className="form-error">{deleteError}</p>}
+                        <div className="modal-actions">
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setShowDeleteModal(false)}
+                                disabled={deleteLoading}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="delete-account-btn"
+                                onClick={handleDeleteAccount}
+                                disabled={deleteLoading}
+                            >
+                                {deleteLoading ? "Deleting..." : "Yes, Delete My Account"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {addModalOpen && (
                 <div className="friends-modal-overlay" role="dialog" aria-modal="true">

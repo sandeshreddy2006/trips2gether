@@ -672,3 +672,132 @@ def get_email_verification_template(name: str, verification_code: str, verificat
     </body>
     </html>
     """
+
+
+def get_account_deletion_email_template(name: str, deleted_at: str) -> str:
+    """HTML email template sent after permanent account deletion."""
+    logo_url = get_logo_url()
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+                background: #f5f5f5;
+            }}
+            .container {{
+                max-width: 600px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            }}
+            .header {{
+                background: linear-gradient(135deg, #7b2d2d 0%, #c53030 100%);
+                padding: 40px;
+                text-align: center;
+                color: white;
+            }}
+            .logo {{
+                max-width: 150px;
+                height: auto;
+                margin-bottom: 16px;
+            }}
+            .header h1 {{
+                margin: 0;
+                font-size: 26px;
+                font-weight: 700;
+            }}
+            .header p {{
+                margin: 8px 0 0 0;
+                font-size: 14px;
+                opacity: 0.9;
+            }}
+            .content {{
+                padding: 40px;
+                color: #333;
+            }}
+            .greeting {{
+                font-size: 20px;
+                font-weight: 600;
+                margin-bottom: 16px;
+                color: #7b2d2d;
+            }}
+            .message {{
+                font-size: 15px;
+                line-height: 1.6;
+                color: #555;
+                margin: 16px 0;
+            }}
+            .info-box {{
+                background: #fff5f5;
+                border: 1px solid #feb2b2;
+                padding: 20px 24px;
+                border-radius: 8px;
+                margin: 24px 0;
+                font-size: 14px;
+                color: #742a2a;
+            }}
+            .info-box strong {{
+                display: block;
+                margin-bottom: 6px;
+                font-size: 15px;
+            }}
+            .footer {{
+                background: #f5f5f5;
+                padding: 20px 40px;
+                text-align: center;
+                font-size: 12px;
+                color: #999;
+                border-top: 1px solid #e0e0e0;
+            }}
+            .footer p {{
+                margin: 4px 0;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <img src="{logo_url}" alt="Trips2gether" class="logo">
+                <h1>Account Deleted</h1>
+                <p>We're sorry to see you go</p>
+            </div>
+
+            <div class="content">
+                <div class="greeting">Goodbye, {name}.</div>
+
+                <div class="message">
+                    This email confirms that your Trips2gether account has been <strong>permanently deleted</strong>.
+                    All of your data — including your profile, preferences, group memberships, and friendships — has been removed from our systems.
+                </div>
+
+                <div class="info-box">
+                    <strong>Deletion confirmed</strong>
+                    Timestamp: {deleted_at}
+                </div>
+
+                <div class="message">
+                    If you did <strong>not</strong> request this deletion, please contact our support team immediately.
+                </div>
+
+                <div class="message" style="margin-top: 24px; color: #999; font-size: 14px;">
+                    You're always welcome to create a new account at trips2gether.com.<br><br>
+                    — The Trips2gether Team
+                </div>
+            </div>
+
+            <div class="footer">
+                <p><strong>Trips2gether</strong> © 2026</p>
+                <p>Made with ❤ for travelers, by travelers</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
