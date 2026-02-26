@@ -23,6 +23,7 @@ from .schemas import (
     GroupAddMembersIn,
     GroupMemberOut,
     GroupMemberListOut,
+    GroupUpdateRoleIn,
     ProfileOut, 
     ProfileUpdate,
     DestinationSearchResponse,
@@ -1040,6 +1041,101 @@ def remove_group_member(
     db.commit()
 
     return {"ok": True, "message": "Member removed from group"}
+
+
+@app.post("/groups/{group_id}/leave", response_model=dict)
+def leave_group(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Leave a group. Owners cannot leave — they must delete the group instead."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=404, detail="You are not a member of this group")
+
+    if my_membership.role == "owner":
+        raise HTTPException(status_code=400, detail="Owner cannot leave the group. Delete the group instead.")
+
+    db.delete(my_membership)
+    db.commit()
+
+    return {"ok": True, "message": "You have left the group"}
+
+
+@app.delete("/groups/{group_id}", response_model=dict)
+def delete_group(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Delete a group entirely. Only the owner can delete."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+    if my_membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the group owner can delete the group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    db.delete(group)
+    db.commit()
+
+    return {"ok": True, "message": "Group deleted"}
+
+
+@app.patch("/groups/{group_id}/members/{user_id}/role", response_model=dict)
+def update_member_role(
+    group_id: int, user_id: int, body: GroupUpdateRoleIn, request: Request, db: Session = Depends(get_db)
+):
+    """Update a member's role. Only the owner can change roles."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+    if my_membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the group owner can change roles")
+
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Owner cannot change their own role")
+
+    target = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id,
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Member not found in this group")
+
+    target.role = body.role
+    db.commit()
+
+    return {"ok": True, "message": f"Role updated to {body.role}"}
+
+
 # Profile Endpoints
 
 @app.get("/profile/get", response_model=ProfileOut)

@@ -113,6 +113,12 @@ class GroupAddMembersIn(BaseModel):
 
 class GroupMemberListOut(BaseModel):
     members: list[GroupMemberOut]
+
+
+class GroupUpdateRoleIn(BaseModel):
+    role: Literal["member", "admin", "viewer"]
+
+
 class ProfileOut(BaseModel):
     id: int
     user_id: int
