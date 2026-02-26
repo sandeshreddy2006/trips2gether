@@ -352,9 +352,10 @@ export default function Profile() {
                 if (editData.username.length > 100) {
                     throw new Error("Username must be 100 characters or less");
                 }
-                // Validate email
-                if (!editData.email || !editData.email.endsWith("@gmail.com")) {
-                    throw new Error("Email is invalid!");
+                // Validate email - basic email format check
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!editData.email || !emailRegex.test(editData.email)) {
+                    throw new Error("Please enter a valid email address");
                 }
                 // Validate bio
                 if (editData.bio && editData.bio.length > 500) {
@@ -449,20 +450,20 @@ export default function Profile() {
 
         setDeleteLoading(true);
         try {
-          const res = await fetch(`/api/auth/delete-account`, {
-            method: "DELETE",
-            credentials: "include",
-        });
-        
-        if (!res.ok) {
-            const data = await res.json();
-            setDeleteError(data.detail || "Failed to delete account.");
-            setDeleteLoading(false);
-            return;
-        }
+            const res = await fetch(`/api/auth/delete-account`, {
+                method: "DELETE",
+                credentials: "include",
+            });
 
-        // Session is invalidated server-side; redirect to landing page
-        window.location.href = "/";
+            if (!res.ok) {
+                const data = await res.json();
+                setDeleteError(data.detail || "Failed to delete account.");
+                setDeleteLoading(false);
+                return;
+            }
+
+            // Session is invalidated server-side; redirect to landing page
+            window.location.href = "/";
         } catch {
             setDeleteError("Network error. Please try again.");
             setDeleteLoading(false);
