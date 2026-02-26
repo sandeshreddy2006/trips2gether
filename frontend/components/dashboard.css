@@ -28,25 +28,28 @@
 }
 
 .action-btn {
-    padding: 1rem;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    background: white;
+    padding: 0.75rem 1rem;
+    border: 2px solid rgba(45, 122, 74, 0.3);
+    border-radius: 12px;
+    background: rgba(45, 122, 74, 0.08);
     cursor: pointer;
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     transition: all 0.3s ease;
     text-align: center;
+    color: #1a1a1a;
 }
 
 .action-btn:hover {
-    background-color: #f9f9f9;
-    border-color: #999;
+    background-color: rgba(45, 122, 74, 0.15);
+    color: #1a1a1a;
+    border-color: rgba(45, 122, 74, 0.6);
     transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(45, 122, 74, 0.15);
 }
 
 .btn-icon {
@@ -71,13 +74,19 @@
 }
 
 .dashboard-btn {
-    background: #2d7a4a;
-    color: white;
-    border: none;
+    background: rgba(45, 122, 74, 0.3);
+    color: #1a1a1a;
+    border-color: rgba(45, 122, 74, 0.7);
+    font-weight: 700;
+    box-shadow: 0 0 0 3px rgba(45, 122, 74, 0.1);
 }
 
 .dashboard-btn:hover {
-    background: #245c3a;
+    background: rgba(45, 122, 74, 0.35);
+    border-color: rgba(45, 122, 74, 0.8);
+    color: #1a1a1a;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(45, 122, 74, 0.2);
 }
 
 .create-poll-btn:hover,
@@ -85,8 +94,11 @@
 .explore-hotels-btn:hover,
 .more-recommend-btn:hover,
 .filter-btn:hover {
-    border-color: #2d7a4a;
-    background-color: #f0f5f2;
+    background-color: rgba(45, 122, 74, 0.15);
+    color: #1a1a1a;
+    border-color: rgba(45, 122, 74, 0.6);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(45, 122, 74, 0.15);
 }
 
 /* Dashboard Grid */
@@ -266,10 +278,10 @@
 }
 
 .poll-card {
-    background: white;
+    background: #2a3f35;
     padding: 1.5rem;
     border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -279,12 +291,12 @@
     font-size: 1rem;
     font-weight: 600;
     margin: 0;
-    color: #1a1a1a;
+    color: #ffffff;
 }
 
 .poll-time {
     font-size: 0.85rem;
-    color: #999;
+    color: #b0b8b5;
     font-weight: 500;
 }
 
@@ -300,6 +312,7 @@
     gap: 0.8rem;
     cursor: pointer;
     font-size: 0.95rem;
+    color: #e8f5e9;
 }
 
 .poll-option input[type="radio"] {
@@ -503,25 +516,210 @@
 
 .active-trip-meta {
     display: flex;
-    gap: 0.75rem;
-    font-size: 0.8rem;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.active-trip-status {
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: capitalize;
+}
+
+.status-planning {
+    background-color: #fff3e0;
+    color: #e65100;
+}
+
+.status-confirmed {
+    background-color: #e8f5e9;
+    color: #2d7a4a;
+}
+
+.status-finalized {
+    background-color: #e3f2fd;
+    color: #1565c0;
 }
 
 .active-trip-role {
-    padding: 0.25rem 0.6rem;
+    padding: 0.2rem 0.5rem;
     border-radius: 12px;
     background-color: #e8f5e9;
     color: #2d7a4a;
     font-weight: 600;
+    font-size: 0.75rem;
     text-transform: capitalize;
 }
 
 .active-trip-members {
-    padding: 0.25rem 0.6rem;
+    padding: 0.2rem 0.5rem;
     border-radius: 12px;
     background-color: #f0f0f0;
     color: #555;
     font-weight: 500;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+/* Upcoming Trips Section */
+.upcoming-trips-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.upcoming-trips-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 0;
+    color: #1a1a1a;
+}
+
+.upcoming-trips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.destination-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: pointer;
+}
+
+.destination-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+.destination-card .trip-image {
+    width: 100%;
+    height: 200px;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+}
+
+.destination-card .trip-content {
+    padding: 1.25rem;
+}
+
+.destination-card .trip-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    color: #1a1a1a;
+}
+
+.destination-card .trip-location {
+    font-size: 0.9rem;
+    color: #666;
+    margin: 0.25rem 0;
+}
+
+.destination-card .trip-rating {
+    font-size: 0.9rem;
+    color: #2d7a4a;
+    font-weight: 600;
+    margin: 0.25rem 0;
+}
+
+.destination-card .trip-dates {
+    font-size: 0.85rem;
+    color: #999;
+    margin: 0.5rem 0 0 0;
+}
+
+/* Active Groups Section */
+.active-groups-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.active-groups-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+    color: #1a1a1a;
+}
+
+.active-groups-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
+.active-group-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.75rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border-left: 4px solid #2d7a4a;
+}
+
+.active-group-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.active-group-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0;
+    color: #1a1a1a;
+}
+
+.active-group-desc {
+    font-size: 0.8rem;
+    color: #666;
+    margin: 0.25rem 0 0 0;
+}
+
+.active-group-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+}
+
+.active-group-status {
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: capitalize;
+}
+
+.active-group-role {
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    background-color: #e8f5e9;
+    color: #2d7a4a;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: capitalize;
+}
+
+.active-group-members {
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    background-color: #f0f0f0;
+    color: #555;
+    font-weight: 500;
+    font-size: 0.7rem;
 }
 
 /* Responsive Design */

@@ -90,6 +90,7 @@ class GroupOut(BaseModel):
     id: int
     name: str
     description: str | None = None
+    status: str = "planning"
     created_by: int
     created_at: datetime | None = None
     member_count: int = 0
@@ -100,12 +101,24 @@ class GroupListOut(BaseModel):
     groups: list[GroupOut]
 
 
+class GroupUpdateIn(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = None
+    status: Literal["planning", "confirmed", "finalized"] | None = None
+
+
 class GroupAddMembersIn(BaseModel):
     user_ids: list[int] = Field(min_length=1, description="List of user IDs to invite")
 
 
 class GroupMemberListOut(BaseModel):
     members: list[GroupMemberOut]
+
+
+class GroupUpdateRoleIn(BaseModel):
+    role: Literal["member", "admin", "viewer"]
+
+
 class ProfileOut(BaseModel):
     id: int
     user_id: int
@@ -156,3 +169,36 @@ class ProfileUpdate(BaseModel):
             if info.data['budget_min'] > v:
                 raise ValueError('Minimum budget cannot be greater than maximum budget')
         return v
+
+
+# -------------------------
+# Destination Search Schemas
+# -------------------------
+
+class DestinationLocation(BaseModel):
+    """Geographic location of a destination"""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class DestinationOut(BaseModel):
+    """Individual destination result"""
+    place_id: str
+    name: str
+    address: Optional[str] = None
+    rating: Optional[float] = None
+    user_ratings_total: Optional[int] = None
+    types: List[str] = []
+    photo_url: Optional[str] = None
+    photo_reference: Optional[str] = None
+    location: Optional[DestinationLocation] = None
+    business_status: Optional[str] = None
+
+
+class DestinationSearchResponse(BaseModel):
+    """Response for destination search"""
+    status: str  # "success" or "error"
+    results: List[DestinationOut]
+    message: Optional[str] = None
+    cached: Optional[bool] = False
+    dummy: Optional[bool] = False

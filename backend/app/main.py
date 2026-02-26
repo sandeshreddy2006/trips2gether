@@ -19,11 +19,14 @@ from .schemas import (
     GroupCreateIn,
     GroupOut,
     GroupListOut,
+    GroupUpdateIn,
     GroupAddMembersIn,
     GroupMemberOut,
     GroupMemberListOut,
+    GroupUpdateRoleIn,
     ProfileOut, 
     ProfileUpdate,
+    DestinationSearchResponse,
 )
 from .auth import (
     hash_password,
@@ -36,6 +39,7 @@ from .auth import (
 )
 from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
+from .google_places import get_places_service
 from jose import JWTError
 import os
 import requests
@@ -48,6 +52,7 @@ print("[Startup] Running Base.metadata.create_all...")
 
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
+
 
 app = FastAPI(title="trips2gether API")
 
@@ -727,6 +732,7 @@ def create_group(body: GroupCreateIn, request: Request, db: Session = Depends(ge
             "id": group.id,
             "name": group.name,
             "description": group.description,
+            "status": group.status,
             "created_by": group.created_by,
             "created_at": group.created_at.isoformat() if group.created_at else None,
             "member_count": 1,
@@ -769,6 +775,7 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
                 id=g.id,
                 name=g.name,
                 description=g.description,
+                status=g.status,
                 created_by=g.created_by,
                 created_at=g.created_at,
                 member_count=member_counts.get(g.id, 0),
@@ -777,6 +784,97 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
         )
 
     return {"groups": result}
+
+
+@app.get("/groups/{group_id}", response_model=dict)
+def get_group_detail(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Get full group metadata including members. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    member_count = (
+        db.query(func.count(models.GroupMember.id))
+        .filter(models.GroupMember.group_id == group_id)
+        .scalar()
+    )
+
+    return {
+        "id": group.id,
+        "name": group.name,
+        "description": group.description,
+        "status": group.status,
+        "created_by": group.created_by,
+        "created_at": group.created_at.isoformat() if group.created_at else None,
+        "member_count": member_count,
+        "role": my_membership.role,
+    }
+
+
+@app.patch("/groups/{group_id}", response_model=dict)
+def update_group(group_id: int, body: GroupUpdateIn, request: Request, db: Session = Depends(get_db)):
+    """Update group name, description, or status. Only the owner can edit."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+    if my_membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the group owner can edit group details")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if body.name is not None:
+        group.name = body.name.strip()
+    if body.description is not None:
+        group.description = body.description.strip() or None
+    if body.status is not None:
+        group.status = body.status
+
+    db.commit()
+    db.refresh(group)
+
+    member_count = (
+        db.query(func.count(models.GroupMember.id))
+        .filter(models.GroupMember.group_id == group_id)
+        .scalar()
+    )
+
+    return {
+        "ok": True,
+        "group": {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "status": group.status,
+            "created_by": group.created_by,
+            "created_at": group.created_at.isoformat() if group.created_at else None,
+            "member_count": member_count,
+            "role": my_membership.role,
+        },
+    }
 
 
 @app.get("/groups/{group_id}/members", response_model=GroupMemberListOut)
@@ -944,6 +1042,101 @@ def remove_group_member(
     db.commit()
 
     return {"ok": True, "message": "Member removed from group"}
+
+
+@app.post("/groups/{group_id}/leave", response_model=dict)
+def leave_group(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Leave a group. Owners cannot leave — they must delete the group instead."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=404, detail="You are not a member of this group")
+
+    if my_membership.role == "owner":
+        raise HTTPException(status_code=400, detail="Owner cannot leave the group. Delete the group instead.")
+
+    db.delete(my_membership)
+    db.commit()
+
+    return {"ok": True, "message": "You have left the group"}
+
+
+@app.delete("/groups/{group_id}", response_model=dict)
+def delete_group(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Delete a group entirely. Only the owner can delete."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+    if my_membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the group owner can delete the group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    db.delete(group)
+    db.commit()
+
+    return {"ok": True, "message": "Group deleted"}
+
+
+@app.patch("/groups/{group_id}/members/{user_id}/role", response_model=dict)
+def update_member_role(
+    group_id: int, user_id: int, body: GroupUpdateRoleIn, request: Request, db: Session = Depends(get_db)
+):
+    """Update a member's role. Only the owner can change roles."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+    if my_membership.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the group owner can change roles")
+
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Owner cannot change their own role")
+
+    target = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id,
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Member not found in this group")
+
+    target.role = body.role
+    db.commit()
+
+    return {"ok": True, "message": f"Role updated to {body.role}"}
+
+
 # Profile Endpoints
 
 @app.get("/profile/get", response_model=ProfileOut)
@@ -1055,3 +1248,134 @@ async def upload_avatar(file: UploadFile = File(...), request: Request = None, d
         "avatar_url": image_url,
         "profile": profile
     }
+
+
+# -------------------------
+# Destination Search Endpoints
+# -------------------------
+
+@app.get("/destinations/search", response_model=DestinationSearchResponse)
+def search_destinations(query: str = "", db: Session = Depends(get_db)):
+    """
+    Search for travel destinations using Google Places API
+    
+    Query parameters:
+    - query: Search string (e.g., "Paris", "beach destinations", "Tokyo")
+    
+    Returns:
+    - List of matching destinations with details
+    - Error message if search fails
+    - "No destinations found" if no results
+    """
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="Search query is required")
+    
+    try:
+        places_service = get_places_service()
+        result = places_service.search_destinations(query.strip())
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result.get("message", "Search failed"))
+        
+        return DestinationSearchResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An unexpected error occurred while searching for destinations: {str(e)}"
+        )
+
+
+@app.get("/destinations/photo")
+def get_destination_photo(
+    photo_reference: str,
+    width: int = 800,
+    height: int = 600,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a destination photo URL with custom dimensions
+    
+    Query parameters:
+    - photo_reference: Photo reference from Google Places API (required)
+    - width: Desired image width in pixels (default: 800)
+    - height: Desired image height in pixels (default: 600)
+    
+    Returns:
+    - photo_url: Full URL to the image with specified dimensions
+    """
+    if not photo_reference or not photo_reference.strip():
+        raise HTTPException(status_code=400, detail="photo_reference is required")
+    
+    try:
+        places_service = get_places_service()
+        photo_url = places_service.get_photo_url(
+            photo_reference.strip(),
+            width=max(100, min(width, 2000)),  # Clamp between 100 and 2000px
+            height=max(100, min(height, 2000))  # Clamp between 100 and 2000px
+        )
+        
+        if not photo_url:
+            raise HTTPException(status_code=500, detail="Failed to generate photo URL")
+        
+        return {"photo_url": photo_url}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@app.get("/destinations/image")
+def get_destination_image(
+    photo_reference: str,
+    width: int = 800,
+    height: int = 600
+):
+    """
+    Proxy endpoint for Google Places images.
+    Fetches image from Google Places and returns it with proper CORS headers.
+    This avoids Safari's tracking prevention from blocking third-party images.
+    """
+    if not photo_reference or not photo_reference.strip():
+        raise HTTPException(status_code=400, detail="photo_reference is required")
+    
+    try:
+        places_service = get_places_service()
+        photo_url = places_service.get_photo_url(
+            photo_reference.strip(),
+            width=max(100, min(width, 2000)),
+            height=max(100, min(height, 2000))
+        )
+        
+        if not photo_url:
+            raise HTTPException(status_code=500, detail="Failed to generate photo URL")
+        
+        # Fetch the image from Google Places
+        import requests as req
+        response = req.get(photo_url, timeout=10)
+        
+        if not response.ok:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch image from Google")
+        
+        # Return image with proper headers for Safari compatibility
+        return Response(
+            content=response.content,
+            media_type=response.headers.get('content-type', 'image/jpeg'),
+            headers={
+                "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
