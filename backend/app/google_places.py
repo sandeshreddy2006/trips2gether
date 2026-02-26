@@ -162,8 +162,8 @@ class GooglePlacesService:
             if place.get("photos") and len(place["photos"]) > 0:
                 photo_ref = place["photos"][0].get("name")
                 if photo_ref and self.api_key:
-                    # New API uses a different photo endpoint
-                    photo_url = f"{self.BASE_URL}/{photo_ref}/media?maxHeightPx=400&maxWidthPx=400&key={self.api_key}"
+                    # Generate high-quality photo URL for default display (800x600)
+                    photo_url = self.get_photo_url(photo_ref, width=800, height=600)
             
             formatted.append({
                 "place_id": place.get("id") or place.get("name", ""),
@@ -181,6 +181,23 @@ class GooglePlacesService:
             })
         
         return formatted
+    
+    def get_photo_url(self, photo_reference: str, width: int = 400, height: int = 400) -> Optional[str]:
+        """
+        Generate a photo URL with custom dimensions for the given photo reference.
+        
+        Args:
+            photo_reference: Photo reference from Google Places API response
+            width: Desired image width in pixels (maxWidthPx)
+            height: Desired image height in pixels (maxHeightPx)
+        
+        Returns:
+            Full photo URL with specified dimensions, or None if API key not configured
+        """
+        if not self.api_key or not photo_reference:
+            return None
+        
+        return f"{self.BASE_URL}/{photo_reference}/media?maxHeightPx={height}&maxWidthPx={width}&key={self.api_key}"
     
     def _get_dummy_data(self, query: str) -> Dict[str, Any]:
         """

@@ -1285,3 +1285,46 @@ def search_destinations(query: str = "", db: Session = Depends(get_db)):
             status_code=500, 
             detail=f"An unexpected error occurred while searching for destinations: {str(e)}"
         )
+
+
+@app.get("/destinations/photo")
+def get_destination_photo(
+    photo_reference: str,
+    width: int = 800,
+    height: int = 600,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a destination photo URL with custom dimensions
+    
+    Query parameters:
+    - photo_reference: Photo reference from Google Places API (required)
+    - width: Desired image width in pixels (default: 800)
+    - height: Desired image height in pixels (default: 600)
+    
+    Returns:
+    - photo_url: Full URL to the image with specified dimensions
+    """
+    if not photo_reference or not photo_reference.strip():
+        raise HTTPException(status_code=400, detail="photo_reference is required")
+    
+    try:
+        places_service = get_places_service()
+        photo_url = places_service.get_photo_url(
+            photo_reference.strip(),
+            width=max(100, min(width, 2000)),  # Clamp between 100 and 2000px
+            height=max(100, min(height, 2000))  # Clamp between 100 and 2000px
+        )
+        
+        if not photo_url:
+            raise HTTPException(status_code=500, detail="Failed to generate photo URL")
+        
+        return {"photo_url": photo_url}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
