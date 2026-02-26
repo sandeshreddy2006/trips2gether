@@ -84,6 +84,7 @@ class GroupMemberOut(BaseModel):
     name: str
     email: str
     role: str
+    avatar_url: str | None = None
 
 
 class GroupOut(BaseModel):
