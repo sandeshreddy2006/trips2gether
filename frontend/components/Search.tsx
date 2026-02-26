@@ -15,7 +15,7 @@ export default function Search({ placeholder }: { placeholder?: string }) {
     };
 
     return (
-        <form onSubmit={handleSearch} className="relative w-[420px]">
+        <form onSubmit={handleSearch} className="relative w-full min-w-[300px] max-w-[860px]">
             <input
                 type="text"
                 placeholder={placeholder}
