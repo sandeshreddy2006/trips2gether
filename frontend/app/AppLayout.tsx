@@ -213,7 +213,7 @@ export default function AppLayout({
 
                     <div className="nav-section">
                         <a href="#" className="nav-item balance-item">
-                            <span className="nav-icon">💰</span>
+                            <span className="nav-icon">$</span>
                             <span className="balance-text">
                                 <span className="balance-label">Balance</span>
                                 <span className="balance-amount">$85.20</span>
