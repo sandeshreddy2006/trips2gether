@@ -169,6 +169,10 @@ export default function AppLayout({
                     </div>
 
                     <div className="nav-section">
+                        <a href="/explore" className="nav-item">
+                            <span className="nav-icon">🔍</span>
+                            <span>Explore Destinations</span>
+                        </a>
                         <a href="#" className="nav-item">
                             <img src="/flight.svg" alt="My Trips" className="nav-icon" />
                             <span>My Trips</span>
