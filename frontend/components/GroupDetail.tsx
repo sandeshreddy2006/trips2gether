@@ -99,6 +99,60 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
         }
     }
 
+    async function handleLeaveGroup() {
+        if (!confirm("Are you sure you want to leave this group?")) return;
+        try {
+            const res = await fetch(`/api/groups/${groupId}/leave`, {
+                method: "POST",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to leave group");
+            }
+            router.push("/");
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to leave group");
+        }
+    }
+
+    async function handleDeleteGroup() {
+        if (!confirm("Are you sure you want to delete this group? This cannot be undone.")) return;
+        try {
+            const res = await fetch(`/api/groups/${groupId}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to delete group");
+            }
+            router.push("/");
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to delete group");
+        }
+    }
+
+    async function handleRoleChange(userId: number, newRole: string) {
+        try {
+            const res = await fetch(`/api/groups/${groupId}/members/${userId}/role`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ role: newRole }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to update role");
+            }
+            setMembers((prev) =>
+                prev.map((m) => (m.user_id === userId ? { ...m, role: newRole } : m))
+            );
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to update role");
+        }
+    }
+
     function startEditing() {
         if (!group) return;
         setEditName(group.name);
@@ -236,16 +290,28 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                 </div>
                             </div>
                             <div className="group-member-actions">
-                                <span className={`group-member-role ${m.role === "owner" ? "role-owner" : ""}`}>
-                                    {m.role}
-                                </span>
-                                {isOwner && m.role !== "owner" && (
-                                    <button
-                                        className="group-remove-btn"
-                                        onClick={() => handleRemoveMember(m.user_id)}
-                                    >
-                                        Remove
-                                    </button>
+                                {isOwner && m.role !== "owner" ? (
+                                    <>
+                                        <select
+                                            className="group-role-select"
+                                            value={m.role}
+                                            onChange={(e) => handleRoleChange(m.user_id, e.target.value)}
+                                        >
+                                            <option value="member">Member</option>
+                                            <option value="admin">Admin</option>
+                                            <option value="viewer">Viewer</option>
+                                        </select>
+                                        <button
+                                            className="group-remove-btn"
+                                            onClick={() => handleRemoveMember(m.user_id)}
+                                        >
+                                            Remove
+                                        </button>
+                                    </>
+                                ) : (
+                                    <span className={`group-member-role ${m.role === "owner" ? "role-owner" : ""}`}>
+                                        {m.role}
+                                    </span>
                                 )}
                             </div>
                         </div>
@@ -281,6 +347,18 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                     </button>
                 </div>
             )}
+
+            <div className="group-danger-zone">
+                {isOwner ? (
+                    <button className="group-delete-btn" onClick={handleDeleteGroup}>
+                        Delete Group
+                    </button>
+                ) : (
+                    <button className="group-leave-btn" onClick={handleLeaveGroup}>
+                        Leave Group
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
