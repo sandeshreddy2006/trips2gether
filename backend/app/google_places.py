@@ -157,13 +157,16 @@ class GooglePlacesService:
         formatted = []
         
         for place in places:
-            # Get photo URL if available
+            # Get photo URL and reference if available
             photo_url = None
+            photo_reference = None
             if place.get("photos") and len(place["photos"]) > 0:
                 photo_ref = place["photos"][0].get("name")
-                if photo_ref and self.api_key:
-                    # Generate high-quality photo URL for default display (800x600)
-                    photo_url = self.get_photo_url(photo_ref, width=800, height=600)
+                if photo_ref:
+                    photo_reference = photo_ref
+                    if self.api_key:
+                        # Generate high-quality photo URL for default display (800x600)
+                        photo_url = self.get_photo_url(photo_ref, width=800, height=600)
             
             formatted.append({
                 "place_id": place.get("id") or place.get("name", ""),
@@ -173,6 +176,7 @@ class GooglePlacesService:
                 "user_ratings_total": place.get("userRatingCount"),
                 "types": place.get("types", []),
                 "photo_url": photo_url,
+                "photo_reference": photo_reference,
                 "location": {
                     "lat": place.get("location", {}).get("latitude"),
                     "lng": place.get("location", {}).get("longitude")

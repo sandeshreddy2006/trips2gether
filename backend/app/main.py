@@ -1329,3 +1329,53 @@ def get_destination_photo(
             status_code=500, 
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
+@app.get("/destinations/image")
+def get_destination_image(
+    photo_reference: str,
+    width: int = 800,
+    height: int = 600
+):
+    """
+    Proxy endpoint for Google Places images.
+    Fetches image from Google Places and returns it with proper CORS headers.
+    This avoids Safari's tracking prevention from blocking third-party images.
+    """
+    if not photo_reference or not photo_reference.strip():
+        raise HTTPException(status_code=400, detail="photo_reference is required")
+    
+    try:
+        places_service = get_places_service()
+        photo_url = places_service.get_photo_url(
+            photo_reference.strip(),
+            width=max(100, min(width, 2000)),
+            height=max(100, min(height, 2000))
+        )
+        
+        if not photo_url:
+            raise HTTPException(status_code=500, detail="Failed to generate photo URL")
+        
+        # Fetch the image from Google Places
+        import requests as req
+        response = req.get(photo_url, timeout=10)
+        
+        if not response.ok:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch image from Google")
+        
+        # Return image with proper headers for Safari compatibility
+        return Response(
+            content=response.content,
+            media_type=response.headers.get('content-type', 'image/jpeg'),
+            headers={
+                "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
