@@ -1,12 +1,155 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as faceapi from 'face-api.js';
+
+type LivenessAction = 'nod' | 'open_mouth';
 
 interface FaceVerificationLoginProps {
     onSuccess: () => void;
     onSkip: () => void;
 }
+
+interface FaceDetectionWithDescriptor {
+    detection: {
+        box: {
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+        };
+    };
+    descriptor: Float32Array;
+    landmarks: {
+        getMouth: () => faceapi.Point[];
+        getNose: () => faceapi.Point[];
+        getLeftEye: () => faceapi.Point[];
+        getRightEye: () => faceapi.Point[];
+    };
+}
+
+interface FaceAlignmentResult {
+    ok: boolean;
+    message: string;
+}
+
+const LOGIN_CAPTURE_WINDOW_MS = 10000;
+const LOGIN_MIN_CAPTURED_FRAMES = 12;
+const LOGIN_MAX_CAPTURED_FRAMES = 300;
+const MOUTH_OPEN_THRESHOLD = 0.3;
+const MOUTH_OPEN_REQUIRED_FRAMES = 3;
+const NOD_RANGE_THRESHOLD = 0.08;
+
+const randomLivenessAction = (): LivenessAction => (
+    Math.random() < 0.5 ? 'nod' : 'open_mouth'
+);
+
+const getLivenessInstruction = (action: LivenessAction): string => (
+    action === 'nod'
+        ? 'Liveness check: nod your head slowly.'
+        : 'Liveness check: open your mouth for a moment.'
+);
+
+const distance = (a: faceapi.Point, b: faceapi.Point): number => Math.hypot(a.x - b.x, a.y - b.y);
+
+const averageDescriptors = (descriptors: number[][]): number[] => {
+    if (descriptors.length === 0) {
+        return [];
+    }
+
+    const descriptorLength = descriptors[0].length;
+    const average = new Array<number>(descriptorLength).fill(0);
+
+    for (const descriptor of descriptors) {
+        for (let i = 0; i < descriptorLength; i++) {
+            average[i] += descriptor[i];
+        }
+    }
+
+    for (let i = 0; i < descriptorLength; i++) {
+        average[i] /= descriptors.length;
+    }
+
+    return average;
+};
+
+const getMouthOpenRatio = (detection: FaceDetectionWithDescriptor): number => {
+    const mouth = detection.landmarks.getMouth();
+    if (mouth.length < 19) {
+        return 0;
+    }
+
+    const innerLeft = mouth[12];
+    const innerRight = mouth[16];
+    const innerTop = mouth[14];
+    const innerBottom = mouth[18];
+
+    const horizontal = distance(innerLeft, innerRight);
+    if (horizontal === 0) {
+        return 0;
+    }
+
+    const vertical = distance(innerTop, innerBottom);
+    return vertical / horizontal;
+};
+
+const getNodMetric = (detection: FaceDetectionWithDescriptor): number | null => {
+    const nosePoints = detection.landmarks.getNose();
+    const leftEyePoints = detection.landmarks.getLeftEye();
+    const rightEyePoints = detection.landmarks.getRightEye();
+
+    if (nosePoints.length === 0 || leftEyePoints.length === 0 || rightEyePoints.length === 0) {
+        return null;
+    }
+
+    const noseCenterPoint = nosePoints[Math.floor(nosePoints.length / 2)];
+    const eyePoints = [...leftEyePoints, ...rightEyePoints];
+    const eyeAvgY = eyePoints.reduce((sum, point) => sum + point.y, 0) / eyePoints.length;
+
+    if (detection.detection.box.height === 0) {
+        return null;
+    }
+
+    return (noseCenterPoint.y - eyeAvgY) / detection.detection.box.height;
+};
+
+const evaluateFaceAlignment = (
+    detection: FaceDetectionWithDescriptor,
+    video: HTMLVideoElement
+): FaceAlignmentResult => {
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+
+    if (!videoWidth || !videoHeight) {
+        return { ok: false, message: 'Waiting for camera video stream...' };
+    }
+
+    const box = detection.detection.box;
+    const faceCenterX = box.x + box.width / 2;
+    const faceCenterY = box.y + box.height / 2;
+    const frameCenterX = videoWidth / 2;
+    const frameCenterY = videoHeight / 2;
+
+    const normalizedX = (faceCenterX - frameCenterX) / (videoWidth * 0.22);
+    const normalizedY = (faceCenterY - frameCenterY) / (videoHeight * 0.28);
+    const insideCenterEllipse = normalizedX ** 2 + normalizedY ** 2 <= 1;
+
+    const faceWidthRatio = box.width / videoWidth;
+
+    if (!insideCenterEllipse) {
+        return { ok: false, message: 'Move your face to the center of the oval.' };
+    }
+
+    if (faceWidthRatio < 0.2) {
+        return { ok: false, message: 'Move a little closer to the camera.' };
+    }
+
+    if (faceWidthRatio > 0.65) {
+        return { ok: false, message: 'Move a little farther from the camera.' };
+    }
+
+    return { ok: true, message: '' };
+};
 
 export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerificationLoginProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -17,6 +160,8 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
     const [isCameraSupported, setIsCameraSupported] = useState(true);
     const [verifying, setVerifying] = useState(false);
     const [modelLoaded, setModelLoaded] = useState(false);
+    const [challengeAction, setChallengeAction] = useState<LivenessAction>(randomLivenessAction);
+    const [capturedFrameCount, setCapturedFrameCount] = useState(0);
 
     // Load face-api models
     useEffect(() => {
@@ -24,13 +169,13 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
             try {
                 setStatus('Loading face detection models...');
                 const MODEL_URL = 'https://cdn.jsdelivr.net/gh/vladmandic/face-api@master/model/';
-                console.log('Loading models from:', MODEL_URL);
+
                 await Promise.all([
                     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
                     faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
                     faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
                 ]);
-                console.log('Models loaded successfully');
+
                 setModelLoaded(true);
                 setStatus('Models loaded. Requesting camera access...');
             } catch (err) {
@@ -45,14 +190,14 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
 
     // Request camera access once models are loaded
     useEffect(() => {
-        if (!modelLoaded) return;
+        if (!modelLoaded) {
+            return;
+        }
 
         const requestCamera = async () => {
             try {
                 setStatus('Requesting camera access...');
-                console.log('Requesting camera access');
 
-                // Create a timeout promise to prevent hanging
                 const timeoutPromise = new Promise((_, reject) => {
                     setTimeout(() => reject(new Error('Camera request timeout - please check browser permissions')), 10000);
                 });
@@ -62,25 +207,18 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                         video: {
                             width: { ideal: 640 },
                             height: { ideal: 480 },
-                            facingMode: 'user'
-                        }
+                            facingMode: 'user',
+                        },
                     }),
-                    timeoutPromise
+                    timeoutPromise,
                 ]) as MediaStream;
 
-                console.log('Camera stream obtained:', stream);
-
-                // Set isLoading to false FIRST so video element renders
                 setIsLoading(false);
-                setStatus('Position your face in the center');
+                setStatus('Center your face in the oval to start liveness check.');
 
-                // Then attach stream after a brief delay to ensure video element is in DOM
                 setTimeout(() => {
                     if (videoRef.current) {
                         videoRef.current.srcObject = stream;
-                        console.log('Stream attached to video element');
-                    } else {
-                        console.warn('Video ref is null, could not attach stream');
                     }
                 }, 100);
             } catch (err) {
@@ -100,129 +238,39 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
 
         requestCamera();
 
+        const currentVideo = videoRef.current;
+
         return () => {
-            if (videoRef.current && videoRef.current.srcObject) {
-                const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-                tracks.forEach(track => track.stop());
+            if (currentVideo && currentVideo.srcObject) {
+                const tracks = (currentVideo.srcObject as MediaStream).getTracks();
+                tracks.forEach((track) => track.stop());
             }
         };
     }, [modelLoaded]);
 
-    // Auto-detect and verify face
-    useEffect(() => {
-        if (isLoading || !videoRef.current || verifying || !modelLoaded) {
-            console.log('Face verification detection skip - isLoading:', isLoading, 'videoRef:', !!videoRef.current, 'verifying:', verifying, 'modelLoaded:', modelLoaded);
-            return;
-        }
-
-        let detectionInterval: NodeJS.Timeout;
-        let frameCount = 0;
-        const requiredFrames = 15; // Multiple frames for stability
-        let detectionStarted = false;
-        let readyStateWarningLogged = false;
-
-        const detectAndVerify = async () => {
-            if (!videoRef.current || verifying) {
-                return;
-            }
-
-            // Check if video has enough data to process
-            if (videoRef.current.readyState < 2) {
-                if (!readyStateWarningLogged) {
-                    console.log('Video not ready - readyState:', videoRef.current.readyState, '(need at least 2)');
-                    readyStateWarningLogged = true;
-                }
-                return;
-            }
-
-            if (!detectionStarted) {
-                console.log('✓ Face verification detection started');
-                detectionStarted = true;
-            }
-
-            try {
-                const detection = await faceapi
-                    .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-                    .withFaceLandmarks()
-                    .withFaceDescriptor();
-
-                if (detection) {
-                    frameCount++;
-                    if (frameCount % 3 === 0) {
-                        console.log(`Face verification frame ${frameCount}/${requiredFrames}`);
-                    }
-                    setStatus(`Face detected! Verifying... (${frameCount}/${requiredFrames})`);
-
-                    if (frameCount >= requiredFrames) {
-                        // Send for verification
-                        clearInterval(detectionInterval);
-                        verifyFace(Array.from(detection.descriptor));
-                    }
-                } else {
-                    if (frameCount > 0) {
-                        frameCount = 0;
-                        console.log('Face lost during verification, restarting count...');
-                    }
-                    setStatus('Position your face in the center');
-                }
-            } catch (err) {
-                console.error('Face detection error:', err);
-            }
-        };
-
-        detectionInterval = setInterval(detectAndVerify, 33);
-
-        return () => clearInterval(detectionInterval);
-    }, [isLoading, verifying, modelLoaded]);
-
-    // Stop camera stream
-    const stopCameraStream = () => {
-        console.log('Stopping camera stream...');
+    const stopCameraStream = useCallback(() => {
         if (videoRef.current) {
-            // Stop all tracks
             if (videoRef.current.srcObject) {
                 const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-                tracks.forEach(track => {
-                    track.stop();
-                    console.log('Track stopped:', track.kind);
-                });
+                tracks.forEach((track) => track.stop());
                 videoRef.current.srcObject = null;
             }
-            // Also pause the video
             videoRef.current.pause();
         }
-        console.log('Camera stream fully stopped');
-    };
-
-    // Cleanup on component unmount
-    useEffect(() => {
-        return () => {
-            console.log('Component unmounting, cleaning up camera...');
-            stopCameraStream();
-        };
     }, []);
 
-    // Cleanup on component unmount
     useEffect(() => {
         return () => {
-            console.log('Component unmounting, cleaning up camera...');
             stopCameraStream();
         };
-    }, []);
+    }, [stopCameraStream]);
 
-    // Handle skip - stop camera and close
-    const handleSkip = () => {
-        console.log('Skipping face verification...');
-        stopCameraStream();
-        onSkip();
-    };
-
-    const verifyFace = async (faceEncoding: number[]) => {
+    const verifyFace = useCallback(async (faceEncoding: number[], sampleCount: number) => {
         setVerifying(true);
-        setStatus('Verifying face...');
+        setStatus(`Verifying face using ${sampleCount} frames...`);
 
         try {
-            const response = await fetch(`/api/face-verification/verify`, {
+            const response = await fetch('/api/face-verification/verify', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -234,22 +282,178 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
             const data = await response.json();
 
             if (data.success) {
-                setStatus('✓ Verification successful!');
+                setStatus('Verification successful!');
                 stopCameraStream();
-                setTimeout(onSuccess, 1500);
+                setTimeout(onSuccess, 1000);
             } else {
+                const nextAction = randomLivenessAction();
                 setError(data.message || 'Face verification failed');
-                setStatus('');
+                setChallengeAction(nextAction);
+                setCapturedFrameCount(0);
+                setStatus(`Verification failed. ${getLivenessInstruction(nextAction)}`);
                 setVerifying(false);
             }
         } catch (err) {
+            const nextAction = randomLivenessAction();
             setError(err instanceof Error ? err.message : 'Verification error');
-            setStatus('');
+            setChallengeAction(nextAction);
+            setCapturedFrameCount(0);
+            setStatus(`Verification failed. ${getLivenessInstruction(nextAction)}`);
             setVerifying(false);
         }
+    }, [onSuccess, stopCameraStream]);
+
+    // Detect and verify face with liveness and strict centering
+    useEffect(() => {
+        if (isLoading || !videoRef.current || verifying || !modelLoaded) {
+            return;
+        }
+
+        let detectionInterval: ReturnType<typeof setInterval> | null = null;
+        let detectionInFlight = false;
+        let livenessPassed = false;
+        let mouthOpenStreak = 0;
+        const nodMetrics: number[] = [];
+        let captureStartedAt: number | null = null;
+        const capturedDescriptors: number[][] = [];
+        let missedFrames = 0;
+
+        const resetCapture = () => {
+            captureStartedAt = null;
+            capturedDescriptors.length = 0;
+            setCapturedFrameCount(0);
+        };
+
+        const detectAndVerify = async () => {
+            if (!videoRef.current || !canvasRef.current || verifying || detectionInFlight) {
+                return;
+            }
+
+            if (videoRef.current.readyState < 2) {
+                return;
+            }
+
+            detectionInFlight = true;
+
+            try {
+                const detectionRaw = await faceapi
+                    .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+
+                if (!detectionRaw) {
+                    missedFrames += 1;
+                    if (missedFrames > 3) {
+                        if (captureStartedAt !== null) {
+                            resetCapture();
+                            livenessPassed = false;
+                            mouthOpenStreak = 0;
+                            nodMetrics.length = 0;
+                        }
+                        setStatus(`Face not detected. ${getLivenessInstruction(challengeAction)} Keep centered.`);
+                    }
+                    return;
+                }
+
+                missedFrames = 0;
+
+                const detection = detectionRaw as FaceDetectionWithDescriptor;
+                const alignment = evaluateFaceAlignment(detection, videoRef.current);
+
+                if (!alignment.ok) {
+                    resetCapture();
+                    livenessPassed = false;
+                    mouthOpenStreak = 0;
+                    nodMetrics.length = 0;
+                    setStatus(`${alignment.message} ${getLivenessInstruction(challengeAction)}`);
+                    return;
+                }
+
+                if (!livenessPassed) {
+                    if (challengeAction === 'open_mouth') {
+                        const mouthOpenRatio = getMouthOpenRatio(detection);
+                        mouthOpenStreak = mouthOpenRatio >= MOUTH_OPEN_THRESHOLD ? mouthOpenStreak + 1 : Math.max(0, mouthOpenStreak - 1);
+                        setStatus(`${getLivenessInstruction(challengeAction)} (${mouthOpenStreak}/${MOUTH_OPEN_REQUIRED_FRAMES})`);
+
+                        if (mouthOpenStreak >= MOUTH_OPEN_REQUIRED_FRAMES) {
+                            livenessPassed = true;
+                            setStatus('Liveness confirmed. Collecting verification frames...');
+                        }
+                        return;
+                    }
+
+                    const nodMetric = getNodMetric(detection);
+                    if (nodMetric !== null) {
+                        nodMetrics.push(nodMetric);
+                        if (nodMetrics.length > 30) {
+                            nodMetrics.shift();
+                        }
+                    }
+
+                    const nodRange = nodMetrics.length > 0 ? Math.max(...nodMetrics) - Math.min(...nodMetrics) : 0;
+                    setStatus(`${getLivenessInstruction(challengeAction)} Keep centered.`);
+
+                    if (nodRange >= NOD_RANGE_THRESHOLD && nodMetrics.length >= 8) {
+                        livenessPassed = true;
+                        setStatus('Liveness confirmed. Collecting verification frames...');
+                    }
+                    return;
+                }
+
+                if (captureStartedAt === null) {
+                    captureStartedAt = Date.now();
+                }
+
+                capturedDescriptors.push(Array.from(detection.descriptor));
+
+                if (capturedDescriptors.length === 1 || capturedDescriptors.length % 2 === 0) {
+                    setCapturedFrameCount(capturedDescriptors.length);
+                }
+
+                const elapsedMs = Date.now() - captureStartedAt;
+                const remainingMs = Math.max(0, LOGIN_CAPTURE_WINDOW_MS - elapsedMs);
+                const remainingSeconds = (remainingMs / 1000).toFixed(1);
+
+                setStatus(`Collecting verification frames... ${capturedDescriptors.length} (${remainingSeconds}s left)`);
+
+                if (elapsedMs >= LOGIN_CAPTURE_WINDOW_MS || capturedDescriptors.length >= LOGIN_MAX_CAPTURED_FRAMES) {
+                    if (capturedDescriptors.length < LOGIN_MIN_CAPTURED_FRAMES) {
+                        setStatus(`Need a few more stable frames. ${getLivenessInstruction(challengeAction)}`);
+                        resetCapture();
+                        livenessPassed = false;
+                        mouthOpenStreak = 0;
+                        nodMetrics.length = 0;
+                        return;
+                    }
+
+                    const averagedDescriptor = averageDescriptors(capturedDescriptors);
+                    if (detectionInterval) {
+                        clearInterval(detectionInterval);
+                    }
+
+                    verifyFace(averagedDescriptor, capturedDescriptors.length);
+                }
+            } catch (err) {
+                console.error('Face detection error:', err);
+            } finally {
+                detectionInFlight = false;
+            }
+        };
+
+        detectionInterval = setInterval(detectAndVerify, 40);
+
+        return () => {
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+            }
+        };
+    }, [isLoading, verifying, modelLoaded, challengeAction, verifyFace]);
+
+    const handleSkip = () => {
+        stopCameraStream();
+        onSkip();
     };
 
-    // If camera not supported
     if (!isCameraSupported) {
         return (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -270,13 +474,11 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg max-w-lg w-full overflow-hidden">
-                {/* Header */}
                 <div className="bg-gradient-to-r from-[#1f5632] to-[#2d7a4a] p-6 text-white">
                     <h2 className="text-2xl font-bold">Face Verification</h2>
                     <p className="text-green-100 mt-2">Verify your identity with face recognition</p>
                 </div>
 
-                {/* Content */}
                 <div className="p-6">
                     {isLoading && (
                         <div className="text-center py-12">
@@ -294,6 +496,14 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                                 </div>
                             )}
 
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                <p className="text-blue-800 font-semibold text-sm">Anti-spoof challenge</p>
+                                <p className="text-blue-700 text-sm mt-1">{getLivenessInstruction(challengeAction)}</p>
+                                {capturedFrameCount > 0 && (
+                                    <p className="text-blue-700 text-xs mt-1">Captured frames: {capturedFrameCount}</p>
+                                )}
+                            </div>
+
                             <div className="relative bg-black rounded-lg overflow-hidden" style={{ aspectRatio: '4/3' }}>
                                 <video
                                     ref={videoRef}
@@ -306,7 +516,6 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                                     ref={canvasRef}
                                     className="absolute top-0 left-0 w-full h-full"
                                 />
-                                {/* Face detection guide */}
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                     <div className="relative w-48 h-48">
                                         <svg className="w-full h-full" viewBox="0 0 200 200">
@@ -329,7 +538,6 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                     )}
                 </div>
 
-                {/* Footer */}
                 <div className="bg-gray-50 px-6 py-4 flex gap-3">
                     <button
                         onClick={handleSkip}
