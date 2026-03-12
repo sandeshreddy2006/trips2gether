@@ -33,12 +33,14 @@ interface FaceAlignmentResult {
     message: string;
 }
 
-const LOGIN_CAPTURE_WINDOW_MS = 10000;
+const LOGIN_CAPTURE_WINDOW_MS = 5000;
 const LOGIN_MIN_CAPTURED_FRAMES = 12;
-const LOGIN_MAX_CAPTURED_FRAMES = 300;
+const LOGIN_MAX_CAPTURED_FRAMES = 200;
 const MOUTH_OPEN_THRESHOLD = 0.3;
 const MOUTH_OPEN_REQUIRED_FRAMES = 3;
-const NOD_RANGE_THRESHOLD = 0.08;
+const NOD_RANGE_THRESHOLD = 0.05;
+const NOD_RANGE_THRESHOLD_SMALL_FACE = 0.035;
+const SMALL_FACE_WIDTH_RATIO = 0.18;
 
 const randomLivenessAction = (): LivenessAction => (
     Math.random() < 0.5 ? 'nod' : 'open_mouth'
@@ -130,8 +132,8 @@ const evaluateFaceAlignment = (
     const frameCenterX = videoWidth / 2;
     const frameCenterY = videoHeight / 2;
 
-    const normalizedX = (faceCenterX - frameCenterX) / (videoWidth * 0.22);
-    const normalizedY = (faceCenterY - frameCenterY) / (videoHeight * 0.28);
+    const normalizedX = (faceCenterX - frameCenterX) / (videoWidth * 0.24);
+    const normalizedY = (faceCenterY - frameCenterY) / (videoHeight * 0.34);
     const insideCenterEllipse = normalizedX ** 2 + normalizedY ** 2 <= 1;
 
     const faceWidthRatio = box.width / videoWidth;
@@ -140,7 +142,7 @@ const evaluateFaceAlignment = (
         return { ok: false, message: 'Move your face to the center of the oval.' };
     }
 
-    if (faceWidthRatio < 0.2) {
+    if (faceWidthRatio < 0.15) {
         return { ok: false, message: 'Move a little closer to the camera.' };
     }
 
@@ -391,9 +393,15 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                     }
 
                     const nodRange = nodMetrics.length > 0 ? Math.max(...nodMetrics) - Math.min(...nodMetrics) : 0;
+                    const faceWidthRatio = videoRef.current.videoWidth > 0
+                        ? detection.detection.box.width / videoRef.current.videoWidth
+                        : 0;
+                    const requiredNodRange = faceWidthRatio < SMALL_FACE_WIDTH_RATIO
+                        ? NOD_RANGE_THRESHOLD_SMALL_FACE
+                        : NOD_RANGE_THRESHOLD;
                     setStatus(`${getLivenessInstruction(challengeAction)} Keep centered.`);
 
-                    if (nodRange >= NOD_RANGE_THRESHOLD && nodMetrics.length >= 8) {
+                    if (nodRange >= requiredNodRange && nodMetrics.length >= 6) {
                         livenessPassed = true;
                         setStatus('Liveness confirmed. Collecting verification frames...');
                     }
