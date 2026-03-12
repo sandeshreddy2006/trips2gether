@@ -132,8 +132,8 @@ const evaluateFaceAlignment = (
     const frameCenterX = videoWidth / 2;
     const frameCenterY = videoHeight / 2;
 
-    const normalizedX = (faceCenterX - frameCenterX) / (videoWidth * 0.24);
-    const normalizedY = (faceCenterY - frameCenterY) / (videoHeight * 0.34);
+    const normalizedX = (faceCenterX - frameCenterX) / (videoWidth * 0.36);
+    const normalizedY = (faceCenterY - frameCenterY) / (videoHeight * 0.5);
     const insideCenterEllipse = normalizedX ** 2 + normalizedY ** 2 <= 1;
 
     const faceWidthRatio = box.width / videoWidth;
@@ -142,7 +142,7 @@ const evaluateFaceAlignment = (
         return { ok: false, message: 'Move your face to the center of the oval.' };
     }
 
-    if (faceWidthRatio < 0.15) {
+    if (faceWidthRatio < 0.1) {
         return { ok: false, message: 'Move a little closer to the camera.' };
     }
 
@@ -519,19 +519,21 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                                     muted
                                     playsInline
                                     className="w-full h-full object-cover"
+                                    style={{ transform: 'scaleX(-1)' }}
                                 />
                                 <canvas
                                     ref={canvasRef}
                                     className="absolute top-0 left-0 w-full h-full"
+                                    style={{ transform: 'scaleX(-1)' }}
                                 />
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <div className="relative w-48 h-48">
+                                    <div className="relative w-80 h-80">
                                         <svg className="w-full h-full" viewBox="0 0 200 200">
                                             <ellipse
                                                 cx="100"
                                                 cy="100"
-                                                rx="80"
-                                                ry="90"
+                                                rx="90"
+                                                ry="98"
                                                 fill="none"
                                                 stroke="rgba(79, 172, 116, 0.3)"
                                                 strokeWidth="2"
