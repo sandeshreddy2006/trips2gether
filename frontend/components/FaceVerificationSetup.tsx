@@ -38,8 +38,13 @@ const SETUP_MIN_CAPTURED_FRAMES = 30;
 const SETUP_MAX_CAPTURED_FRAMES = 180;
 const MOUTH_OPEN_THRESHOLD = 0.3;
 const MOUTH_OPEN_REQUIRED_FRAMES = 3;
-const BLINK_EAR_THRESHOLD = 0.2;
-const BLINK_MIN_CLOSED_FRAMES = 2;
+const BLINK_FALLBACK_THRESHOLD = 0.2;
+const BLINK_MIN_THRESHOLD = 0.16;
+const BLINK_MAX_THRESHOLD = 0.26;
+const BLINK_DYNAMIC_RATIO = 0.78;
+const BLINK_BASELINE_ALPHA = 0.08;
+const BLINK_REOPEN_MARGIN = 0.015;
+const BLINK_MIN_CLOSED_FRAMES = 1;
 const BLINK_REQUIRED_COUNT = 1;
 
 const createLivenessSequence = (): LivenessAction[] => {
@@ -139,6 +144,15 @@ const getAverageEyeAspectRatio = (detection: FaceDetectionWithDescriptor): numbe
     }
 
     return (left + right) / 2;
+};
+
+const getAdaptiveBlinkThreshold = (baselineEar: number | null): number => {
+    if (baselineEar === null) {
+        return BLINK_FALLBACK_THRESHOLD;
+    }
+
+    const dynamicThreshold = baselineEar * BLINK_DYNAMIC_RATIO;
+    return Math.min(BLINK_MAX_THRESHOLD, Math.max(BLINK_MIN_THRESHOLD, dynamicThreshold));
 };
 
 const evaluateFaceAlignment = (
@@ -308,6 +322,8 @@ export default function FaceVerificationSetup({ onSuccess, onCancel }: FaceVerif
         let mouthOpenStreak = 0;
         let eyeClosedStreak = 0;
         let blinkCount = 0;
+        let eyeOpenBaselineEar: number | null = null;
+        let blinkArmed = true;
         let advancingChallengeStep = false;
         let captureStartedAt: number | null = null;
         const capturedDescriptors: number[][] = [];
@@ -344,6 +360,8 @@ export default function FaceVerificationSetup({ onSuccess, onCancel }: FaceVerif
                             mouthOpenStreak = 0;
                             eyeClosedStreak = 0;
                             blinkCount = 0;
+                            eyeOpenBaselineEar = null;
+                            blinkArmed = true;
                             advancingChallengeStep = false;
                             if (currentChallengeIndex !== 0) {
                                 setCurrentChallengeIndex(0);
@@ -364,6 +382,8 @@ export default function FaceVerificationSetup({ onSuccess, onCancel }: FaceVerif
                     mouthOpenStreak = 0;
                     eyeClosedStreak = 0;
                     blinkCount = 0;
+                    eyeOpenBaselineEar = null;
+                    blinkArmed = true;
                     advancingChallengeStep = false;
                     if (currentChallengeIndex !== 0) {
                         setCurrentChallengeIndex(0);
@@ -398,15 +418,28 @@ export default function FaceVerificationSetup({ onSuccess, onCancel }: FaceVerif
 
                     const eyeAspectRatio = getAverageEyeAspectRatio(detection);
                     if (eyeAspectRatio !== null) {
-                        const eyesClosed = eyeAspectRatio < BLINK_EAR_THRESHOLD;
+                        const blinkThreshold = getAdaptiveBlinkThreshold(eyeOpenBaselineEar);
+                        const eyesClosed = eyeAspectRatio < blinkThreshold;
 
-                        if (eyesClosed) {
+                        if (!eyesClosed) {
+                            eyeOpenBaselineEar = eyeOpenBaselineEar === null
+                                ? eyeAspectRatio
+                                : (eyeOpenBaselineEar * (1 - BLINK_BASELINE_ALPHA)) + (eyeAspectRatio * BLINK_BASELINE_ALPHA);
+                        }
+
+                        if (eyesClosed && blinkArmed) {
                             eyeClosedStreak += 1;
-                        } else {
-                            if (eyeClosedStreak >= BLINK_MIN_CLOSED_FRAMES) {
+                        } else if (!eyesClosed) {
+                            if (eyeClosedStreak >= BLINK_MIN_CLOSED_FRAMES && blinkArmed) {
                                 blinkCount += 1;
+                                blinkArmed = false;
                             }
+
                             eyeClosedStreak = 0;
+                            const rearmThreshold = getAdaptiveBlinkThreshold(eyeOpenBaselineEar);
+                            if (eyeAspectRatio > rearmThreshold + BLINK_REOPEN_MARGIN) {
+                                blinkArmed = true;
+                            }
                         }
                     }
 
@@ -446,6 +479,8 @@ export default function FaceVerificationSetup({ onSuccess, onCancel }: FaceVerif
                         mouthOpenStreak = 0;
                         eyeClosedStreak = 0;
                         blinkCount = 0;
+                        eyeOpenBaselineEar = null;
+                        blinkArmed = true;
                         advancingChallengeStep = false;
                         if (currentChallengeIndex !== 0) {
                             setCurrentChallengeIndex(0);
