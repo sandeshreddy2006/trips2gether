@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as faceapi from 'face-api.js';
 
-type LivenessAction = 'nod' | 'open_mouth';
+type LivenessAction = 'open_mouth' | 'blink';
 
 interface FaceVerificationLoginProps {
     onSuccess: () => void;
@@ -38,17 +38,38 @@ const LOGIN_MIN_CAPTURED_FRAMES = 12;
 const LOGIN_MAX_CAPTURED_FRAMES = 200;
 const MOUTH_OPEN_THRESHOLD = 0.3;
 const MOUTH_OPEN_REQUIRED_FRAMES = 3;
-const NOD_RANGE_THRESHOLD = 0.05;
-const NOD_RANGE_THRESHOLD_SMALL_FACE = 0.035;
-const SMALL_FACE_WIDTH_RATIO = 0.18;
+const BLINK_EAR_THRESHOLD = 0.2;
+const BLINK_MIN_CLOSED_FRAMES = 2;
+const BLINK_REQUIRED_COUNT = 1;
 
-const randomLivenessAction = (): LivenessAction => 'open_mouth';
+const createLivenessSequence = (): LivenessAction[] => {
+    const base: LivenessAction[] = Math.random() < 0.5
+        ? ['open_mouth', 'blink']
+        : ['blink', 'open_mouth'];
+
+    // Randomly add a third action for stronger anti-replay.
+    if (Math.random() < 0.5) {
+        const thirdAction: LivenessAction = Math.random() < 0.5 ? 'open_mouth' : 'blink';
+        return [...base, thirdAction];
+    }
+
+    return base;
+};
 
 const getLivenessInstruction = (action: LivenessAction): string => (
-    action === 'nod'
-        ? 'Liveness check: nod your head slowly.'
-        : 'Liveness check: open your mouth for a moment.'
+    action === 'open_mouth'
+        ? 'Open your mouth for a moment.'
+        : 'Blink once naturally.'
 );
+
+const getChallengeStatusText = (sequence: LivenessAction[], stepIndex: number): string => {
+    if (sequence.length === 0) {
+        return 'Perform the liveness check.';
+    }
+
+    const safeIndex = Math.min(stepIndex, sequence.length - 1);
+    return `Liveness step ${safeIndex + 1}/${sequence.length}: ${getLivenessInstruction(sequence[safeIndex])}`;
+};
 
 const distance = (a: faceapi.Point, b: faceapi.Point): number => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -93,24 +114,31 @@ const getMouthOpenRatio = (detection: FaceDetectionWithDescriptor): number => {
     return vertical / horizontal;
 };
 
-const getNodMetric = (detection: FaceDetectionWithDescriptor): number | null => {
-    const nosePoints = detection.landmarks.getNose();
-    const leftEyePoints = detection.landmarks.getLeftEye();
-    const rightEyePoints = detection.landmarks.getRightEye();
-
-    if (nosePoints.length === 0 || leftEyePoints.length === 0 || rightEyePoints.length === 0) {
+const getEyeAspectRatio = (eyePoints: faceapi.Point[]): number | null => {
+    if (eyePoints.length < 6) {
         return null;
     }
 
-    const noseCenterPoint = nosePoints[Math.floor(nosePoints.length / 2)];
-    const eyePoints = [...leftEyePoints, ...rightEyePoints];
-    const eyeAvgY = eyePoints.reduce((sum, point) => sum + point.y, 0) / eyePoints.length;
+    const verticalOne = distance(eyePoints[1], eyePoints[5]);
+    const verticalTwo = distance(eyePoints[2], eyePoints[4]);
+    const horizontal = distance(eyePoints[0], eyePoints[3]);
 
-    if (detection.detection.box.height === 0) {
+    if (horizontal === 0) {
         return null;
     }
 
-    return (noseCenterPoint.y - eyeAvgY) / detection.detection.box.height;
+    return (verticalOne + verticalTwo) / (2 * horizontal);
+};
+
+const getAverageEyeAspectRatio = (detection: FaceDetectionWithDescriptor): number | null => {
+    const left = getEyeAspectRatio(detection.landmarks.getLeftEye());
+    const right = getEyeAspectRatio(detection.landmarks.getRightEye());
+
+    if (left === null || right === null) {
+        return null;
+    }
+
+    return (left + right) / 2;
 };
 
 const evaluateFaceAlignment = (
@@ -160,7 +188,8 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
     const [isCameraSupported, setIsCameraSupported] = useState(true);
     const [verifying, setVerifying] = useState(false);
     const [modelLoaded, setModelLoaded] = useState(false);
-    const [challengeAction, setChallengeAction] = useState<LivenessAction>(randomLivenessAction);
+    const [challengeSequence, setChallengeSequence] = useState<LivenessAction[]>(() => createLivenessSequence());
+    const [currentChallengeIndex, setCurrentChallengeIndex] = useState(0);
     const [capturedFrameCount, setCapturedFrameCount] = useState(0);
 
     // Load face-api models
@@ -286,19 +315,21 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                 stopCameraStream();
                 setTimeout(onSuccess, 1000);
             } else {
-                const nextAction = randomLivenessAction();
+                const nextSequence = createLivenessSequence();
                 setError(data.message || 'Face verification failed');
-                setChallengeAction(nextAction);
+                setChallengeSequence(nextSequence);
+                setCurrentChallengeIndex(0);
                 setCapturedFrameCount(0);
-                setStatus(`Verification failed. ${getLivenessInstruction(nextAction)}`);
+                setStatus(`Verification failed. ${getChallengeStatusText(nextSequence, 0)}`);
                 setVerifying(false);
             }
         } catch (err) {
-            const nextAction = randomLivenessAction();
+            const nextSequence = createLivenessSequence();
             setError(err instanceof Error ? err.message : 'Verification error');
-            setChallengeAction(nextAction);
+            setChallengeSequence(nextSequence);
+            setCurrentChallengeIndex(0);
             setCapturedFrameCount(0);
-            setStatus(`Verification failed. ${getLivenessInstruction(nextAction)}`);
+            setStatus(`Verification failed. ${getChallengeStatusText(nextSequence, 0)}`);
             setVerifying(false);
         }
     }, [onSuccess, stopCameraStream]);
@@ -311,9 +342,10 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
 
         let detectionInterval: ReturnType<typeof setInterval> | null = null;
         let detectionInFlight = false;
-        let livenessPassed = false;
         let mouthOpenStreak = 0;
-        const nodMetrics: number[] = [];
+        let eyeClosedStreak = 0;
+        let blinkCount = 0;
+        let advancingChallengeStep = false;
         let captureStartedAt: number | null = null;
         const capturedDescriptors: number[][] = [];
         let missedFrames = 0;
@@ -344,13 +376,17 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                 if (!detectionRaw) {
                     missedFrames += 1;
                     if (missedFrames > 3) {
-                        if (captureStartedAt !== null) {
+                        if (captureStartedAt !== null || currentChallengeIndex > 0) {
                             resetCapture();
-                            livenessPassed = false;
                             mouthOpenStreak = 0;
-                            nodMetrics.length = 0;
+                            eyeClosedStreak = 0;
+                            blinkCount = 0;
+                            advancingChallengeStep = false;
+                            if (currentChallengeIndex !== 0) {
+                                setCurrentChallengeIndex(0);
+                            }
                         }
-                        setStatus(`Face not detected. ${getLivenessInstruction(challengeAction)} Keep centered.`);
+                        setStatus(`Face not detected. ${getChallengeStatusText(challengeSequence, 0)} Keep centered.`);
                     }
                     return;
                 }
@@ -362,46 +398,64 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
 
                 if (!alignment.ok) {
                     resetCapture();
-                    livenessPassed = false;
                     mouthOpenStreak = 0;
-                    nodMetrics.length = 0;
-                    setStatus(`${alignment.message} ${getLivenessInstruction(challengeAction)}`);
+                    eyeClosedStreak = 0;
+                    blinkCount = 0;
+                    advancingChallengeStep = false;
+                    if (currentChallengeIndex !== 0) {
+                        setCurrentChallengeIndex(0);
+                    }
+                    setStatus(`${alignment.message} ${getChallengeStatusText(challengeSequence, 0)}`);
                     return;
                 }
 
-                if (!livenessPassed) {
-                    if (challengeAction === 'open_mouth') {
+                const challengeComplete = currentChallengeIndex >= challengeSequence.length;
+                const activeChallenge = challengeSequence[Math.min(currentChallengeIndex, challengeSequence.length - 1)];
+
+                if (!challengeComplete) {
+                    if (advancingChallengeStep) {
+                        return;
+                    }
+
+                    if (activeChallenge === 'open_mouth') {
                         const mouthOpenRatio = getMouthOpenRatio(detection);
                         mouthOpenStreak = mouthOpenRatio >= MOUTH_OPEN_THRESHOLD ? mouthOpenStreak + 1 : Math.max(0, mouthOpenStreak - 1);
-                        setStatus(`${getLivenessInstruction(challengeAction)} (${mouthOpenStreak}/${MOUTH_OPEN_REQUIRED_FRAMES})`);
+                        setStatus(`Liveness step ${currentChallengeIndex + 1}/${challengeSequence.length}: ${getLivenessInstruction(activeChallenge)} (${mouthOpenStreak}/${MOUTH_OPEN_REQUIRED_FRAMES})`);
 
                         if (mouthOpenStreak >= MOUTH_OPEN_REQUIRED_FRAMES) {
-                            livenessPassed = true;
-                            setStatus('Liveness confirmed. Collecting verification frames...');
+                            advancingChallengeStep = true;
+                            const nextIndex = currentChallengeIndex + 1;
+                            setCurrentChallengeIndex(nextIndex);
+                            setStatus(nextIndex >= challengeSequence.length
+                                ? 'Liveness confirmed. Collecting verification frames...'
+                                : getChallengeStatusText(challengeSequence, nextIndex));
                         }
                         return;
                     }
 
-                    const nodMetric = getNodMetric(detection);
-                    if (nodMetric !== null) {
-                        nodMetrics.push(nodMetric);
-                        if (nodMetrics.length > 30) {
-                            nodMetrics.shift();
+                    const eyeAspectRatio = getAverageEyeAspectRatio(detection);
+                    if (eyeAspectRatio !== null) {
+                        const eyesClosed = eyeAspectRatio < BLINK_EAR_THRESHOLD;
+
+                        if (eyesClosed) {
+                            eyeClosedStreak += 1;
+                        } else {
+                            if (eyeClosedStreak >= BLINK_MIN_CLOSED_FRAMES) {
+                                blinkCount += 1;
+                            }
+                            eyeClosedStreak = 0;
                         }
                     }
 
-                    const nodRange = nodMetrics.length > 0 ? Math.max(...nodMetrics) - Math.min(...nodMetrics) : 0;
-                    const faceWidthRatio = videoRef.current.videoWidth > 0
-                        ? detection.detection.box.width / videoRef.current.videoWidth
-                        : 0;
-                    const requiredNodRange = faceWidthRatio < SMALL_FACE_WIDTH_RATIO
-                        ? NOD_RANGE_THRESHOLD_SMALL_FACE
-                        : NOD_RANGE_THRESHOLD;
-                    setStatus(`${getLivenessInstruction(challengeAction)} Keep centered.`);
+                    setStatus(`Liveness step ${currentChallengeIndex + 1}/${challengeSequence.length}: ${getLivenessInstruction(activeChallenge)} (${blinkCount}/${BLINK_REQUIRED_COUNT})`);
 
-                    if (nodRange >= requiredNodRange && nodMetrics.length >= 6) {
-                        livenessPassed = true;
-                        setStatus('Liveness confirmed. Collecting verification frames...');
+                    if (blinkCount >= BLINK_REQUIRED_COUNT) {
+                        advancingChallengeStep = true;
+                        const nextIndex = currentChallengeIndex + 1;
+                        setCurrentChallengeIndex(nextIndex);
+                        setStatus(nextIndex >= challengeSequence.length
+                            ? 'Liveness confirmed. Collecting verification frames...'
+                            : getChallengeStatusText(challengeSequence, nextIndex));
                     }
                     return;
                 }
@@ -424,11 +478,15 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
 
                 if (elapsedMs >= LOGIN_CAPTURE_WINDOW_MS || capturedDescriptors.length >= LOGIN_MAX_CAPTURED_FRAMES) {
                     if (capturedDescriptors.length < LOGIN_MIN_CAPTURED_FRAMES) {
-                        setStatus(`Need a few more stable frames. ${getLivenessInstruction(challengeAction)}`);
+                        setStatus(`Need a few more stable frames. ${getChallengeStatusText(challengeSequence, 0)}`);
                         resetCapture();
-                        livenessPassed = false;
                         mouthOpenStreak = 0;
-                        nodMetrics.length = 0;
+                        eyeClosedStreak = 0;
+                        blinkCount = 0;
+                        advancingChallengeStep = false;
+                        if (currentChallengeIndex !== 0) {
+                            setCurrentChallengeIndex(0);
+                        }
                         return;
                     }
 
@@ -453,12 +511,16 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
                 clearInterval(detectionInterval);
             }
         };
-    }, [isLoading, verifying, modelLoaded, challengeAction, verifyFace]);
+    }, [isLoading, verifying, modelLoaded, currentChallengeIndex, challengeSequence, verifyFace]);
 
     const handleSkip = () => {
         stopCameraStream();
         onSkip();
     };
+
+    const activeChallenge = currentChallengeIndex < challengeSequence.length
+        ? challengeSequence[currentChallengeIndex]
+        : null;
 
     if (!isCameraSupported) {
         return (
@@ -504,7 +566,13 @@ export default function FaceVerificationLogin({ onSuccess, onSkip }: FaceVerific
 
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                                 <p className="text-blue-800 font-semibold text-sm">Anti-spoof challenge</p>
-                                <p className="text-blue-700 text-sm mt-1">{getLivenessInstruction(challengeAction)}</p>
+                                {activeChallenge ? (
+                                    <p className="text-blue-700 text-sm mt-1">
+                                        Step {currentChallengeIndex + 1}/{challengeSequence.length}: {getLivenessInstruction(activeChallenge)}
+                                    </p>
+                                ) : (
+                                    <p className="text-blue-700 text-sm mt-1">Liveness complete. Hold still...</p>
+                                )}
                                 {capturedFrameCount > 0 && (
                                     <p className="text-blue-700 text-xs mt-1">Captured frames: {capturedFrameCount}</p>
                                 )}
