@@ -42,9 +42,7 @@ const NOD_RANGE_THRESHOLD = 0.05;
 const NOD_RANGE_THRESHOLD_SMALL_FACE = 0.035;
 const SMALL_FACE_WIDTH_RATIO = 0.18;
 
-const randomLivenessAction = (): LivenessAction => (
-    Math.random() < 0.5 ? 'nod' : 'open_mouth'
-);
+const randomLivenessAction = (): LivenessAction => 'open_mouth';
 
 const getLivenessInstruction = (action: LivenessAction): string => (
     action === 'nod'

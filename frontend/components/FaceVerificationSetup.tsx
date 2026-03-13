@@ -40,9 +40,7 @@ const MOUTH_OPEN_THRESHOLD = 0.3;
 const MOUTH_OPEN_REQUIRED_FRAMES = 3;
 const NOD_RANGE_THRESHOLD = 0.08;
 
-const randomLivenessAction = (): LivenessAction => (
-    Math.random() < 0.5 ? 'nod' : 'open_mouth'
-);
+const randomLivenessAction = (): LivenessAction => 'open_mouth';
 
 const getLivenessInstruction = (action: LivenessAction): string => (
     action === 'nod'
