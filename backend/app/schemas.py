@@ -207,6 +207,35 @@ class DestinationSearchResponse(BaseModel):
 
 
 # -------------------------
+# Nearby Restaurants Schemas
+# -------------------------
+
+class NearbyRestaurantOut(BaseModel):
+    place_id: str
+    name: str
+    address: Optional[str] = None
+    rating: Optional[float] = None
+    user_ratings_total: Optional[int] = None
+    price_level: Optional[str] = None
+    distance_km: Optional[float] = None
+    distance_text: Optional[str] = None
+    location: Optional[DestinationLocation] = None
+    photo_url: Optional[str] = None
+    photo_reference: Optional[str] = None
+
+
+class NearbyRestaurantsResponse(BaseModel):
+    status: str
+    results: List[NearbyRestaurantOut]
+    message: Optional[str] = None
+    cached: Optional[bool] = False
+    dummy: Optional[bool] = False
+    anchor_lat: Optional[float] = None
+    anchor_lng: Optional[float] = None
+    radius_m: Optional[int] = None
+
+
+# -------------------------
 # Face Verification Schemas
 # -------------------------
 
