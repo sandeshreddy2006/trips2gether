@@ -4,9 +4,21 @@ Handles HTTP requests to Google Places (v1) API for destination search
 """
 
 import os
+import math
 import requests
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Return the great-circle distance in km between two lat/lng points."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlng / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 class GooglePlacesService:
     """
@@ -324,6 +336,214 @@ class GooglePlacesService:
         # In production, this would use the Nearby Search endpoint
         return self.get_popular_destinations()
     
+    # ------------------------------------------------------------------
+    # Nearby restaurants
+    # ------------------------------------------------------------------
+
+    def search_nearby_restaurants(
+        self,
+        lat: float,
+        lng: float,
+        radius_m: int = 1500,
+    ) -> Dict[str, Any]:
+        """
+        Search for restaurants near a given coordinate using the
+        Google Places (v1) Nearby Search endpoint.
+
+        Returns a dict with status, results (sorted by distance), and
+        metadata about the anchor/radius used.
+        """
+        cache_key = f"nearby_restaurants_{lat:.5f}_{lng:.5f}_{radius_m}"
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return {
+                "status": "success",
+                "results": cached,
+                "cached": True,
+                "anchor_lat": lat,
+                "anchor_lng": lng,
+                "radius_m": radius_m,
+            }
+
+        if not self.api_key:
+            return self._get_dummy_nearby_restaurants(lat, lng, radius_m)
+
+        try:
+            url = f"{self.BASE_URL}/places:searchNearby"
+            headers = {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": self.api_key,
+                "X-Goog-FieldMask": (
+                    "places.displayName,places.formattedAddress,places.rating,"
+                    "places.userRatingCount,places.location,places.id,"
+                    "places.photos,places.priceLevel,places.primaryType"
+                ),
+            }
+            payload = {
+                "includedTypes": ["restaurant"],
+                "maxResultCount": 20,
+                "locationRestriction": {
+                    "circle": {
+                        "center": {"latitude": lat, "longitude": lng},
+                        "radius": float(radius_m),
+                    }
+                },
+                "languageCode": "en",
+            }
+
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            if "error" in data:
+                msg = data["error"].get("message", "Unknown API error")
+                print(f"[ERROR] Nearby restaurants API error: {msg}")
+                return {"status": "error", "message": msg, "results": []}
+
+            places = data.get("places", [])
+            if not places:
+                return {
+                    "status": "success",
+                    "results": [],
+                    "message": "No restaurants found nearby",
+                    "anchor_lat": lat,
+                    "anchor_lng": lng,
+                    "radius_m": radius_m,
+                }
+
+            results = self._format_nearby_restaurants(places, lat, lng)
+            self._save_to_cache(cache_key, results)
+
+            return {
+                "status": "success",
+                "results": results,
+                "cached": False,
+                "anchor_lat": lat,
+                "anchor_lng": lng,
+                "radius_m": radius_m,
+            }
+
+        except requests.exceptions.Timeout:
+            print("[ERROR] Nearby restaurants request timed out")
+            return {
+                "status": "error",
+                "message": "Request timed out. Please try again.",
+                "results": [],
+            }
+        except requests.exceptions.RequestException as e:
+            print(f"[ERROR] Nearby restaurants request failed: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to reach restaurant service: {e}",
+                "results": [],
+            }
+        except Exception as e:
+            print(f"[ERROR] Unexpected error in search_nearby_restaurants: {e}")
+            return {
+                "status": "error",
+                "message": f"Unexpected error: {e}",
+                "results": [],
+            }
+
+    def _format_nearby_restaurants(
+        self, places: List[Dict], anchor_lat: float, anchor_lng: float
+    ) -> List[Dict]:
+        """Format Nearby Search results and compute distance from anchor."""
+        PRICE_MAP = {
+            "PRICE_LEVEL_FREE": "Free",
+            "PRICE_LEVEL_INEXPENSIVE": "$",
+            "PRICE_LEVEL_MODERATE": "$$",
+            "PRICE_LEVEL_EXPENSIVE": "$$$",
+            "PRICE_LEVEL_VERY_EXPENSIVE": "$$$$",
+        }
+        formatted = []
+        for place in places:
+            photo_url = None
+            photo_reference = None
+            if place.get("photos"):
+                ref = place["photos"][0].get("name")
+                if ref:
+                    photo_reference = ref
+                    if self.api_key:
+                        photo_url = self.get_photo_url(ref, width=400, height=300)
+
+            p_lat = place.get("location", {}).get("latitude")
+            p_lng = place.get("location", {}).get("longitude")
+            dist_km = (
+                _haversine_km(anchor_lat, anchor_lng, p_lat, p_lng)
+                if p_lat is not None and p_lng is not None
+                else None
+            )
+            if dist_km is not None:
+                dist_text = (
+                    f"{int(dist_km * 1000)} m"
+                    if dist_km < 1
+                    else f"{dist_km:.1f} km"
+                )
+            else:
+                dist_text = None
+
+            raw_price = place.get("priceLevel")
+            price_level = PRICE_MAP.get(raw_price)
+
+            formatted.append({
+                "place_id": place.get("id", ""),
+                "name": place.get("displayName", {}).get("text", ""),
+                "address": place.get("formattedAddress"),
+                "rating": place.get("rating"),
+                "user_ratings_total": place.get("userRatingCount"),
+                "price_level": price_level,
+                "distance_km": round(dist_km, 2) if dist_km is not None else None,
+                "distance_text": dist_text,
+                "location": {"lat": p_lat, "lng": p_lng},
+                "photo_url": photo_url,
+                "photo_reference": photo_reference,
+            })
+
+        formatted.sort(key=lambda r: r["distance_km"] if r["distance_km"] is not None else 999)
+        return formatted
+
+    def _get_dummy_nearby_restaurants(
+        self, lat: float, lng: float, radius_m: int
+    ) -> Dict[str, Any]:
+        """Dummy restaurant data for local dev without an API key."""
+        import random
+        names = [
+            "The Golden Fork", "Sakura Sushi", "Bella Pasta",
+            "Green Leaf Bistro", "Smoky BBQ Pit", "Curry House",
+        ]
+        prices = ["$", "$$", "$$$"]
+        results = []
+        for i, name in enumerate(names):
+            offset_lat = random.uniform(-0.005, 0.005)
+            offset_lng = random.uniform(-0.005, 0.005)
+            p_lat = lat + offset_lat
+            p_lng = lng + offset_lng
+            dist = _haversine_km(lat, lng, p_lat, p_lng)
+            results.append({
+                "place_id": f"dummy_rest_{i}",
+                "name": name,
+                "address": f"{100 + i * 10} Food Street",
+                "rating": round(random.uniform(3.5, 4.9), 1),
+                "user_ratings_total": random.randint(50, 2000),
+                "price_level": random.choice(prices),
+                "distance_km": round(dist, 2),
+                "distance_text": f"{int(dist * 1000)} m" if dist < 1 else f"{dist:.1f} km",
+                "location": {"lat": p_lat, "lng": p_lng},
+                "photo_url": f"https://via.placeholder.com/400x300?text={name.replace(' ', '+')}",
+                "photo_reference": None,
+            })
+        results.sort(key=lambda r: r["distance_km"])
+        return {
+            "status": "success",
+            "results": results,
+            "dummy": True,
+            "message": "Using dummy data (API key not configured)",
+            "anchor_lat": lat,
+            "anchor_lng": lng,
+            "radius_m": radius_m,
+        }
+
     def clear_cache(self):
         """Clear all cached results"""
         self._cache.clear()
