@@ -27,6 +27,7 @@ from .schemas import (
     ProfileOut, 
     ProfileUpdate,
     DestinationSearchResponse,
+    NearbyRestaurantsResponse,
     FaceEncodingIn,
     FaceVerificationCheckIn,
     FaceVerificationCheckOut,
@@ -1848,6 +1849,31 @@ def get_destination_image(
             status_code=500,
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
+
+# -------------------------
+# Nearby Restaurants Endpoints
+# -------------------------
+
+@app.get("/restaurants/nearby", response_model=NearbyRestaurantsResponse)
+def get_nearby_restaurants(
+    lat: float,
+    lng: float,
+    radius: int = 1500,
+):
+    if lat < -90 or lat > 90 or lng < -180 or lng > 180:
+        raise HTTPException(status_code=400, detail="Invalid coordinates")
+    radius = max(500, min(radius, 50000))
+    try:
+        places_service = get_places_service()
+        result = places_service.search_nearby_restaurants(lat, lng, radius_m=radius)
+        if result["status"] == "error":
+            raise HTTPException(status_code=502, detail=result.get("message", "Restaurant search failed"))
+        return NearbyRestaurantsResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
 # -------------------------

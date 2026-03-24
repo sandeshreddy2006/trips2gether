@@ -1,8 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import "./destination.css";
+
+const RestaurantMap = dynamic(() => import("./RestaurantMap"), { ssr: false });
 
 interface Destination {
     place_id: string;
@@ -15,6 +18,20 @@ interface Destination {
     photo_reference?: string;
     location?: { lat: number | null; lng: number | null };
     business_status?: string;
+}
+
+interface NearbyRestaurant {
+    place_id: string;
+    name: string;
+    address?: string;
+    rating?: number;
+    user_ratings_total?: number;
+    price_level?: string;
+    distance_km?: number;
+    distance_text?: string;
+    location?: { lat: number | null; lng: number | null };
+    photo_url?: string;
+    photo_reference?: string;
 }
 
 interface ThingToDo {
@@ -64,6 +81,15 @@ export default function DestinationDetail() {
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState("overview");
 
+    const [restaurants, setRestaurants] = useState<NearbyRestaurant[]>([]);
+    const [restaurantsLoading, setRestaurantsLoading] = useState(false);
+    const [restaurantsError, setRestaurantsError] = useState<string | null>(null);
+    const [restaurantRadius, setRestaurantRadius] = useState(1500);
+    const [restaurantsFetched, setRestaurantsFetched] = useState(false);
+    const [showMap, setShowMap] = useState(false);
+    const [selectedRestaurant, setSelectedRestaurant] = useState<string | null>(null);
+    const restaurantRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
     const placeId = params.id as string;
 
     useEffect(() => {
@@ -92,6 +118,47 @@ export default function DestinationDetail() {
             setLoading(false);
         }
     }, [placeId]);
+
+    const fetchRestaurants = async (lat: number, lng: number, radius: number) => {
+        setRestaurantsLoading(true);
+        setRestaurantsError(null);
+        try {
+            const res = await fetch(
+                `/api/restaurants/nearby?lat=${lat}&lng=${lng}&radius=${radius}`
+            );
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                throw new Error(body?.detail || `Server error (${res.status})`);
+            }
+            const data = await res.json();
+            setRestaurants(data.results || []);
+            setRestaurantsFetched(true);
+        } catch (err: any) {
+            setRestaurantsError(err.message || "Failed to load restaurants");
+        } finally {
+            setRestaurantsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (
+            activeTab === "restaurants" &&
+            !restaurantsFetched &&
+            !restaurantsLoading &&
+            destination?.location?.lat != null &&
+            destination?.location?.lng != null
+        ) {
+            fetchRestaurants(destination.location.lat, destination.location.lng, restaurantRadius);
+        }
+    }, [activeTab, restaurantsFetched, restaurantsLoading, destination, restaurantRadius]);
+
+    const getRestaurantImageUrl = (r: NearbyRestaurant): string => {
+        if (r.photo_reference) {
+            return `/api/destinations/image?photo_reference=${encodeURIComponent(r.photo_reference)}&width=400&height=300`;
+        }
+        if (r.photo_url) return r.photo_url;
+        return "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+    };
 
     const getImageUrl = (dest: Destination): string => {
         if (dest.photo_reference) {
@@ -192,6 +259,14 @@ export default function DestinationDetail() {
                                 Things to Do
                             </button>
                         )}
+                        {destination.location?.lat != null && destination.location?.lng != null && (
+                            <button
+                                className={`tab ${activeTab === "restaurants" ? "active" : ""}`}
+                                onClick={() => setActiveTab("restaurants")}
+                            >
+                                Restaurants
+                            </button>
+                        )}
                         <button
                             className={`tab ${activeTab === "info" ? "active" : ""}`}
                             onClick={() => setActiveTab("info")}
@@ -267,6 +342,119 @@ export default function DestinationDetail() {
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Tab Content - Restaurants */}
+                    {activeTab === "restaurants" && (
+                        <div className="tab-content">
+                            <div className="restaurants-header">
+                                <h2>Nearby Restaurants</h2>
+                                {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
+                                    <button
+                                        className="btn-toggle-map"
+                                        onClick={() => { setShowMap(!showMap); setSelectedRestaurant(null); }}
+                                    >
+                                        {showMap ? "List View" : "Map View"}
+                                    </button>
+                                )}
+                            </div>
+
+                            {restaurantsLoading && (
+                                <div className="restaurants-loading">
+                                    <div className="loading-spinner-small"></div>
+                                    <p>Searching for restaurants nearby...</p>
+                                </div>
+                            )}
+
+                            {restaurantsError && (
+                                <div className="restaurants-error">
+                                    <p>{restaurantsError}</p>
+                                    <button
+                                        className="btn btn-retry"
+                                        onClick={() => {
+                                            if (destination?.location?.lat != null && destination?.location?.lng != null) {
+                                                setRestaurantsFetched(false);
+                                            }
+                                        }}
+                                    >
+                                        Retry
+                                    </button>
+                                </div>
+                            )}
+
+                            {!restaurantsLoading && !restaurantsError && restaurantsFetched && restaurants.length === 0 && (
+                                <div className="restaurants-empty">
+                                    <p>No restaurants found within {restaurantRadius >= 1000 ? `${(restaurantRadius / 1000).toFixed(1)} km` : `${restaurantRadius} m`}.</p>
+                                    <button
+                                        className="btn btn-widen"
+                                        onClick={() => {
+                                            const newRadius = Math.min(restaurantRadius * 2, 50000);
+                                            setRestaurantRadius(newRadius);
+                                            setRestaurantsFetched(false);
+                                        }}
+                                    >
+                                        Widen Search
+                                    </button>
+                                </div>
+                            )}
+
+                            {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
+                                <>
+                                    {showMap && destination?.location?.lat != null && destination?.location?.lng != null && (
+                                        <RestaurantMap
+                                            anchorLat={destination.location.lat}
+                                            anchorLng={destination.location.lng}
+                                            anchorName={destination.name}
+                                            restaurants={restaurants}
+                                            selectedId={selectedRestaurant}
+                                            onSelectRestaurant={(id) => {
+                                                setSelectedRestaurant(id);
+                                                if (id && restaurantRefs.current[id]) {
+                                                    restaurantRefs.current[id]!.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                                                }
+                                            }}
+                                        />
+                                    )}
+
+                                    <div className="restaurants-grid">
+                                        {restaurants.map((r) => (
+                                            <div
+                                                key={r.place_id}
+                                                ref={(el) => { restaurantRefs.current[r.place_id] = el; }}
+                                                className={`restaurant-card ${selectedRestaurant === r.place_id ? "restaurant-card-selected" : ""}`}
+                                                onClick={() => {
+                                                    setSelectedRestaurant(selectedRestaurant === r.place_id ? null : r.place_id);
+                                                }}
+                                            >
+                                                <div className="restaurant-image">
+                                                    <img
+                                                        src={getRestaurantImageUrl(r)}
+                                                        alt={r.name}
+                                                        onError={(e) => {
+                                                            e.currentTarget.src = "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div className="restaurant-content">
+                                                    <h3>{r.name}</h3>
+                                                    <div className="restaurant-meta">
+                                                        {r.rating && <span className="restaurant-rating">★ {r.rating.toFixed(1)}</span>}
+                                                        {r.price_level && <span className="restaurant-price">{r.price_level}</span>}
+                                                    </div>
+                                                    {r.address && <p className="restaurant-address">{r.address}</p>}
+                                                    <div className="restaurant-footer">
+                                                        {r.distance_text && <span className="restaurant-distance">{r.distance_text}</span>}
+                                                        {r.user_ratings_total && (
+                                                            <span className="restaurant-reviews">{r.user_ratings_total.toLocaleString()} reviews</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
 
