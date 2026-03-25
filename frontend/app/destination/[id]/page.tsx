@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import "./destination.css";
 
 const RestaurantMap = dynamic(() => import("./RestaurantMap"), { ssr: false });
+import RestaurantDetail from "./RestaurantDetail";
 
 interface Destination {
     place_id: string;
@@ -90,6 +91,11 @@ export default function DestinationDetail() {
     const [selectedRestaurant, setSelectedRestaurant] = useState<string | null>(null);
     const restaurantRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+    const [detailData, setDetailData] = useState<any>(null);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [detailError, setDetailError] = useState<string | null>(null);
+    const [detailPlaceId, setDetailPlaceId] = useState<string | null>(null);
+
     const placeId = params.id as string;
 
     useEffect(() => {
@@ -158,6 +164,32 @@ export default function DestinationDetail() {
         }
         if (r.photo_url) return r.photo_url;
         return "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+    };
+
+    const openRestaurantDetail = async (placeId: string) => {
+        setDetailPlaceId(placeId);
+        setDetailLoading(true);
+        setDetailError(null);
+        setDetailData(null);
+        try {
+            const res = await fetch(`/api/restaurants/${encodeURIComponent(placeId)}`);
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                throw new Error(body?.detail || `Server error (${res.status})`);
+            }
+            const data = await res.json();
+            setDetailData(data);
+        } catch (err: any) {
+            setDetailError(err.message || "Failed to load restaurant details");
+        } finally {
+            setDetailLoading(false);
+        }
+    };
+
+    const closeRestaurantDetail = () => {
+        setDetailPlaceId(null);
+        setDetailData(null);
+        setDetailError(null);
     };
 
     const getImageUrl = (dest: Destination): string => {
@@ -350,14 +382,32 @@ export default function DestinationDetail() {
                         <div className="tab-content">
                             <div className="restaurants-header">
                                 <h2>Nearby Restaurants</h2>
-                                {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
-                                    <button
-                                        className="btn-toggle-map"
-                                        onClick={() => { setShowMap(!showMap); setSelectedRestaurant(null); }}
+                                <div className="restaurants-controls">
+                                    <select
+                                        className="radius-select"
+                                        value={restaurantRadius}
+                                        onChange={(e) => {
+                                            const newRadius = Number(e.target.value);
+                                            setRestaurantRadius(newRadius);
+                                            setRestaurantsFetched(false);
+                                        }}
                                     >
-                                        {showMap ? "List View" : "Map View"}
-                                    </button>
-                                )}
+                                        <option value={500}>500 m</option>
+                                        <option value={1000}>1 km</option>
+                                        <option value={1500}>1.5 km</option>
+                                        <option value={3000}>3 km</option>
+                                        <option value={5000}>5 km</option>
+                                        <option value={10000}>10 km</option>
+                                    </select>
+                                    {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
+                                        <button
+                                            className="btn-toggle-map"
+                                            onClick={() => { setShowMap(!showMap); setSelectedRestaurant(null); }}
+                                        >
+                                            {showMap ? "List View" : "Map View"}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             {restaurantsLoading && (
@@ -410,8 +460,11 @@ export default function DestinationDetail() {
                                             selectedId={selectedRestaurant}
                                             onSelectRestaurant={(id) => {
                                                 setSelectedRestaurant(id);
-                                                if (id && restaurantRefs.current[id]) {
-                                                    restaurantRefs.current[id]!.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                                                if (id) {
+                                                    openRestaurantDetail(id);
+                                                    if (restaurantRefs.current[id]) {
+                                                        restaurantRefs.current[id]!.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                                                    }
                                                 }
                                             }}
                                         />
@@ -424,7 +477,8 @@ export default function DestinationDetail() {
                                                 ref={(el) => { restaurantRefs.current[r.place_id] = el; }}
                                                 className={`restaurant-card ${selectedRestaurant === r.place_id ? "restaurant-card-selected" : ""}`}
                                                 onClick={() => {
-                                                    setSelectedRestaurant(selectedRestaurant === r.place_id ? null : r.place_id);
+                                                    setSelectedRestaurant(r.place_id);
+                                                    openRestaurantDetail(r.place_id);
                                                 }}
                                             >
                                                 <div className="restaurant-image">
@@ -455,6 +509,7 @@ export default function DestinationDetail() {
                                     </div>
                                 </>
                             )}
+
                         </div>
                     )}
 
@@ -525,6 +580,16 @@ export default function DestinationDetail() {
                     </div>
                 </aside>
             </div>
+
+            {detailPlaceId && (
+                <RestaurantDetail
+                    detail={detailData}
+                    loading={detailLoading}
+                    error={detailError}
+                    onClose={closeRestaurantDetail}
+                    onRetry={() => openRestaurantDetail(detailPlaceId)}
+                />
+            )}
         </div>
     );
 }

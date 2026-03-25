@@ -831,6 +831,30 @@ body {
     margin-bottom: 0;
 }
 
+.restaurants-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.radius-select {
+    padding: 8px 12px;
+    border: 2px solid var(--secondary-green);
+    border-radius: 8px;
+    background: white;
+    color: var(--primary-green);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.radius-select:hover,
+.radius-select:focus {
+    border-color: var(--primary-green);
+}
+
 .btn-toggle-map {
     padding: 8px 18px;
     border: 2px solid var(--secondary-green);
@@ -871,5 +895,258 @@ body {
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
+    }
+
+    .restaurants-controls {
+        width: 100%;
+    }
+
+    .radius-select {
+        flex: 1;
+    }
+}
+
+/* -------------------------
+   Restaurant Detail Panel
+   ------------------------- */
+
+.detail-panel-overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 480px;
+    max-width: 100%;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.detail-panel {
+    width: 100%;
+    height: 100%;
+    background: white;
+    overflow-y: auto;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+    animation: slideIn 0.3s ease;
+    position: relative;
+    pointer-events: auto;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+.detail-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
+    font-size: 1.1rem;
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.detail-close:hover {
+    background: rgba(255, 255, 255, 1);
+}
+
+.detail-loading,
+.detail-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--text-secondary);
+    min-height: 200px;
+}
+
+.detail-error p {
+    color: #c0392b;
+    margin-bottom: 16px;
+}
+
+/* Photos */
+.detail-photos {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    background: #f0f0f0;
+}
+
+.detail-photo {
+    flex: 0 0 100%;
+    width: 100%;
+    height: 280px;
+    object-fit: cover;
+    scroll-snap-align: start;
+    display: block;
+}
+
+.detail-photos::-webkit-scrollbar {
+    height: 0;
+    display: none;
+}
+
+/* Body */
+.detail-body {
+    padding: 24px;
+}
+
+.detail-name {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--primary-green);
+    margin-bottom: 12px;
+}
+
+/* Cuisine tags */
+.detail-cuisines {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.cuisine-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--light-green);
+    color: var(--secondary-green);
+    border-radius: 16px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+/* Summary */
+.detail-summary {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+/* Info grid */
+.detail-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 24px;
+}
+
+.detail-info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.detail-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--secondary-green);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    min-width: 80px;
+}
+
+.detail-value {
+    text-align: right;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.detail-value a {
+    color: var(--secondary-green);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.detail-value a:hover {
+    text-decoration: underline;
+}
+
+.detail-value small {
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-left: 4px;
+}
+
+.detail-na {
+    color: #bbb;
+    font-style: italic;
+    font-size: 0.85rem;
+}
+
+/* Opening hours */
+.detail-hours-section {
+    margin-top: 8px;
+}
+
+.detail-hours-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.open-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.open-badge-open {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.open-badge-closed {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.detail-hours-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.detail-hours-list li {
+    padding: 6px 0;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid #f8f8f8;
+}
+
+.detail-hours-list li:last-child {
+    border-bottom: none;
+}
+
+@media (max-width: 480px) {
+    .detail-panel {
+        width: 100%;
+    }
+
+    .detail-photo {
+        height: 200px;
+    }
+
+    .detail-body {
+        padding: 16px;
     }
 }
