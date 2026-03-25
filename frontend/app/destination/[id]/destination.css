@@ -873,3 +873,254 @@ body {
         gap: 12px;
     }
 }
+
+/* -------------------------
+   Restaurant Detail Panel
+   ------------------------- */
+
+.detail-panel-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    display: flex;
+    justify-content: flex-end;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.detail-panel {
+    width: 480px;
+    max-width: 100%;
+    height: 100%;
+    background: white;
+    overflow-y: auto;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+    animation: slideIn 0.3s ease;
+    position: relative;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+.detail-close {
+    position: sticky;
+    top: 12px;
+    float: right;
+    margin: 12px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.06);
+    font-size: 1.1rem;
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.detail-close:hover {
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.detail-loading,
+.detail-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--text-secondary);
+    min-height: 200px;
+}
+
+.detail-error p {
+    color: #c0392b;
+    margin-bottom: 16px;
+}
+
+/* Photos */
+.detail-photos {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+}
+
+.detail-photo {
+    flex: 0 0 100%;
+    width: 100%;
+    height: 260px;
+    object-fit: cover;
+    scroll-snap-align: start;
+}
+
+.detail-photos::-webkit-scrollbar {
+    height: 4px;
+}
+
+.detail-photos::-webkit-scrollbar-thumb {
+    background: var(--accent-green);
+    border-radius: 4px;
+}
+
+/* Body */
+.detail-body {
+    padding: 24px;
+}
+
+.detail-name {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--primary-green);
+    margin-bottom: 12px;
+}
+
+/* Cuisine tags */
+.detail-cuisines {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.cuisine-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--light-green);
+    color: var(--secondary-green);
+    border-radius: 16px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+/* Summary */
+.detail-summary {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+/* Info grid */
+.detail-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 24px;
+}
+
+.detail-info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.detail-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--secondary-green);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    min-width: 80px;
+}
+
+.detail-value {
+    text-align: right;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.detail-value a {
+    color: var(--secondary-green);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.detail-value a:hover {
+    text-decoration: underline;
+}
+
+.detail-value small {
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-left: 4px;
+}
+
+.detail-na {
+    color: #bbb;
+    font-style: italic;
+    font-size: 0.85rem;
+}
+
+/* Opening hours */
+.detail-hours-section {
+    margin-top: 8px;
+}
+
+.detail-hours-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.open-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.open-badge-open {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.open-badge-closed {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.detail-hours-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.detail-hours-list li {
+    padding: 6px 0;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid #f8f8f8;
+}
+
+.detail-hours-list li:last-child {
+    border-bottom: none;
+}
+
+@media (max-width: 480px) {
+    .detail-panel {
+        width: 100%;
+    }
+
+    .detail-photo {
+        height: 200px;
+    }
+
+    .detail-body {
+        padding: 16px;
+    }
+}
