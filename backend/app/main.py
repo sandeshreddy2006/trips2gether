@@ -28,6 +28,7 @@ from .schemas import (
     ProfileUpdate,
     DestinationSearchResponse,
     NearbyRestaurantsResponse,
+    RestaurantDetailOut,
     FaceEncodingIn,
     FaceVerificationCheckIn,
     FaceVerificationCheckOut,
@@ -1870,6 +1871,24 @@ def get_nearby_restaurants(
         if result["status"] == "error":
             raise HTTPException(status_code=502, detail=result.get("message", "Restaurant search failed"))
         return NearbyRestaurantsResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@app.get("/restaurants/{place_id}", response_model=RestaurantDetailOut)
+def get_restaurant_detail(place_id: str):
+    if not place_id or not place_id.strip():
+        raise HTTPException(status_code=400, detail="place_id is required")
+    try:
+        places_service = get_places_service()
+        result = places_service.get_restaurant_details(place_id.strip())
+        if result["status"] == "error":
+            raise HTTPException(status_code=502, detail=result.get("message", "Failed to fetch restaurant details"))
+        if not result.get("result"):
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        return RestaurantDetailOut(**result["result"])
     except HTTPException:
         raise
     except Exception as e:
