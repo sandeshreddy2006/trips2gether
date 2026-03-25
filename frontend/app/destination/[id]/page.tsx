@@ -382,14 +382,32 @@ export default function DestinationDetail() {
                         <div className="tab-content">
                             <div className="restaurants-header">
                                 <h2>Nearby Restaurants</h2>
-                                {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
-                                    <button
-                                        className="btn-toggle-map"
-                                        onClick={() => { setShowMap(!showMap); setSelectedRestaurant(null); }}
+                                <div className="restaurants-controls">
+                                    <select
+                                        className="radius-select"
+                                        value={restaurantRadius}
+                                        onChange={(e) => {
+                                            const newRadius = Number(e.target.value);
+                                            setRestaurantRadius(newRadius);
+                                            setRestaurantsFetched(false);
+                                        }}
                                     >
-                                        {showMap ? "List View" : "Map View"}
-                                    </button>
-                                )}
+                                        <option value={500}>500 m</option>
+                                        <option value={1000}>1 km</option>
+                                        <option value={1500}>1.5 km</option>
+                                        <option value={3000}>3 km</option>
+                                        <option value={5000}>5 km</option>
+                                        <option value={10000}>10 km</option>
+                                    </select>
+                                    {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
+                                        <button
+                                            className="btn-toggle-map"
+                                            onClick={() => { setShowMap(!showMap); setSelectedRestaurant(null); }}
+                                        >
+                                            {showMap ? "List View" : "Map View"}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             {restaurantsLoading && (
@@ -492,15 +510,6 @@ export default function DestinationDetail() {
                                 </>
                             )}
 
-                            {detailPlaceId && (
-                                <RestaurantDetail
-                                    detail={detailData}
-                                    loading={detailLoading}
-                                    error={detailError}
-                                    onClose={closeRestaurantDetail}
-                                    onRetry={() => openRestaurantDetail(detailPlaceId)}
-                                />
-                            )}
                         </div>
                     )}
 
@@ -571,6 +580,16 @@ export default function DestinationDetail() {
                     </div>
                 </aside>
             </div>
+
+            {detailPlaceId && (
+                <RestaurantDetail
+                    detail={detailData}
+                    loading={detailLoading}
+                    error={detailError}
+                    onClose={closeRestaurantDetail}
+                    onRetry={() => openRestaurantDetail(detailPlaceId)}
+                />
+            )}
         </div>
     );
 }
