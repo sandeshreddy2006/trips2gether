@@ -236,6 +236,39 @@ class NearbyRestaurantsResponse(BaseModel):
 
 
 # -------------------------
+# Restaurant Detail Schemas
+# -------------------------
+
+class OpeningHoursPeriod(BaseModel):
+    open_day: Optional[int] = None
+    open_time: Optional[str] = None
+    close_day: Optional[int] = None
+    close_time: Optional[str] = None
+
+
+class RestaurantOpeningHours(BaseModel):
+    open_now: Optional[bool] = None
+    weekday_descriptions: List[str] = []
+    periods: List[OpeningHoursPeriod] = []
+
+
+class RestaurantDetailOut(BaseModel):
+    place_id: str
+    name: str
+    address: Optional[str] = None
+    rating: Optional[float] = None
+    user_ratings_total: Optional[int] = None
+    price_level: Optional[str] = None
+    cuisine_types: List[str] = []
+    location: Optional[DestinationLocation] = None
+    photo_urls: List[str] = []
+    opening_hours: Optional[RestaurantOpeningHours] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    editorial_summary: Optional[str] = None
+
+
+# -------------------------
 # Face Verification Schemas
 # -------------------------
 

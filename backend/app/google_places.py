@@ -544,6 +544,173 @@ class GooglePlacesService:
             "radius_m": radius_m,
         }
 
+    # ------------------------------------------------------------------
+    # Restaurant details
+    # ------------------------------------------------------------------
+
+    _DETAIL_FIELD_MASK = (
+        "displayName,formattedAddress,rating,userRatingCount,location,photos,"
+        "priceLevel,primaryType,primaryTypeDisplayName,types,"
+        "currentOpeningHours,regularOpeningHours,websiteUri,"
+        "internationalPhoneNumber,editorialSummary"
+    )
+
+    _PRICE_LEVEL_MAP = {
+        "PRICE_LEVEL_FREE": "Free",
+        "PRICE_LEVEL_INEXPENSIVE": "$",
+        "PRICE_LEVEL_MODERATE": "$$",
+        "PRICE_LEVEL_EXPENSIVE": "$$$",
+        "PRICE_LEVEL_VERY_EXPENSIVE": "$$$$",
+    }
+
+    def get_restaurant_details(self, place_id: str) -> Dict[str, Any]:
+        """Fetch full details for a single restaurant by place ID."""
+        cache_key = f"restaurant_detail_{place_id}"
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return {"status": "success", "result": cached, "cached": True}
+
+        if not self.api_key:
+            return self._get_dummy_restaurant_detail(place_id)
+
+        try:
+            url = f"{self.BASE_URL}/places/{place_id}"
+            headers = {
+                "X-Goog-Api-Key": self.api_key,
+                "X-Goog-FieldMask": self._DETAIL_FIELD_MASK,
+            }
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            if "error" in data:
+                msg = data["error"].get("message", "Unknown API error")
+                return {"status": "error", "message": msg, "result": None}
+
+            result = self._format_restaurant_detail(data)
+            self._save_to_cache(cache_key, result)
+            return {"status": "success", "result": result, "cached": False}
+
+        except requests.exceptions.Timeout:
+            return {"status": "error", "message": "Request timed out.", "result": None}
+        except requests.exceptions.RequestException as e:
+            return {"status": "error", "message": str(e), "result": None}
+        except Exception as e:
+            return {"status": "error", "message": f"Unexpected error: {e}", "result": None}
+
+    def _format_restaurant_detail(self, data: Dict) -> Dict:
+        """Transform raw Place Details response into our schema shape."""
+        photo_urls: List[str] = []
+        for photo in (data.get("photos") or [])[:3]:
+            ref = photo.get("name")
+            if ref and self.api_key:
+                photo_urls.append(self.get_photo_url(ref, width=600, height=400))
+
+        raw_price = data.get("priceLevel")
+        price_level = self._PRICE_LEVEL_MAP.get(raw_price)
+
+        cuisine_types = self._extract_cuisine_types(data.get("types", []))
+
+        opening_hours = self._parse_opening_hours(
+            data.get("currentOpeningHours") or data.get("regularOpeningHours")
+        )
+
+        loc = data.get("location", {})
+
+        return {
+            "place_id": data.get("id", ""),
+            "name": data.get("displayName", {}).get("text", ""),
+            "address": data.get("formattedAddress"),
+            "rating": data.get("rating"),
+            "user_ratings_total": data.get("userRatingCount"),
+            "price_level": price_level,
+            "cuisine_types": cuisine_types,
+            "location": {
+                "lat": loc.get("latitude"),
+                "lng": loc.get("longitude"),
+            },
+            "photo_urls": photo_urls,
+            "opening_hours": opening_hours,
+            "phone": data.get("internationalPhoneNumber"),
+            "website": data.get("websiteUri"),
+            "editorial_summary": (data.get("editorialSummary") or {}).get("text"),
+        }
+
+    @staticmethod
+    def _extract_cuisine_types(types: List[str]) -> List[str]:
+        """Pick human-friendly cuisine/food labels from Place types."""
+        skip = {
+            "restaurant", "food", "point_of_interest", "establishment",
+            "meal_delivery", "meal_takeaway", "store",
+        }
+        formatted = []
+        for t in types:
+            if t in skip:
+                continue
+            label = t.replace("_", " ").title()
+            formatted.append(label)
+        return formatted[:6]
+
+    @staticmethod
+    def _parse_opening_hours(hours_data: Optional[Dict]) -> Optional[Dict]:
+        """Parse opening hours into a frontend-friendly structure."""
+        if not hours_data:
+            return None
+
+        weekday_descriptions = hours_data.get("weekdayDescriptions", [])
+        open_now = hours_data.get("openNow")
+
+        periods = []
+        for p in hours_data.get("periods", []):
+            o = p.get("open", {})
+            c = p.get("close", {})
+            periods.append({
+                "open_day": o.get("day"),
+                "open_time": f"{o.get('hour', 0):02d}:{o.get('minute', 0):02d}" if o.get("hour") is not None else None,
+                "close_day": c.get("day"),
+                "close_time": f"{c.get('hour', 0):02d}:{c.get('minute', 0):02d}" if c.get("hour") is not None else None,
+            })
+
+        return {
+            "open_now": open_now,
+            "weekday_descriptions": weekday_descriptions,
+            "periods": periods,
+        }
+
+    def _get_dummy_restaurant_detail(self, place_id: str) -> Dict[str, Any]:
+        """Dummy restaurant detail for local dev."""
+        result = {
+            "place_id": place_id,
+            "name": "The Golden Fork",
+            "address": "123 Food Street, Culinary District",
+            "rating": 4.3,
+            "user_ratings_total": 874,
+            "price_level": "$$",
+            "cuisine_types": ["Italian", "Mediterranean", "Pizza"],
+            "location": {"lat": 40.7128, "lng": -74.0060},
+            "photo_urls": [
+                "https://via.placeholder.com/600x400?text=Restaurant+1",
+                "https://via.placeholder.com/600x400?text=Restaurant+2",
+            ],
+            "opening_hours": {
+                "open_now": True,
+                "weekday_descriptions": [
+                    "Monday: 11:00 AM – 10:00 PM",
+                    "Tuesday: 11:00 AM – 10:00 PM",
+                    "Wednesday: 11:00 AM – 10:00 PM",
+                    "Thursday: 11:00 AM – 11:00 PM",
+                    "Friday: 11:00 AM – 11:30 PM",
+                    "Saturday: 10:00 AM – 11:30 PM",
+                    "Sunday: 10:00 AM – 9:00 PM",
+                ],
+                "periods": [],
+            },
+            "phone": "+1 555-123-4567",
+            "website": "https://example.com",
+            "editorial_summary": "A cozy Italian restaurant known for its wood-fired pizzas and fresh pasta.",
+        }
+        return {"status": "success", "result": result, "dummy": True}
+
     def clear_cache(self):
         """Clear all cached results"""
         self._cache.clear()
