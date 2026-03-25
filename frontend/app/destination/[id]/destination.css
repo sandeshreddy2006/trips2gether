@@ -831,6 +831,30 @@ body {
     margin-bottom: 0;
 }
 
+.restaurants-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.radius-select {
+    padding: 8px 12px;
+    border: 2px solid var(--secondary-green);
+    border-radius: 8px;
+    background: white;
+    color: var(--primary-green);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.radius-select:hover,
+.radius-select:focus {
+    border-color: var(--primary-green);
+}
+
 .btn-toggle-map {
     padding: 8px 18px;
     border: 2px solid var(--secondary-green);
@@ -872,6 +896,14 @@ body {
         align-items: flex-start;
         gap: 12px;
     }
+
+    .restaurants-controls {
+        width: 100%;
+    }
+
+    .radius-select {
+        flex: 1;
+    }
 }
 
 /* -------------------------
@@ -880,28 +912,24 @@ body {
 
 .detail-panel-overlay {
     position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.4);
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 480px;
+    max-width: 100%;
     z-index: 1000;
-    display: flex;
-    justify-content: flex-end;
-    animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    pointer-events: none;
 }
 
 .detail-panel {
-    width: 480px;
-    max-width: 100%;
+    width: 100%;
     height: 100%;
     background: white;
     overflow-y: auto;
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
     animation: slideIn 0.3s ease;
     position: relative;
+    pointer-events: auto;
 }
 
 @keyframes slideIn {
@@ -910,15 +938,15 @@ body {
 }
 
 .detail-close {
-    position: sticky;
+    position: absolute;
     top: 12px;
-    float: right;
-    margin: 12px;
+    right: 12px;
     width: 36px;
     height: 36px;
     border: none;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.06);
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
     font-size: 1.1rem;
     cursor: pointer;
     z-index: 10;
@@ -926,10 +954,11 @@ body {
     align-items: center;
     justify-content: center;
     transition: background 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .detail-close:hover {
-    background: rgba(0, 0, 0, 0.12);
+    background: rgba(255, 255, 255, 1);
 }
 
 .detail-loading,
@@ -952,26 +981,23 @@ body {
 /* Photos */
 .detail-photos {
     display: flex;
-    gap: 4px;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
+    background: #f0f0f0;
 }
 
 .detail-photo {
     flex: 0 0 100%;
     width: 100%;
-    height: 260px;
+    height: 280px;
     object-fit: cover;
     scroll-snap-align: start;
+    display: block;
 }
 
 .detail-photos::-webkit-scrollbar {
-    height: 4px;
-}
-
-.detail-photos::-webkit-scrollbar-thumb {
-    background: var(--accent-green);
-    border-radius: 4px;
+    height: 0;
+    display: none;
 }
 
 /* Body */

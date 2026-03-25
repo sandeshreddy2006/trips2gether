@@ -46,8 +46,8 @@ export default function RestaurantDetail({
     const photosRef = useRef<HTMLDivElement>(null);
 
     return (
-        <div className="detail-panel-overlay" onClick={onClose}>
-            <div className="detail-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="detail-panel-overlay">
+            <div className="detail-panel">
                 <button className="detail-close" onClick={onClose}>✕</button>
 
                 {loading && (
