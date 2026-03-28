@@ -217,6 +217,7 @@ class NearbyRestaurantOut(BaseModel):
     rating: Optional[float] = None
     user_ratings_total: Optional[int] = None
     price_level: Optional[str] = None
+    cuisine_type: Optional[str] = None
     distance_km: Optional[float] = None
     distance_text: Optional[str] = None
     location: Optional[DestinationLocation] = None
