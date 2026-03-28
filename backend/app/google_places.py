@@ -486,6 +486,10 @@ class GooglePlacesService:
             raw_price = place.get("priceLevel")
             price_level = PRICE_MAP.get(raw_price)
 
+            primary = place.get("primaryType", "")
+            cuisine_labels = self._extract_cuisine_types([primary]) if primary else []
+            cuisine_type = cuisine_labels[0] if cuisine_labels else None
+
             formatted.append({
                 "place_id": place.get("id", ""),
                 "name": place.get("displayName", {}).get("text", ""),
@@ -493,6 +497,7 @@ class GooglePlacesService:
                 "rating": place.get("rating"),
                 "user_ratings_total": place.get("userRatingCount"),
                 "price_level": price_level,
+                "cuisine_type": cuisine_type,
                 "distance_km": round(dist_km, 2) if dist_km is not None else None,
                 "distance_text": dist_text,
                 "location": {"lat": p_lat, "lng": p_lng},
@@ -508,13 +513,17 @@ class GooglePlacesService:
     ) -> Dict[str, Any]:
         """Dummy restaurant data for local dev without an API key."""
         import random
-        names = [
-            "The Golden Fork", "Sakura Sushi", "Bella Pasta",
-            "Green Leaf Bistro", "Smoky BBQ Pit", "Curry House",
+        dummy_items = [
+            ("The Golden Fork", "Italian"),
+            ("Sakura Sushi", "Japanese"),
+            ("Bella Pasta", "Italian"),
+            ("Green Leaf Bistro", "Vegan"),
+            ("Smoky BBQ Pit", "Barbecue"),
+            ("Curry House", "Indian"),
         ]
         prices = ["$", "$$", "$$$"]
         results = []
-        for i, name in enumerate(names):
+        for i, (name, cuisine) in enumerate(dummy_items):
             offset_lat = random.uniform(-0.005, 0.005)
             offset_lng = random.uniform(-0.005, 0.005)
             p_lat = lat + offset_lat
@@ -527,6 +536,7 @@ class GooglePlacesService:
                 "rating": round(random.uniform(3.5, 4.9), 1),
                 "user_ratings_total": random.randint(50, 2000),
                 "price_level": random.choice(prices),
+                "cuisine_type": cuisine,
                 "distance_km": round(dist, 2),
                 "distance_text": f"{int(dist * 1000)} m" if dist < 1 else f"{dist:.1f} km",
                 "location": {"lat": p_lat, "lng": p_lng},
