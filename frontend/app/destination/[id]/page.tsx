@@ -28,6 +28,7 @@ interface NearbyRestaurant {
     rating?: number;
     user_ratings_total?: number;
     price_level?: string;
+    cuisine_type?: string;
     distance_km?: number;
     distance_text?: string;
     location?: { lat: number | null; lng: number | null };
@@ -95,6 +96,10 @@ export default function DestinationDetail() {
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailError, setDetailError] = useState<string | null>(null);
     const [detailPlaceId, setDetailPlaceId] = useState<string | null>(null);
+
+    const [filterCuisines, setFilterCuisines] = useState<string[]>([]);
+    const [filterPrices, setFilterPrices] = useState<string[]>([]);
+    const [filterMinRating, setFilterMinRating] = useState<number | null>(null);
 
     const placeId = params.id as string;
 
@@ -164,6 +169,28 @@ export default function DestinationDetail() {
         }
         if (r.photo_url) return r.photo_url;
         return "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+    };
+
+    const availableCuisines = Array.from(
+        new Set(restaurants.map((r) => r.cuisine_type).filter(Boolean) as string[])
+    ).sort();
+    const availablePrices = ["$", "$$", "$$$", "$$$$"].filter((p) =>
+        restaurants.some((r) => r.price_level === p)
+    );
+    const filtersActive = filterCuisines.length > 0 || filterPrices.length > 0 || filterMinRating !== null;
+
+    const clearFilters = () => {
+        setFilterCuisines([]);
+        setFilterPrices([]);
+        setFilterMinRating(null);
+    };
+
+    const toggleCuisine = (c: string) => {
+        setFilterCuisines((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]);
+    };
+
+    const togglePrice = (p: string) => {
+        setFilterPrices((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]);
     };
 
     const openRestaurantDetail = async (placeId: string) => {
@@ -390,6 +417,7 @@ export default function DestinationDetail() {
                                             const newRadius = Number(e.target.value);
                                             setRestaurantRadius(newRadius);
                                             setRestaurantsFetched(false);
+                                            clearFilters();
                                         }}
                                     >
                                         <option value={500}>500 m</option>
@@ -409,6 +437,62 @@ export default function DestinationDetail() {
                                     )}
                                 </div>
                             </div>
+
+                            {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
+                                <div className="filter-bar">
+                                    {availableCuisines.length > 0 && (
+                                        <div className="filter-group">
+                                            <span className="filter-label">Cuisine</span>
+                                            <div className="filter-chips">
+                                                {availableCuisines.map((c) => (
+                                                    <button
+                                                        key={c}
+                                                        className={`filter-chip ${filterCuisines.includes(c) ? "filter-chip-active" : ""}`}
+                                                        onClick={() => toggleCuisine(c)}
+                                                    >
+                                                        {c}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {availablePrices.length > 0 && (
+                                        <div className="filter-group">
+                                            <span className="filter-label">Price</span>
+                                            <div className="filter-chips">
+                                                {availablePrices.map((p) => (
+                                                    <button
+                                                        key={p}
+                                                        className={`filter-chip ${filterPrices.includes(p) ? "filter-chip-active" : ""}`}
+                                                        onClick={() => togglePrice(p)}
+                                                    >
+                                                        {p}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="filter-group">
+                                        <span className="filter-label">Min Rating</span>
+                                        <select
+                                            className="filter-select"
+                                            value={filterMinRating ?? ""}
+                                            onChange={(e) => setFilterMinRating(e.target.value ? Number(e.target.value) : null)}
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="3">3.0+</option>
+                                            <option value="3.5">3.5+</option>
+                                            <option value="4">4.0+</option>
+                                            <option value="4.5">4.5+</option>
+                                        </select>
+                                    </div>
+                                    {filtersActive && (
+                                        <button className="btn-clear-filters" onClick={clearFilters}>
+                                            Clear filters
+                                        </button>
+                                    )}
+                                </div>
+                            )}
 
                             {restaurantsLoading && (
                                 <div className="restaurants-loading">
