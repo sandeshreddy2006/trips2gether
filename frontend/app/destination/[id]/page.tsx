@@ -179,6 +179,13 @@ export default function DestinationDetail() {
     );
     const filtersActive = filterCuisines.length > 0 || filterPrices.length > 0 || filterMinRating !== null;
 
+    const filteredRestaurants = restaurants.filter((r) => {
+        if (filterCuisines.length > 0 && (!r.cuisine_type || !filterCuisines.includes(r.cuisine_type))) return false;
+        if (filterPrices.length > 0 && (!r.price_level || !filterPrices.includes(r.price_level))) return false;
+        if (filterMinRating !== null && (r.rating == null || r.rating < filterMinRating)) return false;
+        return true;
+    });
+
     const clearFilters = () => {
         setFilterCuisines([]);
         setFilterPrices([]);
@@ -535,12 +542,41 @@ export default function DestinationDetail() {
 
                             {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
                                 <>
-                                    {showMap && destination?.location?.lat != null && destination?.location?.lng != null && (
+                                    {filtersActive && (
+                                        <div className="active-filters">
+                                            {filterCuisines.map((c) => (
+                                                <span key={c} className="active-filter-chip" onClick={() => toggleCuisine(c)}>
+                                                    {c} ✕
+                                                </span>
+                                            ))}
+                                            {filterPrices.map((p) => (
+                                                <span key={p} className="active-filter-chip" onClick={() => togglePrice(p)}>
+                                                    {p} ✕
+                                                </span>
+                                            ))}
+                                            {filterMinRating !== null && (
+                                                <span className="active-filter-chip" onClick={() => setFilterMinRating(null)}>
+                                                    ★ {filterMinRating}+ ✕
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {filteredRestaurants.length === 0 && filtersActive && (
+                                        <div className="restaurants-empty">
+                                            <p>No restaurants match your filters.</p>
+                                            <button className="btn btn-widen" onClick={clearFilters}>
+                                                Clear filters
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {showMap && filteredRestaurants.length > 0 && destination?.location?.lat != null && destination?.location?.lng != null && (
                                         <RestaurantMap
                                             anchorLat={destination.location.lat}
                                             anchorLng={destination.location.lng}
                                             anchorName={destination.name}
-                                            restaurants={restaurants}
+                                            restaurants={filteredRestaurants}
                                             selectedId={selectedRestaurant}
                                             onSelectRestaurant={(id) => {
                                                 setSelectedRestaurant(id);
@@ -554,43 +590,46 @@ export default function DestinationDetail() {
                                         />
                                     )}
 
-                                    <div className="restaurants-grid">
-                                        {restaurants.map((r) => (
-                                            <div
-                                                key={r.place_id}
-                                                ref={(el) => { restaurantRefs.current[r.place_id] = el; }}
-                                                className={`restaurant-card ${selectedRestaurant === r.place_id ? "restaurant-card-selected" : ""}`}
-                                                onClick={() => {
-                                                    setSelectedRestaurant(r.place_id);
-                                                    openRestaurantDetail(r.place_id);
-                                                }}
-                                            >
-                                                <div className="restaurant-image">
-                                                    <img
-                                                        src={getRestaurantImageUrl(r)}
-                                                        alt={r.name}
-                                                        onError={(e) => {
-                                                            e.currentTarget.src = "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
-                                                        }}
-                                                    />
-                                                </div>
-                                                <div className="restaurant-content">
-                                                    <h3>{r.name}</h3>
-                                                    <div className="restaurant-meta">
-                                                        {r.rating && <span className="restaurant-rating">★ {r.rating.toFixed(1)}</span>}
-                                                        {r.price_level && <span className="restaurant-price">{r.price_level}</span>}
+                                    {filteredRestaurants.length > 0 && (
+                                        <div className="restaurants-grid">
+                                            {filteredRestaurants.map((r) => (
+                                                <div
+                                                    key={r.place_id}
+                                                    ref={(el) => { restaurantRefs.current[r.place_id] = el; }}
+                                                    className={`restaurant-card ${selectedRestaurant === r.place_id ? "restaurant-card-selected" : ""}`}
+                                                    onClick={() => {
+                                                        setSelectedRestaurant(r.place_id);
+                                                        openRestaurantDetail(r.place_id);
+                                                    }}
+                                                >
+                                                    <div className="restaurant-image">
+                                                        <img
+                                                            src={getRestaurantImageUrl(r)}
+                                                            alt={r.name}
+                                                            onError={(e) => {
+                                                                e.currentTarget.src = "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+                                                            }}
+                                                        />
                                                     </div>
-                                                    {r.address && <p className="restaurant-address">{r.address}</p>}
-                                                    <div className="restaurant-footer">
-                                                        {r.distance_text && <span className="restaurant-distance">{r.distance_text}</span>}
-                                                        {r.user_ratings_total && (
-                                                            <span className="restaurant-reviews">{r.user_ratings_total.toLocaleString()} reviews</span>
-                                                        )}
+                                                    <div className="restaurant-content">
+                                                        <h3>{r.name}</h3>
+                                                        <div className="restaurant-meta">
+                                                            {r.rating && <span className="restaurant-rating">★ {r.rating.toFixed(1)}</span>}
+                                                            {r.price_level && <span className="restaurant-price">{r.price_level}</span>}
+                                                            {r.cuisine_type && <span className="restaurant-cuisine">{r.cuisine_type}</span>}
+                                                        </div>
+                                                        {r.address && <p className="restaurant-address">{r.address}</p>}
+                                                        <div className="restaurant-footer">
+                                                            {r.distance_text && <span className="restaurant-distance">{r.distance_text}</span>}
+                                                            {r.user_ratings_total && (
+                                                                <span className="restaurant-reviews">{r.user_ratings_total.toLocaleString()} reviews</span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </>
                             )}
 

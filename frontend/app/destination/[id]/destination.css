@@ -1003,6 +1003,39 @@ body {
     color: #2e7d32;
 }
 
+.active-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.active-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: #e8f5e9;
+    color: var(--primary-green);
+    border-radius: 16px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.active-filter-chip:hover {
+    background: #c8e6c9;
+}
+
+.restaurant-cuisine {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    background: #f0f0f0;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
 @media (max-width: 600px) {
     .filter-bar {
         flex-direction: column;
