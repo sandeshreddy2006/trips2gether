@@ -28,6 +28,7 @@ interface NearbyRestaurant {
     rating?: number;
     user_ratings_total?: number;
     price_level?: string;
+    cuisine_type?: string;
     distance_km?: number;
     distance_text?: string;
     location?: { lat: number | null; lng: number | null };
@@ -95,6 +96,10 @@ export default function DestinationDetail() {
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailError, setDetailError] = useState<string | null>(null);
     const [detailPlaceId, setDetailPlaceId] = useState<string | null>(null);
+
+    const [filterCuisines, setFilterCuisines] = useState<string[]>([]);
+    const [filterPrices, setFilterPrices] = useState<string[]>([]);
+    const [filterMinRating, setFilterMinRating] = useState<number | null>(null);
 
     const placeId = params.id as string;
 
@@ -164,6 +169,35 @@ export default function DestinationDetail() {
         }
         if (r.photo_url) return r.photo_url;
         return "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+    };
+
+    const availableCuisines = Array.from(
+        new Set(restaurants.map((r) => r.cuisine_type).filter(Boolean) as string[])
+    ).sort();
+    const availablePrices = ["$", "$$", "$$$", "$$$$"].filter((p) =>
+        restaurants.some((r) => r.price_level === p)
+    );
+    const filtersActive = filterCuisines.length > 0 || filterPrices.length > 0 || filterMinRating !== null;
+
+    const filteredRestaurants = restaurants.filter((r) => {
+        if (filterCuisines.length > 0 && (!r.cuisine_type || !filterCuisines.includes(r.cuisine_type))) return false;
+        if (filterPrices.length > 0 && (!r.price_level || !filterPrices.includes(r.price_level))) return false;
+        if (filterMinRating !== null && (r.rating == null || r.rating < filterMinRating)) return false;
+        return true;
+    });
+
+    const clearFilters = () => {
+        setFilterCuisines([]);
+        setFilterPrices([]);
+        setFilterMinRating(null);
+    };
+
+    const toggleCuisine = (c: string) => {
+        setFilterCuisines((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]);
+    };
+
+    const togglePrice = (p: string) => {
+        setFilterPrices((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]);
     };
 
     const openRestaurantDetail = async (placeId: string) => {
@@ -390,6 +424,7 @@ export default function DestinationDetail() {
                                             const newRadius = Number(e.target.value);
                                             setRestaurantRadius(newRadius);
                                             setRestaurantsFetched(false);
+                                            clearFilters();
                                         }}
                                     >
                                         <option value={500}>500 m</option>
@@ -409,6 +444,62 @@ export default function DestinationDetail() {
                                     )}
                                 </div>
                             </div>
+
+                            {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
+                                <div className="filter-bar">
+                                    {availableCuisines.length > 0 && (
+                                        <div className="filter-group">
+                                            <span className="filter-label">Cuisine</span>
+                                            <div className="filter-chips">
+                                                {availableCuisines.map((c) => (
+                                                    <button
+                                                        key={c}
+                                                        className={`filter-chip ${filterCuisines.includes(c) ? "filter-chip-active" : ""}`}
+                                                        onClick={() => toggleCuisine(c)}
+                                                    >
+                                                        {c}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {availablePrices.length > 0 && (
+                                        <div className="filter-group">
+                                            <span className="filter-label">Price</span>
+                                            <div className="filter-chips">
+                                                {availablePrices.map((p) => (
+                                                    <button
+                                                        key={p}
+                                                        className={`filter-chip ${filterPrices.includes(p) ? "filter-chip-active" : ""}`}
+                                                        onClick={() => togglePrice(p)}
+                                                    >
+                                                        {p}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="filter-group">
+                                        <span className="filter-label">Min Rating</span>
+                                        <select
+                                            className="filter-select"
+                                            value={filterMinRating ?? ""}
+                                            onChange={(e) => setFilterMinRating(e.target.value ? Number(e.target.value) : null)}
+                                        >
+                                            <option value="">Any</option>
+                                            <option value="3">3.0+</option>
+                                            <option value="3.5">3.5+</option>
+                                            <option value="4">4.0+</option>
+                                            <option value="4.5">4.5+</option>
+                                        </select>
+                                    </div>
+                                    {filtersActive && (
+                                        <button className="btn-clear-filters" onClick={clearFilters}>
+                                            Clear filters
+                                        </button>
+                                    )}
+                                </div>
+                            )}
 
                             {restaurantsLoading && (
                                 <div className="restaurants-loading">
@@ -451,12 +542,41 @@ export default function DestinationDetail() {
 
                             {!restaurantsLoading && !restaurantsError && restaurants.length > 0 && (
                                 <>
-                                    {showMap && destination?.location?.lat != null && destination?.location?.lng != null && (
+                                    {filtersActive && (
+                                        <div className="active-filters">
+                                            {filterCuisines.map((c) => (
+                                                <span key={c} className="active-filter-chip" onClick={() => toggleCuisine(c)}>
+                                                    {c} ✕
+                                                </span>
+                                            ))}
+                                            {filterPrices.map((p) => (
+                                                <span key={p} className="active-filter-chip" onClick={() => togglePrice(p)}>
+                                                    {p} ✕
+                                                </span>
+                                            ))}
+                                            {filterMinRating !== null && (
+                                                <span className="active-filter-chip" onClick={() => setFilterMinRating(null)}>
+                                                    ★ {filterMinRating}+ ✕
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {filteredRestaurants.length === 0 && filtersActive && (
+                                        <div className="restaurants-empty">
+                                            <p>No restaurants match your filters.</p>
+                                            <button className="btn btn-widen" onClick={clearFilters}>
+                                                Clear filters
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {showMap && filteredRestaurants.length > 0 && destination?.location?.lat != null && destination?.location?.lng != null && (
                                         <RestaurantMap
                                             anchorLat={destination.location.lat}
                                             anchorLng={destination.location.lng}
                                             anchorName={destination.name}
-                                            restaurants={restaurants}
+                                            restaurants={filteredRestaurants}
                                             selectedId={selectedRestaurant}
                                             onSelectRestaurant={(id) => {
                                                 setSelectedRestaurant(id);
@@ -470,43 +590,46 @@ export default function DestinationDetail() {
                                         />
                                     )}
 
-                                    <div className="restaurants-grid">
-                                        {restaurants.map((r) => (
-                                            <div
-                                                key={r.place_id}
-                                                ref={(el) => { restaurantRefs.current[r.place_id] = el; }}
-                                                className={`restaurant-card ${selectedRestaurant === r.place_id ? "restaurant-card-selected" : ""}`}
-                                                onClick={() => {
-                                                    setSelectedRestaurant(r.place_id);
-                                                    openRestaurantDetail(r.place_id);
-                                                }}
-                                            >
-                                                <div className="restaurant-image">
-                                                    <img
-                                                        src={getRestaurantImageUrl(r)}
-                                                        alt={r.name}
-                                                        onError={(e) => {
-                                                            e.currentTarget.src = "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
-                                                        }}
-                                                    />
-                                                </div>
-                                                <div className="restaurant-content">
-                                                    <h3>{r.name}</h3>
-                                                    <div className="restaurant-meta">
-                                                        {r.rating && <span className="restaurant-rating">★ {r.rating.toFixed(1)}</span>}
-                                                        {r.price_level && <span className="restaurant-price">{r.price_level}</span>}
+                                    {filteredRestaurants.length > 0 && (
+                                        <div className="restaurants-grid">
+                                            {filteredRestaurants.map((r) => (
+                                                <div
+                                                    key={r.place_id}
+                                                    ref={(el) => { restaurantRefs.current[r.place_id] = el; }}
+                                                    className={`restaurant-card ${selectedRestaurant === r.place_id ? "restaurant-card-selected" : ""}`}
+                                                    onClick={() => {
+                                                        setSelectedRestaurant(r.place_id);
+                                                        openRestaurantDetail(r.place_id);
+                                                    }}
+                                                >
+                                                    <div className="restaurant-image">
+                                                        <img
+                                                            src={getRestaurantImageUrl(r)}
+                                                            alt={r.name}
+                                                            onError={(e) => {
+                                                                e.currentTarget.src = "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+                                                            }}
+                                                        />
                                                     </div>
-                                                    {r.address && <p className="restaurant-address">{r.address}</p>}
-                                                    <div className="restaurant-footer">
-                                                        {r.distance_text && <span className="restaurant-distance">{r.distance_text}</span>}
-                                                        {r.user_ratings_total && (
-                                                            <span className="restaurant-reviews">{r.user_ratings_total.toLocaleString()} reviews</span>
-                                                        )}
+                                                    <div className="restaurant-content">
+                                                        <h3>{r.name}</h3>
+                                                        <div className="restaurant-meta">
+                                                            {r.rating && <span className="restaurant-rating">★ {r.rating.toFixed(1)}</span>}
+                                                            {r.price_level && <span className="restaurant-price">{r.price_level}</span>}
+                                                            {r.cuisine_type && <span className="restaurant-cuisine">{r.cuisine_type}</span>}
+                                                        </div>
+                                                        {r.address && <p className="restaurant-address">{r.address}</p>}
+                                                        <div className="restaurant-footer">
+                                                            {r.distance_text && <span className="restaurant-distance">{r.distance_text}</span>}
+                                                            {r.user_ratings_total && (
+                                                                <span className="restaurant-reviews">{r.user_ratings_total.toLocaleString()} reviews</span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </>
                             )}
 
