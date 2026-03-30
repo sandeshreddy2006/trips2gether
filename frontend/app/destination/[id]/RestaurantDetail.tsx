@@ -22,6 +22,10 @@ interface RestaurantDetailData {
     phone?: string | null;
     website?: string | null;
     editorial_summary?: string | null;
+    google_maps_url?: string | null;
+    yelp_url?: string | null;
+    opentable_url?: string | null;
+    reservable?: boolean;
 }
 
 interface RestaurantDetailProps {
@@ -139,6 +143,51 @@ export default function RestaurantDetail({
                                     </span>
                                 </div>
                             </div>
+
+                            {/* Reserve / Order */}
+                            {(detail.google_maps_url || detail.yelp_url || detail.opentable_url) && (
+                                <div className="detail-actions">
+                                    <span className="detail-label">Reserve / Order</span>
+                                    {detail.reservable && (
+                                        <span className="reservable-badge">Reservations available</span>
+                                    )}
+                                    <div className="action-buttons">
+                                        {detail.google_maps_url && (
+                                            <a
+                                                href={detail.google_maps_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="action-btn action-btn-google"
+                                            >
+                                                View on Google Maps
+                                            </a>
+                                        )}
+                                        {detail.yelp_url && (
+                                            <a
+                                                href={detail.yelp_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="action-btn action-btn-yelp"
+                                            >
+                                                Find on Yelp
+                                            </a>
+                                        )}
+                                        {detail.opentable_url && (
+                                            <a
+                                                href={detail.opentable_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="action-btn action-btn-opentable"
+                                            >
+                                                Find on OpenTable
+                                            </a>
+                                        )}
+                                    </div>
+                                    <p className="action-notice">
+                                        You will be redirected to an external site to complete your reservation.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Opening hours */}
                             <div className="detail-hours-section">
