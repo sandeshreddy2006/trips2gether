@@ -6,6 +6,7 @@ Handles HTTP requests to Google Places (v1) API for destination search
 import os
 import math
 import requests
+from urllib.parse import quote_plus
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 
@@ -562,7 +563,8 @@ class GooglePlacesService:
         "displayName,formattedAddress,rating,userRatingCount,location,photos,"
         "priceLevel,primaryType,primaryTypeDisplayName,types,"
         "currentOpeningHours,regularOpeningHours,websiteUri,"
-        "internationalPhoneNumber,editorialSummary"
+        "internationalPhoneNumber,editorialSummary,"
+        "googleMapsUri,reservable"
     )
 
     _PRICE_LEVEL_MAP = {
@@ -627,10 +629,14 @@ class GooglePlacesService:
 
         loc = data.get("location", {})
 
+        name = data.get("displayName", {}).get("text", "")
+        address = data.get("formattedAddress")
+        ext_urls = self._build_external_urls(name, address)
+
         return {
             "place_id": data.get("id", ""),
-            "name": data.get("displayName", {}).get("text", ""),
-            "address": data.get("formattedAddress"),
+            "name": name,
+            "address": address,
             "rating": data.get("rating"),
             "user_ratings_total": data.get("userRatingCount"),
             "price_level": price_level,
@@ -644,7 +650,24 @@ class GooglePlacesService:
             "phone": data.get("internationalPhoneNumber"),
             "website": data.get("websiteUri"),
             "editorial_summary": (data.get("editorialSummary") or {}).get("text"),
+            "google_maps_url": data.get("googleMapsUri"),
+            "reservable": data.get("reservable", False),
+            "yelp_url": ext_urls.get("yelp_url"),
+            "opentable_url": ext_urls.get("opentable_url"),
         }
+
+    @staticmethod
+    def _build_external_urls(name: str, address: Optional[str]) -> Dict[str, Optional[str]]:
+        """Construct Yelp and OpenTable search URLs from restaurant name/address."""
+        yelp_url = None
+        opentable_url = None
+        if name:
+            opentable_url = f"https://www.opentable.com/s?term={quote_plus(name)}&covers=2"
+            if address:
+                yelp_url = f"https://www.yelp.com/search?find_desc={quote_plus(name)}&find_loc={quote_plus(address)}"
+            else:
+                yelp_url = f"https://www.yelp.com/search?find_desc={quote_plus(name)}"
+        return {"yelp_url": yelp_url, "opentable_url": opentable_url}
 
     @staticmethod
     def _extract_cuisine_types(types: List[str]) -> List[str]:
@@ -718,6 +741,10 @@ class GooglePlacesService:
             "phone": "+1 555-123-4567",
             "website": "https://example.com",
             "editorial_summary": "A cozy Italian restaurant known for its wood-fired pizzas and fresh pasta.",
+            "google_maps_url": "https://maps.google.com/?cid=1234567890",
+            "reservable": True,
+            "yelp_url": "https://www.yelp.com/search?find_desc=The+Golden+Fork&find_loc=123+Food+Street",
+            "opentable_url": "https://www.opentable.com/s?term=The+Golden+Fork&covers=2",
         }
         return {"status": "success", "result": result, "dummy": True}
 
