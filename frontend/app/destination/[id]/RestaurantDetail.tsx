@@ -40,6 +40,10 @@ function NotAvailable() {
     return <span className="detail-na">Not available</span>;
 }
 
+function isValidUrl(url?: string | null): url is string {
+    return !!url && url.trim().length > 0 && url.startsWith("http");
+}
+
 export default function RestaurantDetail({
     detail,
     loading,
@@ -48,6 +52,11 @@ export default function RestaurantDetail({
     onRetry,
 }: RestaurantDetailProps) {
     const photosRef = useRef<HTMLDivElement>(null);
+
+    const hasGoogle = detail && isValidUrl(detail.google_maps_url);
+    const hasYelp = detail && isValidUrl(detail.yelp_url);
+    const hasOpenTable = detail && isValidUrl(detail.opentable_url);
+    const hasAnyAction = hasGoogle || hasYelp || hasOpenTable;
 
     return (
         <div className="detail-panel-overlay">
@@ -145,16 +154,16 @@ export default function RestaurantDetail({
                             </div>
 
                             {/* Reserve / Order */}
-                            {(detail.google_maps_url || detail.yelp_url || detail.opentable_url) && (
+                            {hasAnyAction && (
                                 <div className="detail-actions">
                                     <span className="detail-label">Reserve / Order</span>
-                                    {detail.reservable && (
+                                    {detail.reservable === true && (
                                         <span className="reservable-badge">Reservations available</span>
                                     )}
                                     <div className="action-buttons">
-                                        {detail.google_maps_url && (
+                                        {hasGoogle && (
                                             <a
-                                                href={detail.google_maps_url}
+                                                href={detail.google_maps_url!}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="action-btn action-btn-google"
@@ -162,9 +171,9 @@ export default function RestaurantDetail({
                                                 View on Google Maps
                                             </a>
                                         )}
-                                        {detail.yelp_url && (
+                                        {hasYelp && (
                                             <a
-                                                href={detail.yelp_url}
+                                                href={detail.yelp_url!}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="action-btn action-btn-yelp"
@@ -172,9 +181,9 @@ export default function RestaurantDetail({
                                                 Find on Yelp
                                             </a>
                                         )}
-                                        {detail.opentable_url && (
+                                        {hasOpenTable && (
                                             <a
-                                                href={detail.opentable_url}
+                                                href={detail.opentable_url!}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="action-btn action-btn-opentable"
