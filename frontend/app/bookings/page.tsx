@@ -2,7 +2,27 @@
 
 import React, { useMemo, useState } from "react";
 import { useAuth } from "../AuthContext";
+import AirportAutocomplete from "./AirportAutocomplete";
 import "./bookings.css";
+
+type BaggageInfo = {
+    type: string;    // "checked_baggage" | "carry_on"
+    quantity: number;
+};
+
+type LayoverInfo = {
+    airport: string;
+    duration: string;
+};
+
+type FlightSlice = {
+    origin: string;
+    destination: string;
+    departure_time: string | null;
+    arrival_time: string | null;
+    stops: number;
+    layovers: LayoverInfo[];
+};
 
 type FlightResult = {
     id: string;
@@ -16,16 +36,13 @@ type FlightResult = {
     arrivalTime: string;
     departureAirport: string;
     arrivalAirport: string;
-    slices: Array<{
-        origin: string;
-        destination: string;
-        departure_time: string | null;
-        arrival_time: string | null;
-        stops: number;
-    }>;
+    cabinClass: string | null;
+    baggages: BaggageInfo[];
+    slices: FlightSlice[];
 };
 
 type FormState = {
+    tripType: "round_trip" | "one_way";
     origin: string;
     destination: string;
     departDate: string;
@@ -42,6 +59,7 @@ function formatStops(stops: number): string {
 export default function BookingsPage() {
     const { isAuthenticated, isLoading } = useAuth();
     const [form, setForm] = useState<FormState>({
+        tripType: "round_trip",
         origin: "",
         destination: "",
         departDate: "",
@@ -75,15 +93,17 @@ export default function BookingsPage() {
         if (!form.origin.trim()) nextErrors.origin = "Origin is required";
         if (!form.destination.trim()) nextErrors.destination = "Destination is required";
         if (!form.departDate) nextErrors.departDate = "Departure date is required";
-        if (!form.returnDate) nextErrors.returnDate = "Return date is required";
+        if (form.tripType === "round_trip" && !form.returnDate) {
+            nextErrors.returnDate = "Return date is required";
+        }
         if (!form.travelers || form.travelers < 1) nextErrors.travelers = "At least 1 traveler is required";
 
-        if (form.origin.trim() && !/^[A-Za-z]{3}$/.test(form.origin.trim())) {
-            nextErrors.origin = "Use a 3-letter IATA code, e.g. JFK";
+        if (form.origin.trim() && form.origin.trim().length !== 3) {
+            nextErrors.origin = "Select an airport from the dropdown";
         }
 
-        if (form.destination.trim() && !/^[A-Za-z]{3}$/.test(form.destination.trim())) {
-            nextErrors.destination = "Use a 3-letter IATA code, e.g. CDG";
+        if (form.destination.trim() && form.destination.trim().length !== 3) {
+            nextErrors.destination = "Select an airport from the dropdown";
         }
 
         if (form.departDate) {
@@ -93,7 +113,7 @@ export default function BookingsPage() {
             }
         }
 
-        if (form.departDate && form.returnDate) {
+        if (form.tripType === "round_trip" && form.departDate && form.returnDate) {
             const depart = new Date(form.departDate);
             const ret = new Date(form.returnDate);
             if (ret < depart) {
@@ -126,7 +146,7 @@ export default function BookingsPage() {
                     origin: form.origin.trim().toUpperCase(),
                     destination: form.destination.trim().toUpperCase(),
                     depart_date: form.departDate,
-                    return_date: form.returnDate,
+                    return_date: form.tripType === "round_trip" ? form.returnDate : null,
                     travelers: form.travelers,
                 }),
             });
@@ -149,7 +169,22 @@ export default function BookingsPage() {
                     arrivalTime: flight.arrival_time,
                     departureAirport: flight.departure_airport,
                     arrivalAirport: flight.arrival_airport,
-                    slices: flight.slices || [],
+                    cabinClass: flight.cabin_class || null,
+                    baggages: (flight.baggages || []).map((b: any) => ({
+                        type: b.type,
+                        quantity: b.quantity,
+                    })),
+                    slices: (flight.slices || []).map((s: any) => ({
+                        origin: s.origin,
+                        destination: s.destination,
+                        departure_time: s.departure_time,
+                        arrival_time: s.arrival_time,
+                        stops: s.stops,
+                        layovers: (s.layovers || []).map((l: any) => ({
+                            airport: l.airport,
+                            duration: l.duration,
+                        })),
+                    })),
                 }))
             );
             setApiError(body?.message || null);
@@ -215,29 +250,46 @@ export default function BookingsPage() {
             </section>
 
             <section className="flight-search-shell">
-                <form onSubmit={handleSearch} className="flight-search-grid" noValidate>
-                    <div className="field-wrap">
-                        <label htmlFor="origin">Origin</label>
-                        <input
-                            id="origin"
-                            type="text"
-                            placeholder="e.g., JFK"
-                            value={form.origin}
-                            onChange={(e) => setForm((prev) => ({ ...prev, origin: e.target.value }))}
-                        />
-                        {errors.origin && <p className="field-error">{errors.origin}</p>}
-                    </div>
+                <form
+                    onSubmit={handleSearch}
+                    className={`flight-search-grid ${form.tripType === "one_way" ? "flight-search-grid-oneway" : ""}`}
+                    noValidate
+                >
+                    <AirportAutocomplete
+                        id="origin"
+                        label="Origin"
+                        value={form.origin}
+                        onChange={(iata) => setForm((prev) => ({ ...prev, origin: iata }))}
+                        placeholder="City or airport..."
+                        error={errors.origin}
+                    />
+
+                    <AirportAutocomplete
+                        id="destination"
+                        label="Destination"
+                        value={form.destination}
+                        onChange={(iata) => setForm((prev) => ({ ...prev, destination: iata }))}
+                        placeholder="City or airport..."
+                        error={errors.destination}
+                    />
 
                     <div className="field-wrap">
-                        <label htmlFor="destination">Destination</label>
-                        <input
-                            id="destination"
-                            type="text"
-                            placeholder="e.g., CDG"
-                            value={form.destination}
-                            onChange={(e) => setForm((prev) => ({ ...prev, destination: e.target.value }))}
-                        />
-                        {errors.destination && <p className="field-error">{errors.destination}</p>}
+                        <label htmlFor="tripType">Trip Type</label>
+                        <select
+                            id="tripType"
+                            value={form.tripType}
+                            onChange={(e) => {
+                                const nextTripType = e.target.value as FormState["tripType"];
+                                setForm((prev) => ({
+                                    ...prev,
+                                    tripType: nextTripType,
+                                    returnDate: nextTripType === "one_way" ? "" : prev.returnDate,
+                                }));
+                            }}
+                        >
+                            <option value="round_trip">Round trip</option>
+                            <option value="one_way">One way</option>
+                        </select>
                     </div>
 
                     <div className="field-wrap">
@@ -252,17 +304,19 @@ export default function BookingsPage() {
                         {errors.departDate && <p className="field-error">{errors.departDate}</p>}
                     </div>
 
-                    <div className="field-wrap">
-                        <label htmlFor="returnDate">Return</label>
-                        <input
-                            id="returnDate"
-                            type="date"
-                            min={form.departDate || minDate}
-                            value={form.returnDate}
-                            onChange={(e) => setForm((prev) => ({ ...prev, returnDate: e.target.value }))}
-                        />
-                        {errors.returnDate && <p className="field-error">{errors.returnDate}</p>}
-                    </div>
+                    {form.tripType === "round_trip" && (
+                        <div className="field-wrap">
+                            <label htmlFor="returnDate">Return</label>
+                            <input
+                                id="returnDate"
+                                type="date"
+                                min={form.departDate || minDate}
+                                value={form.returnDate}
+                                onChange={(e) => setForm((prev) => ({ ...prev, returnDate: e.target.value }))}
+                            />
+                            {errors.returnDate && <p className="field-error">{errors.returnDate}</p>}
+                        </div>
+                    )}
 
                     <div className="field-wrap">
                         <label htmlFor="travelers">Travelers</label>
@@ -354,6 +408,7 @@ export default function BookingsPage() {
                 <div className="flight-results-list">
                     {filteredResults.map((flight) => (
                         <article key={flight.id} className="flight-card">
+                            {/* ── Top row: airline identity + price ── */}
                             <div className="flight-top-row">
                                 <div className="flight-airline-block">
                                     {flight.logoUrl ? (
@@ -370,20 +425,58 @@ export default function BookingsPage() {
                                             {flight.airline.slice(0, 2).toUpperCase()}
                                         </div>
                                     )}
-                                    <h3>{flight.airline}</h3>
+                                    <div className="flight-airline-text">
+                                        <h3>{flight.airline}</h3>
+                                        {flight.cabinClass && (
+                                            <span className="flight-cabin-badge">
+                                                {flight.cabinClass.replace(/_/g, " ")}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
-                                <span className="flight-price">{flight.currency} {flight.price}</span>
+                                <div className="flight-price-block">
+                                    <span className="flight-price">
+                                        {flight.currency} {flight.price.toLocaleString()}
+                                    </span>
+                                    <span className="flight-price-note">per person</span>
+                                </div>
                             </div>
+
+                            {/* ── Route summary ── */}
                             <div className="flight-meta-row">
-                                <span>{flight.departureAirport} {flight.departureTime || "--:--"}</span>
-                                <span className="flight-arrow">→</span>
-                                <span>{flight.arrivalAirport} {flight.arrivalTime || "--:--"}</span>
+                                <span className="flight-airport">
+                                    <strong>{flight.departureAirport}</strong>
+                                    <span className="flight-time">{flight.departureTime || "--:--"}</span>
+                                </span>
+                                <span className="flight-route-center">
+                                    <span className="flight-duration-label">{flight.duration}</span>
+                                    <span className="flight-route-line" />
+                                    <span className="flight-stops-label">{formatStops(flight.stops)}</span>
+                                </span>
+                                <span className="flight-airport flight-airport-right">
+                                    <strong>{flight.arrivalAirport}</strong>
+                                    <span className="flight-time">{flight.arrivalTime || "--:--"}</span>
+                                </span>
                             </div>
+
+                            {/* ── Pills: travelers ── */}
                             <div className="flight-pill-row">
-                                <span className="pill">{flight.duration}</span>
-                                <span className="pill">{formatStops(flight.stops)}</span>
                                 <span className="pill">{form.travelers} traveler{form.travelers > 1 ? "s" : ""}</span>
                             </div>
+
+                            {/* ── Baggage info ── */}
+                            {flight.baggages.length > 0 && (
+                                <div className="flight-baggage-row">
+                                    {flight.baggages.map((bag, bi) => (
+                                        <span key={bi} className="baggage-chip">
+                                            {bag.type === "carry_on" ? "🎒" : "🧳"}{" "}
+                                            {bag.quantity}x {bag.type === "carry_on" ? "carry-on" : "checked bag"}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* ── Slice breakdown ── */}
                             {flight.slices.length > 0 && (
                                 <div className="flight-slices-grid">
                                     {flight.slices.map((slice, index) => (
@@ -392,9 +485,19 @@ export default function BookingsPage() {
                                             <div className="slice-route">{slice.origin} → {slice.destination}</div>
                                             <div className="slice-times">
                                                 <span>{slice.departure_time || "--:--"}</span>
+                                                <span className="slice-time-arrow">→</span>
                                                 <span>{slice.arrival_time || "--:--"}</span>
                                             </div>
                                             <div className="slice-stops">{formatStops(slice.stops)}</div>
+                                            {slice.layovers.length > 0 && (
+                                                <div className="slice-layovers">
+                                                    {slice.layovers.map((layover, li) => (
+                                                        <span key={li} className="layover-chip">
+                                                            ✈ {layover.airport} · {layover.duration} layover
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

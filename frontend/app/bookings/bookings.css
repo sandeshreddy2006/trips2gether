@@ -58,9 +58,13 @@
 
 .flight-search-grid {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 12px;
     align-items: start;
+}
+
+.flight-search-grid-oneway {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .field-wrap {
@@ -448,4 +452,239 @@
         min-width: 0;
         padding-top: 0;
     }
+}
+
+/* ─── Airport Autocomplete ─────────────────────────── */
+
+.airport-autocomplete-wrap {
+    position: relative;
+}
+
+.airport-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 500;
+    list-style: none;
+    margin: 0;
+    padding: 6px;
+    background: #fff;
+    border: 1.5px solid rgba(46, 107, 85, 0.3);
+    border-radius: 14px;
+    box-shadow:
+        0 4px 6px rgba(14, 63, 46, 0.06),
+        0 12px 28px rgba(14, 63, 46, 0.14);
+    overflow: hidden;
+}
+
+.airport-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    cursor: pointer;
+    border-radius: 9px;
+    transition: background 0.12s ease;
+}
+
+.airport-option:not(:last-child) {
+    margin-bottom: 2px;
+}
+
+.airport-option:hover,
+.airport-option-active {
+    background: rgba(46, 107, 85, 0.09);
+}
+
+.airport-iata {
+    flex-shrink: 0;
+    min-width: 40px;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #0d5c3b;
+    background: rgba(46, 107, 85, 0.12);
+    border: 1px solid rgba(46, 107, 85, 0.18);
+    border-radius: 7px;
+    padding: 4px 7px;
+    letter-spacing: 0.06em;
+}
+
+.airport-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.airport-name {
+    display: block;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #0d3d2a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.airport-location {
+    display: block;
+    font-size: 0.75rem;
+    color: #587463;
+    font-weight: 500;
+}
+
+/* ─── Flight card – updated route row ─────────────── */
+
+.flight-airline-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.flight-cabin-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: capitalize;
+    color: #2e6b55;
+    background: rgba(46, 107, 85, 0.1);
+    border: 1px solid rgba(46, 107, 85, 0.2);
+    border-radius: 4px;
+    padding: 2px 6px;
+    letter-spacing: 0.04em;
+    width: fit-content;
+}
+
+.flight-price-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.flight-price-note {
+    font-size: 0.74rem;
+    color: #587463;
+}
+
+.flight-meta-row {
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.flight-airport {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 52px;
+}
+
+.flight-airport strong {
+    font-size: 1.18rem;
+    font-weight: 800;
+    color: #0d3d2a;
+    letter-spacing: 0.03em;
+}
+
+.flight-time {
+    font-size: 0.84rem;
+    color: #587463;
+    font-weight: 600;
+}
+
+.flight-airport-right {
+    align-items: flex-end;
+    text-align: right;
+}
+
+.flight-route-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.flight-duration-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #2e6b55;
+}
+
+.flight-route-line {
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(46, 107, 85, 0.25), rgba(46, 107, 85, 0.5) 50%, rgba(46, 107, 85, 0.25));
+    border-radius: 2px;
+    position: relative;
+}
+
+.flight-route-line::after {
+    content: "✈";
+    position: absolute;
+    right: -1px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.75rem;
+    color: #2e6b55;
+    line-height: 1;
+}
+
+.flight-stops-label {
+    font-size: 0.76rem;
+    color: #587463;
+}
+
+/* ─── Baggage row ──────────────────────────────────── */
+
+.flight-baggage-row {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.baggage-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #1a4a35;
+    background: rgba(46, 107, 85, 0.08);
+    border: 1px solid rgba(46, 107, 85, 0.18);
+}
+
+/* ─── Slice card – layovers ────────────────────────── */
+
+.slice-time-arrow {
+    color: #2e6b55;
+    font-size: 0.78rem;
+}
+
+.slice-layovers {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.layover-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #3a5f4a;
+    background: rgba(255, 193, 7, 0.12);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: 6px;
+    padding: 4px 8px;
 }
