@@ -291,7 +291,6 @@ export const AIRPORTS: Airport[] = [
     { iata: "DME", name: "Domodedovo International (Moscow)", city: "Moscow", country: "RU" },
     { iata: "LED", name: "Pulkovo Airport (St. Petersburg)", city: "St. Petersburg", country: "RU" },
     { iata: "KBP", name: "Boryspil International (Kyiv)", city: "Kyiv", country: "UA" },
-    { iata: "OTP", name: "Henri Coandă International (Bucharest)", city: "Bucharest", country: "RO" },
     { iata: "RIX", name: "Riga International", city: "Riga", country: "LV" },
     { iata: "TLL", name: "Lennart Meri Tallinn Airport", city: "Tallinn", country: "EE" },
     { iata: "VNO", name: "Vilnius Airport", city: "Vilnius", country: "LT" },
