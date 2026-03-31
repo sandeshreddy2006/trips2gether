@@ -15,18 +15,18 @@ export default function Search({ placeholder }: { placeholder?: string }) {
     };
 
     return (
-        <form onSubmit={handleSearch} className="relative w-full min-w-[300px] max-w-[860px]">
+        <form onSubmit={handleSearch} className="app-search-form" role="search">
             <input
                 type="text"
                 placeholder={placeholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-full border border-gray-200 px-4 py-2"
+                className="app-search-input"
             />
             <button
                 type="submit"
                 disabled={!searchQuery.trim()}
-                className="absolute right-1 top-1/2 -translate-y-1/2 bg-emerald-600 text-white px-4 py-1.5 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
+                className="app-search-button"
             >
                 Search
             </button>

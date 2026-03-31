@@ -73,6 +73,11 @@ class Group(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    shortlisted_destinations = relationship(
+        "GroupShortlistDestination",
+        back_populates="group",
+        cascade="all, delete-orphan",
+    )
     creator = relationship("User", foreign_keys=[created_by])
 
 
@@ -91,6 +96,31 @@ class GroupMember(Base):
     __table_args__ = (
         UniqueConstraint("group_id", "user_id", name="uq_group_members_group_user"),
     )
+
+
+class GroupShortlistDestination(Base):
+    __tablename__ = "group_shortlist_destinations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    place_id = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False)
+    address = Column(Text, nullable=True)
+    photo_url = Column(Text, nullable=True)
+    photo_reference = Column(String(255), nullable=True)
+    rating = Column(Float, nullable=True)
+    destination_types_json = Column(Text, nullable=False, default="[]")
+    added_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    group = relationship("Group", back_populates="shortlisted_destinations")
+    adder = relationship("User", foreign_keys=[added_by])
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "place_id", name="uq_group_shortlist_group_place"),
+    )
+
+
 class Profile(Base):
     __tablename__ = "profiles"
 

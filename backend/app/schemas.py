@@ -120,6 +120,34 @@ class GroupUpdateRoleIn(BaseModel):
     role: Literal["member", "admin", "viewer"]
 
 
+class GroupShortlistCreateIn(BaseModel):
+    place_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    address: str | None = None
+    photo_url: str | None = None
+    photo_reference: str | None = None
+    rating: float | None = None
+    types: list[str] = Field(default_factory=list)
+
+
+class GroupShortlistItemOut(BaseModel):
+    id: int
+    group_id: int
+    place_id: str
+    name: str
+    address: str | None = None
+    photo_url: str | None = None
+    photo_reference: str | None = None
+    rating: float | None = None
+    types: list[str] = []
+    added_by: int
+    created_at: datetime
+
+
+class GroupShortlistListOut(BaseModel):
+    items: list[GroupShortlistItemOut]
+
+
 class ProfileOut(BaseModel):
     id: int
     user_id: int

@@ -24,6 +24,9 @@ from .schemas import (
     GroupMemberOut,
     GroupMemberListOut,
     GroupUpdateRoleIn,
+    GroupShortlistCreateIn,
+    GroupShortlistItemOut,
+    GroupShortlistListOut,
     ProfileOut, 
     ProfileUpdate,
     DestinationSearchResponse,
@@ -1516,6 +1519,151 @@ def update_member_role(
     db.commit()
 
     return {"ok": True, "message": f"Role updated to {body.role}"}
+
+
+def _serialize_shortlist_item(item: models.GroupShortlistDestination) -> GroupShortlistItemOut:
+    try:
+        types = json.loads(item.destination_types_json or "[]")
+        if not isinstance(types, list):
+            types = []
+    except Exception:
+        types = []
+
+    return GroupShortlistItemOut(
+        id=item.id,
+        group_id=item.group_id,
+        place_id=item.place_id,
+        name=item.name,
+        address=item.address,
+        photo_url=item.photo_url,
+        photo_reference=item.photo_reference,
+        rating=item.rating,
+        types=types,
+        added_by=item.added_by,
+        created_at=item.created_at,
+    )
+
+
+@app.get("/groups/{group_id}/shortlist", response_model=GroupShortlistListOut)
+def list_group_shortlist(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """List shortlisted destinations for a group. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    items = (
+        db.query(models.GroupShortlistDestination)
+        .filter(models.GroupShortlistDestination.group_id == group_id)
+        .order_by(models.GroupShortlistDestination.created_at.desc())
+        .all()
+    )
+
+    return {"items": [_serialize_shortlist_item(item) for item in items]}
+
+
+@app.post("/groups/{group_id}/shortlist", response_model=dict)
+def add_group_shortlist_destination(
+    group_id: int,
+    body: GroupShortlistCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Add a destination to group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    existing = (
+        db.query(models.GroupShortlistDestination)
+        .filter(
+            models.GroupShortlistDestination.group_id == group_id,
+            models.GroupShortlistDestination.place_id == body.place_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Destination already shortlisted for this group")
+
+    item = models.GroupShortlistDestination(
+        group_id=group_id,
+        place_id=body.place_id.strip(),
+        name=body.name.strip(),
+        address=(body.address.strip() if body.address else None),
+        photo_url=(body.photo_url.strip() if body.photo_url else None),
+        photo_reference=(body.photo_reference.strip() if body.photo_reference else None),
+        rating=body.rating,
+        destination_types_json=json.dumps(body.types or []),
+        added_by=current_user.id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "message": "Destination added to shortlist",
+        "item": _serialize_shortlist_item(item),
+    }
+
+
+@app.delete("/groups/{group_id}/shortlist/{place_id}", response_model=dict)
+def remove_group_shortlist_destination(
+    group_id: int,
+    place_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Remove a destination from group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    item = (
+        db.query(models.GroupShortlistDestination)
+        .filter(
+            models.GroupShortlistDestination.group_id == group_id,
+            models.GroupShortlistDestination.place_id == place_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Shortlisted destination not found")
+
+    db.delete(item)
+    db.commit()
+
+    return {"ok": True, "message": "Destination removed from shortlist"}
 
 
 # Profile Endpoints
