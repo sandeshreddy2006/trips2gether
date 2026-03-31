@@ -2,7 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, text
+from sqlalchemy.exc import DataError
 from datetime import datetime, timedelta
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
@@ -66,6 +67,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
 DUFFEL_API_URL = "https://api.duffel.com/air/offer_requests"
+
+print("[Startup] Dropping group_shortlist_destinations table...")
+with engine.begin() as conn:
+    conn.execute(text("DROP TABLE IF EXISTS group_shortlist_destinations"))
+print("[Startup] Dropped group_shortlist_destinations table.")
 
 print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
@@ -1850,19 +1856,35 @@ def add_group_shortlist_destination(
     if existing:
         raise HTTPException(status_code=409, detail="Destination already shortlisted for this group")
 
+    photo_reference = body.photo_reference.strip() if body.photo_reference else None
+    # Google Places photo references can exceed older VARCHAR(255) schemas in production.
+    # Keep the API stable by dropping overly long references instead of crashing the request.
+    if photo_reference and len(photo_reference) > 255:
+        photo_reference = None
+
     item = models.GroupShortlistDestination(
         group_id=group_id,
         place_id=body.place_id.strip(),
         name=body.name.strip(),
         address=(body.address.strip() if body.address else None),
         photo_url=(body.photo_url.strip() if body.photo_url else None),
-        photo_reference=(body.photo_reference.strip() if body.photo_reference else None),
+        photo_reference=photo_reference,
         rating=body.rating,
         destination_types_json=json.dumps(body.types or []),
         added_by=current_user.id,
     )
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except DataError as exc:
+        db.rollback()
+        if "photo_reference" not in str(exc).lower():
+            raise HTTPException(status_code=500, detail="Failed to save shortlisted destination")
+
+        item.photo_reference = None
+        db.add(item)
+        db.commit()
+
     db.refresh(item)
 
     return {
