@@ -33,6 +33,8 @@ from .schemas import (
     FlightSearchResponse,
     FlightOfferOut,
     FlightSliceSummaryOut,
+    BaggageInfo,
+    LayoverInfo,
     DestinationSearchResponse,
     NearbyRestaurantsResponse,
     RestaurantDetailOut,
@@ -162,6 +164,22 @@ def _format_duffel_time(value: str | None) -> str | None:
         return value
 
 
+def _calculate_layover(arriving_at: str | None, departing_at: str | None) -> str:
+    """Return layover duration formatted as '2h 15m' from two ISO datetime strings."""
+    if not arriving_at or not departing_at:
+        return "N/A"
+    try:
+        arr = datetime.fromisoformat(arriving_at.replace("Z", "+00:00"))
+        dep = datetime.fromisoformat(departing_at.replace("Z", "+00:00"))
+        total_minutes = int((dep - arr).total_seconds() // 60)
+        if total_minutes < 0:
+            return "N/A"
+        hours, mins = divmod(total_minutes, 60)
+        return f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
 def _serialize_duffel_offer(offer: dict) -> FlightOfferOut:
     slices = offer.get("slices", []) or []
     slice_summaries: list[FlightSliceSummaryOut] = []
@@ -177,6 +195,20 @@ def _serialize_duffel_offer(offer: dict) -> FlightOfferOut:
         first_segment = segments[0]
         last_segment = segments[-1]
         total_stops += max(0, len(segments) - 1)
+
+        # Build layover list between consecutive segments
+        layovers: list[LayoverInfo] = []
+        for i in range(len(segments) - 1):
+            layover_airport = (
+                segments[i].get("destination", {}).get("iata_code")
+                or segments[i + 1].get("origin", {}).get("iata_code")
+                or "N/A"
+            )
+            layover_duration = _calculate_layover(
+                segments[i].get("arriving_at"),
+                segments[i + 1].get("departing_at"),
+            )
+            layovers.append(LayoverInfo(airport=layover_airport, duration=layover_duration))
 
         for segment in segments:
             operating_carrier = segment.get("operating_carrier", {}) or {}
@@ -200,8 +232,22 @@ def _serialize_duffel_offer(offer: dict) -> FlightOfferOut:
                 departure_time=_format_duffel_time(first_segment.get("departing_at")),
                 arrival_time=_format_duffel_time(last_segment.get("arriving_at")),
                 stops=max(0, len(segments) - 1),
+                layovers=layovers,
             )
         )
+
+    # Extract baggage and cabin class from first passenger
+    passengers = offer.get("passengers", []) or []
+    baggages: list[BaggageInfo] = []
+    cabin_class: str | None = None
+    if passengers:
+        p = passengers[0]
+        cabin_class = p.get("cabin_class")
+        for bag in (p.get("baggages") or []):
+            bag_type = bag.get("type")
+            quantity = bag.get("quantity", 0)
+            if bag_type is not None:
+                baggages.append(BaggageInfo(type=str(bag_type), quantity=int(quantity or 0)))
 
     first_slice = slice_summaries[0] if slice_summaries else None
 
@@ -217,6 +263,8 @@ def _serialize_duffel_offer(offer: dict) -> FlightOfferOut:
         arrival_time=first_slice.arrival_time if first_slice else None,
         departure_airport=first_slice.origin if first_slice else "N/A",
         arrival_airport=first_slice.destination if first_slice else "N/A",
+        cabin_class=cabin_class,
+        baggages=baggages,
         slices=slice_summaries,
     )
 

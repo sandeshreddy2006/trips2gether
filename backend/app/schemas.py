@@ -254,12 +254,23 @@ class FlightSearchIn(BaseModel):
         return normalized
 
 
+class LayoverInfo(BaseModel):
+    airport: str
+    duration: str  # formatted as "2h 15m"
+
+
+class BaggageInfo(BaseModel):
+    type: str      # "checked_baggage" or "carry_on"
+    quantity: int
+
+
 class FlightSliceSummaryOut(BaseModel):
     origin: str
     destination: str
     departure_time: Optional[str] = None
     arrival_time: Optional[str] = None
     stops: int = 0
+    layovers: list[LayoverInfo] = []
 
 
 class FlightOfferOut(BaseModel):
@@ -274,6 +285,8 @@ class FlightOfferOut(BaseModel):
     arrival_time: Optional[str] = None
     departure_airport: str
     arrival_airport: str
+    cabin_class: Optional[str] = None
+    baggages: list[BaggageInfo] = []
     slices: list[FlightSliceSummaryOut] = []
 
 
