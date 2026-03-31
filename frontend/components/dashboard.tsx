@@ -58,6 +58,7 @@ export default function Dashboard() {
         barcelona: null,
     });
     const [loadingDestinations, setLoadingDestinations] = useState(true);
+    const [trendingError, setTrendingError] = useState<string | null>(null);
 
     const handleDestinationClick = (destination: Destination | null) => {
         if (!destination) return;
@@ -105,9 +106,16 @@ export default function Dashboard() {
                     }
                 }
 
+                const hasAnyResults = Object.values(results).some((value) => value !== null);
+                if (!hasAnyResults) {
+                    setTrendingError("No trending destinations available right now. Check back soon.");
+                } else {
+                    setTrendingError(null);
+                }
                 setDestinationData(results);
             } catch (err) {
                 console.error("Error loading destinations:", err);
+                setTrendingError("We couldn't load trending destinations right now.");
             } finally {
                 setLoadingDestinations(false);
             }
@@ -115,6 +123,13 @@ export default function Dashboard() {
 
         fetchDestinations();
     }, []);
+
+    const trendingCards: Array<{ destination: Destination; matchScore: string }> = [
+        { destination: destinationData.santorini, matchScore: "85%" },
+        { destination: destinationData.kyoto, matchScore: "81%" },
+        { destination: destinationData.prague, matchScore: "79%" },
+    ]
+        .filter((item): item is { destination: Destination; matchScore: string } => Boolean(item.destination));
 
     return (
         <div className="dashboard-container">
@@ -133,7 +148,7 @@ export default function Dashboard() {
                     <button className="action-btn create-poll-btn" onClick={() => setShowCreateGroup(true)}>
                         + Create Group
                     </button>
-                    <button className="action-btn search-flights-btn">
+                    <button className="action-btn search-flights-btn" onClick={() => router.push("/bookings")}>
                         Search Flights
                     </button>
                     <button className="action-btn explore-hotels-btn">
@@ -252,50 +267,34 @@ export default function Dashboard() {
                 <aside className="dashboard-sidebar">
                     {/* Suggested Trips */}
                     <div className="suggested-section">
-                        <h3 className="sidebar-title">Suggested Trips for Your Group</h3>
-                        <div className="suggested-trips">
-                            {destinationData.santorini && (
-                                <div
-                                    className="suggested-trip"
-                                    onClick={() => handleDestinationClick(destinationData.santorini)}
-                                    style={{ cursor: "pointer" }}
-                                >
-                                    <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.santorini)}')` }}>
-                                        <div className="trip-overlay" />
-                                        <span className="trip-percentage">85%</span>
+                        <h3 className="sidebar-title">Trending Destinations</h3>
+                        {loadingDestinations ? (
+                            <p className="suggested-fallback">Loading trending destinations...</p>
+                        ) : trendingCards.length === 0 ? (
+                            <p className="suggested-fallback">
+                                {trendingError || "No trending destinations available right now."}
+                            </p>
+                        ) : (
+                            <div className="suggested-trips">
+                                {trendingCards.map(({ destination, matchScore }) => (
+                                    <div
+                                        key={destination.place_id}
+                                        className="suggested-trip"
+                                        onClick={() => handleDestinationClick(destination)}
+                                        style={{ cursor: "pointer" }}
+                                    >
+                                        <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destination)}')` }}>
+                                            <div className="trip-overlay" />
+                                            <span className="trip-percentage">{matchScore}</span>
+                                        </div>
+                                        <h4 className="trip-name">{destination.name}</h4>
+                                        <p className="trip-rating-inline">
+                                            ⭐ {destination.rating != null ? destination.rating.toFixed(1) : "N/A"}
+                                        </p>
                                     </div>
-                                    <h4 className="trip-name">{destinationData.santorini.name}</h4>
-                                </div>
-                            )}
-
-                            {destinationData.kyoto && (
-                                <div
-                                    className="suggested-trip"
-                                    onClick={() => handleDestinationClick(destinationData.kyoto)}
-                                    style={{ cursor: "pointer" }}
-                                >
-                                    <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.kyoto)}')` }}>
-                                        <div className="trip-overlay" />
-                                        <span className="trip-percentage">81%</span>
-                                    </div>
-                                    <h4 className="trip-name">{destinationData.kyoto.name}</h4>
-                                </div>
-                            )}
-
-                            {destinationData.prague && (
-                                <div
-                                    className="suggested-trip"
-                                    onClick={() => handleDestinationClick(destinationData.prague)}
-                                    style={{ cursor: "pointer" }}
-                                >
-                                    <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.prague)}')` }}>
-                                        <div className="trip-overlay" />
-                                        <span className="trip-percentage">79%</span>
-                                    </div>
-                                    <h4 className="trip-name">{destinationData.prague.name}</h4>
-                                </div>
-                            )}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* My Bookings */}

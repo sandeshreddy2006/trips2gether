@@ -173,6 +173,10 @@ export default function AppLayout({
                             <img src="/magnifying-glass.svg" alt="Explore" className="nav-icon" />
                             <span>Explore Destinations</span>
                         </a>
+                        <a href="/bookings" className="nav-item">
+                            <img src="/flight.svg" alt="Book Flights" className="nav-icon" />
+                            <span>Book Flights</span>
+                        </a>
                         <a href="#" className="nav-item">
                             <img src="/flight.svg" alt="My Trips" className="nav-icon" />
                             <span>My Trips</span>

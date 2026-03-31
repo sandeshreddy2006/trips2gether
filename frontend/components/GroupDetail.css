@@ -170,6 +170,101 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
+.group-shortlist-section {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    margin-top: 1.5rem;
+}
+
+.group-shortlist-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0 0 1rem 0;
+}
+
+.group-shortlist-empty {
+    font-size: 0.92rem;
+    color: #666;
+}
+
+.group-shortlist-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.group-shortlist-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.8rem;
+    border-radius: 10px;
+    border: 1px solid #e7ece8;
+    background: #f9fbf9;
+}
+
+.group-shortlist-main {
+    min-width: 0;
+}
+
+.group-shortlist-name {
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0;
+}
+
+.group-shortlist-address {
+    font-size: 0.84rem;
+    color: #666;
+    margin: 0.2rem 0 0 0;
+}
+
+.group-shortlist-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+.group-shortlist-rating {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #1f5632;
+}
+
+.group-shortlist-type {
+    font-size: 0.75rem;
+    color: #2d7a4a;
+    text-transform: capitalize;
+    padding: 0.18rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(45, 122, 74, 0.11);
+}
+
+.group-shortlist-remove-btn {
+    padding: 0.35rem 0.7rem;
+    border: 1px solid #d32f2f;
+    border-radius: 6px;
+    background: white;
+    color: #d32f2f;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.group-shortlist-remove-btn:hover {
+    background: #d32f2f;
+    color: white;
+}
+
 .group-members-title {
     font-size: 1.1rem;
     font-weight: 600;
@@ -374,5 +469,10 @@
 
     .group-detail-name {
         font-size: 1.4rem;
+    }
+
+    .group-shortlist-card {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }

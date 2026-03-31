@@ -363,6 +363,16 @@
     gap: 1rem;
 }
 
+.suggested-fallback {
+    margin: 0;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: #3d4f47;
+    background: rgba(45, 122, 74, 0.08);
+    border: 1px solid rgba(45, 122, 74, 0.2);
+}
+
 .suggested-trip {
     position: relative;
     border-radius: 8px;
@@ -398,6 +408,13 @@
     font-weight: 600;
     margin: 0.8rem 0 0 0;
     color: #1a1a1a;
+}
+
+.trip-rating-inline {
+    margin: 0.3rem 0 0 0;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #2d7a4a;
 }
 
 /* Bookings */

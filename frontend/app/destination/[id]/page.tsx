@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "../../AuthContext";
 import "./destination.css";
 
 const RestaurantMap = dynamic(() => import("./RestaurantMap"), { ssr: false });
@@ -77,6 +78,7 @@ const THINGS_BY_DESTINATION: { [key: string]: ThingToDo[] } = {
 export default function DestinationDetail() {
     const params = useParams();
     const router = useRouter();
+    const { isAuthenticated } = useAuth();
     const [destination, setDestination] = useState<Destination | null>(null);
     const [thingsToDo, setThingsToDo] = useState<ThingToDo[]>([]);
     const [loading, setLoading] = useState(true);
@@ -101,7 +103,28 @@ export default function DestinationDetail() {
     const [filterPrices, setFilterPrices] = useState<string[]>([]);
     const [filterMinRating, setFilterMinRating] = useState<number | null>(null);
 
+    // Save to Group Plan state
+    const [userGroups, setUserGroups] = useState<{ id: number; name: string; role: string }[]>([]);
+    const [groupsLoading, setGroupsLoading] = useState(false);
+    const [showGroupSelector, setShowGroupSelector] = useState(false);
+    const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error" | "warning"; text: string } | null>(null);
+
     const placeId = params.id as string;
+
+    const handleBackNavigation = () => {
+        if (typeof window !== "undefined" && window.history.length > 1) {
+            window.history.back();
+            setTimeout(() => {
+                window.location.reload();
+            }, 120);
+            return;
+        }
+
+        router.push("/");
+        router.refresh();
+    };
 
     useEffect(() => {
         // Retrieve destination data from sessionStorage
@@ -162,6 +185,65 @@ export default function DestinationDetail() {
             fetchRestaurants(destination.location.lat, destination.location.lng, restaurantRadius);
         }
     }, [activeTab, restaurantsFetched, restaurantsLoading, destination, restaurantRadius]);
+
+    useEffect(() => {
+        const fetchGroups = async () => {
+            setGroupsLoading(true);
+            try {
+                const res = await fetch("/api/groups");
+                if (res.ok) {
+                    const data = await res.json();
+                    setUserGroups(data.groups || []);
+                }
+            } catch {
+                // silently fail — user may not be authenticated
+            } finally {
+                setGroupsLoading(false);
+            }
+        };
+        fetchGroups();
+    }, []);
+
+    const handleSaveToGroup = async () => {
+        if (!selectedGroupId || !destination) return;
+        setSaving(true);
+        setSaveMessage(null);
+        try {
+            const res = await fetch(`/api/groups/${selectedGroupId}/shortlist`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    place_id: destination.place_id,
+                    name: destination.name,
+                    address: destination.address ?? null,
+                    photo_url: destination.photo_url ?? null,
+                    photo_reference: destination.photo_reference ?? null,
+                    rating: destination.rating ?? null,
+                    types: destination.types,
+                }),
+            });
+            if (res.status === 409) {
+                setSaveMessage({ type: "warning", text: "Already in this group's shortlist." });
+            } else if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                const detail = body?.detail;
+                if (Array.isArray(detail) && detail.length > 0) {
+                    const first = detail[0];
+                    throw new Error(first?.msg || `Error (${res.status})`);
+                }
+                throw new Error(detail || `Error (${res.status})`);
+            } else {
+                const groupName = userGroups.find(g => g.id === selectedGroupId)?.name ?? "group";
+                setSaveMessage({ type: "success", text: `Saved to "${groupName}"!` });
+                setShowGroupSelector(false);
+                setSelectedGroupId(null);
+            }
+        } catch (err: any) {
+            setSaveMessage({ type: "error", text: err.message || "Failed to save destination." });
+        } finally {
+            setSaving(false);
+        }
+    };
 
     const getRestaurantImageUrl = (r: NearbyRestaurant): string => {
         if (r.photo_reference) {
@@ -261,7 +343,7 @@ export default function DestinationDetail() {
                 <div className="error-container">
                     <h2>Oops!</h2>
                     <p>{error || "Destination not found"}</p>
-                    <button className="back-button" onClick={() => router.back()}>
+                    <button className="back-button" onClick={handleBackNavigation}>
                         ← Go Back
                     </button>
                 </div>
@@ -281,20 +363,24 @@ export default function DestinationDetail() {
                         e.currentTarget.src = "https://via.placeholder.com/1500x600?text=" + encodeURIComponent(destination.name);
                     }}
                 />
-                <button className="back-button-hero" onClick={() => router.back()}>
+                <button className="back-button-hero" onClick={handleBackNavigation}>
                     ← Back
                 </button>
                 <div className="hero-overlay">
                     <div className="hero-content">
                         <h1 className="hero-title">{destination.name}</h1>
-                        {destination.rating && (
-                            <div className="hero-rating">
+                        <div className="hero-rating">
+                            {destination.rating != null ? (
                                 <span className="rating-stars">★ {destination.rating.toFixed(1)}</span>
-                                {destination.user_ratings_total && (
-                                    <span className="rating-count">({destination.user_ratings_total.toLocaleString()} reviews)</span>
-                                )}
-                            </div>
-                        )}
+                            ) : (
+                                <span className="rating-stars">Rating unavailable</span>
+                            )}
+                            <span className="rating-count">
+                                {destination.user_ratings_total != null
+                                    ? `(${destination.user_ratings_total.toLocaleString()} reviews)`
+                                    : "(No reviews yet)"}
+                            </span>
+                        </div>
                         {destination.types.length > 0 && (
                             <div className="hero-categories">
                                 {formatTypes(destination.types).map((type, idx) => (
@@ -660,32 +746,86 @@ export default function DestinationDetail() {
                 {/* Sidebar */}
                 <aside className="detail-sidebar">
                     <div className="sidebar-card plan-card">
-                        <h3>Plan a Group Trip to {destination.name}</h3>
-                        <p>Plan and coordinate a memorable trip with your friends!</p>
-                        <div className="sidebar-section">
-                            <label>Group Members</label>
-                            <div className="avatars">👤 Add friends</div>
-                        </div>
-                        <div className="sidebar-section">
-                            <label>Budget Range</label>
-                            <p>$1000 - $2000 per person</p>
-                        </div>
-                        <div className="sidebar-section">
-                            <label>Dates</label>
-                            <p>Apr 15 - Apr 21, 2024</p>
-                        </div>
-                        <button className="btn btn-plan">Plan Trip</button>
+                        <h3>💾 Save to Group Plan</h3>
+                        <p>Shortlist this destination so your group can discuss it later.</p>
+
+                        {!isAuthenticated ? (
+                            <p className="save-no-groups">Sign in to save destinations to a group plan.</p>
+                        ) : !showGroupSelector ? (
+                            <button
+                                className="btn btn-plan"
+                                onClick={() => setShowGroupSelector(true)}
+                                disabled={groupsLoading}
+                            >
+                                {groupsLoading ? "Loading..." : "Save to Group Plan"}
+                            </button>
+                        ) : (
+                            <div className="save-group-selector">
+                                {userGroups.length === 0 ? (
+                                    <p className="save-no-groups">You are not a member of any group yet. Create or join a group first.</p>
+                                ) : (
+                                    <>
+                                        <select
+                                            className="group-select"
+                                            value={selectedGroupId ?? ""}
+                                            onChange={(e) => setSelectedGroupId(Number(e.target.value) || null)}
+                                        >
+                                            <option value="">Select a group...</option>
+                                            {userGroups.map(g => (
+                                                <option key={g.id} value={g.id}>{g.name}</option>
+                                            ))}
+                                        </select>
+                                        <div className="save-actions">
+                                            <button
+                                                className="btn btn-plan"
+                                                onClick={handleSaveToGroup}
+                                                disabled={!selectedGroupId || saving}
+                                            >
+                                                {saving ? "Saving..." : "Confirm"}
+                                            </button>
+                                            <button
+                                                className="btn btn-cancel"
+                                                onClick={() => {
+                                                    setShowGroupSelector(false);
+                                                    setSaveMessage(null);
+                                                    setSelectedGroupId(null);
+                                                }}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                                {saveMessage && (
+                                    <p className={`save-message save-message-${saveMessage.type}`}>
+                                        {saveMessage.text}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {saveMessage && !showGroupSelector && (
+                            <p className={`save-message save-message-${saveMessage.type}`}>
+                                {saveMessage.text}
+                            </p>
+                        )}
                     </div>
 
                     <div className="sidebar-card">
                         <h3>Quick Info</h3>
                         <div className="quick-info-item">
                             <span className="label">Rating</span>
-                            <span className="value">★ {destination.rating?.toFixed(1)}</span>
+                            <span className="value">
+                                {destination.rating != null ? `★ ${destination.rating.toFixed(1)}` : "N/A"}
+                            </span>
                         </div>
                         <div className="quick-info-item">
                             <span className="label">Reviews</span>
-                            <span className="value">{destination.user_ratings_total?.toLocaleString()}</span>
+                            <span className="value">
+                                {destination.user_ratings_total != null
+                                    ? destination.user_ratings_total.toLocaleString()
+                                    : "N/A"}
+                            </span>
                         </div>
                         {destination.location?.lat && destination.location?.lng && (
                             <button
