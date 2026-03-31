@@ -107,7 +107,7 @@ class GroupShortlistDestination(Base):
     name = Column(String(255), nullable=False)
     address = Column(Text, nullable=True)
     photo_url = Column(Text, nullable=True)
-    photo_reference = Column(String(255), nullable=True)
+    photo_reference = Column(Text, nullable=True)
     rating = Column(Float, nullable=True)
     destination_types_json = Column(Text, nullable=False, default="[]")
     added_by = Column(Integer, ForeignKey("users.id"), nullable=False)
