@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, text
+from sqlalchemy import and_, or_, func
 from sqlalchemy.exc import DataError
 from datetime import datetime, timedelta
 from .db import Base, engine, get_db
@@ -67,11 +67,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
 DUFFEL_API_URL = "https://api.duffel.com/air/offer_requests"
-
-print("[Startup] Dropping group_shortlist_destinations table...")
-with engine.begin() as conn:
-    conn.execute(text("DROP TABLE IF EXISTS group_shortlist_destinations"))
-print("[Startup] Dropped group_shortlist_destinations table.")
 
 print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
