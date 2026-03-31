@@ -235,6 +235,55 @@ class DestinationSearchResponse(BaseModel):
 
 
 # -------------------------
+# Flight Search Schemas
+# -------------------------
+
+class FlightSearchIn(BaseModel):
+    origin: str = Field(min_length=3, max_length=3, description="IATA airport/city code, e.g. JFK")
+    destination: str = Field(min_length=3, max_length=3, description="IATA airport/city code, e.g. CDG")
+    depart_date: str = Field(description="Outbound departure date in YYYY-MM-DD format")
+    return_date: Optional[str] = Field(default=None, description="Return date in YYYY-MM-DD format")
+    travelers: int = Field(ge=1, le=9)
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def validate_iata_code(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if len(normalized) != 3 or not normalized.isalpha():
+            raise ValueError("Use a valid 3-letter IATA airport or city code")
+        return normalized
+
+
+class FlightSliceSummaryOut(BaseModel):
+    origin: str
+    destination: str
+    departure_time: Optional[str] = None
+    arrival_time: Optional[str] = None
+    stops: int = 0
+
+
+class FlightOfferOut(BaseModel):
+    id: str
+    airline: str
+    logo_url: Optional[str] = None
+    price: float
+    currency: str
+    duration: str
+    stops: int
+    departure_time: Optional[str] = None
+    arrival_time: Optional[str] = None
+    departure_airport: str
+    arrival_airport: str
+    slices: list[FlightSliceSummaryOut] = []
+
+
+class FlightSearchResponse(BaseModel):
+    status: str
+    results: list[FlightOfferOut]
+    message: Optional[str] = None
+
+
+# -------------------------
 # Nearby Restaurants Schemas
 # -------------------------
 

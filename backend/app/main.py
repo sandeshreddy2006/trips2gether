@@ -29,6 +29,10 @@ from .schemas import (
     GroupShortlistListOut,
     ProfileOut, 
     ProfileUpdate,
+    FlightSearchIn,
+    FlightSearchResponse,
+    FlightOfferOut,
+    FlightSliceSummaryOut,
     DestinationSearchResponse,
     NearbyRestaurantsResponse,
     RestaurantDetailOut,
@@ -59,6 +63,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
+DUFFEL_API_URL = "https://api.duffel.com/air/offer_requests"
 
 print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
@@ -112,6 +117,108 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _format_duffel_duration(duration: str | None) -> str:
+    if not duration:
+        return "N/A"
+
+    hours = 0
+    minutes = 0
+    current = ""
+    in_time = False
+
+    for char in duration:
+        if char == "T":
+            in_time = True
+            continue
+        if not in_time:
+            continue
+        if char.isdigit():
+            current += char
+            continue
+        if char == "H" and current:
+            hours = int(current)
+            current = ""
+        elif char == "M" and current:
+            minutes = int(current)
+            current = ""
+
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes or not parts:
+        parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+def _format_duffel_time(value: str | None) -> str | None:
+    if not value:
+        return None
+    timestamp = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(timestamp).strftime("%H:%M")
+    except ValueError:
+        return value
+
+
+def _serialize_duffel_offer(offer: dict) -> FlightOfferOut:
+    slices = offer.get("slices", []) or []
+    slice_summaries: list[FlightSliceSummaryOut] = []
+    carrier_names: list[str] = []
+    logo_url: str | None = None
+    total_stops = 0
+
+    for slice_item in slices:
+        segments = slice_item.get("segments", []) or []
+        if not segments:
+            continue
+
+        first_segment = segments[0]
+        last_segment = segments[-1]
+        total_stops += max(0, len(segments) - 1)
+
+        for segment in segments:
+            operating_carrier = segment.get("operating_carrier", {}) or {}
+            marketing_carrier = segment.get("marketing_carrier", {}) or {}
+            carrier_name = operating_carrier.get("name") or marketing_carrier.get("name")
+            if carrier_name and carrier_name not in carrier_names:
+                carrier_names.append(carrier_name)
+
+            if not logo_url:
+                logo_url = (
+                    operating_carrier.get("logo_symbol_url")
+                    or operating_carrier.get("logo_lockup_url")
+                    or marketing_carrier.get("logo_symbol_url")
+                    or marketing_carrier.get("logo_lockup_url")
+                )
+
+        slice_summaries.append(
+            FlightSliceSummaryOut(
+                origin=first_segment.get("origin", {}).get("iata_code") or slice_item.get("origin", {}).get("iata_code") or "N/A",
+                destination=last_segment.get("destination", {}).get("iata_code") or slice_item.get("destination", {}).get("iata_code") or "N/A",
+                departure_time=_format_duffel_time(first_segment.get("departing_at")),
+                arrival_time=_format_duffel_time(last_segment.get("arriving_at")),
+                stops=max(0, len(segments) - 1),
+            )
+        )
+
+    first_slice = slice_summaries[0] if slice_summaries else None
+
+    return FlightOfferOut(
+        id=offer.get("id", "unknown-offer"),
+        airline=carrier_names[0] if carrier_names else "Unknown airline",
+        logo_url=logo_url,
+        price=float(offer.get("total_amount") or 0),
+        currency=offer.get("total_currency") or "USD",
+        duration=_format_duffel_duration(offer.get("total_duration")),
+        stops=total_stops,
+        departure_time=first_slice.departure_time if first_slice else None,
+        arrival_time=first_slice.arrival_time if first_slice else None,
+        departure_airport=first_slice.origin if first_slice else "N/A",
+        arrival_airport=first_slice.destination if first_slice else "N/A",
+        slices=slice_summaries,
+    )
 
 
 # -------------------------
@@ -1079,6 +1186,95 @@ def delete_account(response: Response, request: Request, background_tasks: Backg
 # -------------------------
 # Group endpoints
 # -------------------------
+
+@app.post("/flights/search", response_model=FlightSearchResponse)
+def search_flights(body: FlightSearchIn):
+    """Search flights with Duffel offer requests using test/live API key from backend env."""
+    duffel_api_key = os.getenv("DUFFEL_API_KEY")
+    if not duffel_api_key:
+        raise HTTPException(status_code=500, detail="Duffel API key is not configured on the server")
+
+    try:
+        depart_date = datetime.strptime(body.depart_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Departure date must be in YYYY-MM-DD format")
+
+    return_date = None
+    if body.return_date:
+        try:
+            return_date = datetime.strptime(body.return_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Return date must be in YYYY-MM-DD format")
+
+    today = datetime.utcnow().date()
+    if depart_date < today:
+        raise HTTPException(status_code=422, detail="Departure date cannot be in the past")
+    if return_date and return_date < depart_date:
+        raise HTTPException(status_code=422, detail="Return date cannot be before departure")
+
+    slices = [
+        {
+            "origin": body.origin,
+            "destination": body.destination,
+            "departure_date": body.depart_date,
+        }
+    ]
+    if body.return_date:
+        slices.append(
+            {
+                "origin": body.destination,
+                "destination": body.origin,
+                "departure_date": body.return_date,
+            }
+        )
+
+    payload = {
+        "data": {
+            "slices": slices,
+            "passengers": [{"type": "adult"} for _ in range(body.travelers)],
+            "cabin_class": "economy",
+        }
+    }
+
+    try:
+        response = requests.post(
+            f"{DUFFEL_API_URL}?return_offers=true&supplier_timeout=10000",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Duffel-Version": "v2",
+                "Authorization": f"Bearer {duffel_api_key}",
+            },
+            json=payload,
+            timeout=15,
+        )
+    except requests.Timeout:
+        raise HTTPException(status_code=504, detail="Flight search timed out. Please try again.")
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Unable to reach the flight provider right now")
+
+    if not response.ok:
+        detail = "Flight provider returned an error"
+        try:
+            body_json = response.json()
+            errors = body_json.get("errors") or []
+            if errors:
+                detail = errors[0].get("message") or errors[0].get("title") or detail
+            elif body_json.get("error"):
+                detail = body_json.get("error")
+        except ValueError:
+            pass
+        raise HTTPException(status_code=502, detail=detail)
+
+    data = response.json().get("data", {})
+    offers = data.get("offers", []) or []
+    serialized_offers = [_serialize_duffel_offer(offer) for offer in offers[:12]]
+
+    return {
+        "status": "success",
+        "results": serialized_offers,
+        "message": None if serialized_offers else "No matching flights found for this route.",
+    }
 
 @app.post("/groups", response_model=dict)
 def create_group(body: GroupCreateIn, request: Request, db: Session = Depends(get_db)):

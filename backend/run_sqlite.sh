@@ -24,6 +24,7 @@ export GOOGLE_MAPS_API="your_google_maps_api_here"
 
 # reCAPTCHA (use dummy values for local dev, get real keys from Google Console)
 export RECAPTCHA_SECRET_KEY="your_recaptcha_secret_key_here"
+export DUFFEL_API_KEY="your_duffel_api_key_here"
 
 # Google OAuth (optional for local testing without Google sign-in)
 export NEXT_PUBLIC_GOOGLE_CLIENT_ID="your_google_client_id_here"
