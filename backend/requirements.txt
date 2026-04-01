@@ -6,8 +6,10 @@ passlib[argon2]==1.7.4
 python-jose[cryptography]
 pydantic[email]
 requests
+stripe
 google-auth
 bcrypt
 python-dotenv
 apscheduler
 python-multipart
+reportlab

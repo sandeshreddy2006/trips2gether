@@ -336,6 +336,95 @@ class GooglePlacesService:
         # For now, return popular destinations regardless of coordinates
         # In production, this would use the Nearby Search endpoint
         return self.get_popular_destinations()
+
+    # ------------------------------------------------------------------
+    # Destination details
+    # ------------------------------------------------------------------
+
+    _DESTINATION_DETAIL_FIELD_MASK = (
+        "id,displayName,formattedAddress,rating,userRatingCount,location,types,"
+        "businessStatus,primaryTypeDisplayName,websiteUri,internationalPhoneNumber,"
+        "editorialSummary,currentOpeningHours"
+    )
+
+    def get_destination_details(self, place_id: str) -> Dict[str, Any]:
+        """Fetch full details for a destination/place by place ID."""
+        cache_key = f"destination_detail_{place_id}"
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return {"status": "success", "result": cached, "cached": True}
+
+        if not self.api_key:
+            return self._get_dummy_destination_detail(place_id)
+
+        try:
+            url = f"{self.BASE_URL}/places/{place_id}"
+            headers = {
+                "X-Goog-Api-Key": self.api_key,
+                "X-Goog-FieldMask": self._DESTINATION_DETAIL_FIELD_MASK,
+            }
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            if "error" in data:
+                msg = data["error"].get("message", "Unknown API error")
+                return {"status": "error", "message": msg, "result": None}
+
+            result = self._format_destination_detail(data)
+            self._save_to_cache(cache_key, result)
+            return {"status": "success", "result": result, "cached": False}
+
+        except requests.exceptions.Timeout:
+            return {"status": "error", "message": "Request timed out.", "result": None}
+        except requests.exceptions.RequestException as e:
+            return {"status": "error", "message": str(e), "result": None}
+        except Exception as e:
+            return {"status": "error", "message": f"Unexpected error: {e}", "result": None}
+
+    def _format_destination_detail(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform raw Place Details response into our destination detail shape."""
+        loc = data.get("location", {})
+        primary_type = data.get("primaryTypeDisplayName", {})
+        opening = data.get("currentOpeningHours", {})
+
+        return {
+            "place_id": data.get("id", ""),
+            "name": data.get("displayName", {}).get("text", ""),
+            "address": data.get("formattedAddress"),
+            "rating": data.get("rating"),
+            "user_ratings_total": data.get("userRatingCount"),
+            "types": data.get("types", []),
+            "business_status": data.get("businessStatus"),
+            "primary_type_display_name": primary_type.get("text") if isinstance(primary_type, dict) else None,
+            "location": {
+                "lat": loc.get("latitude"),
+                "lng": loc.get("longitude"),
+            },
+            "website": data.get("websiteUri"),
+            "phone": data.get("internationalPhoneNumber"),
+            "editorial_summary": (data.get("editorialSummary") or {}).get("text"),
+            "weekday_descriptions": opening.get("weekdayDescriptions", []) if isinstance(opening, dict) else [],
+        }
+
+    def _get_dummy_destination_detail(self, place_id: str) -> Dict[str, Any]:
+        """Dummy destination detail for local dev without API key."""
+        result = {
+            "place_id": place_id,
+            "name": "Destination",
+            "address": None,
+            "rating": None,
+            "user_ratings_total": None,
+            "types": [],
+            "business_status": None,
+            "primary_type_display_name": None,
+            "location": {"lat": None, "lng": None},
+            "website": None,
+            "phone": None,
+            "editorial_summary": None,
+            "weekday_descriptions": [],
+        }
+        return {"status": "success", "result": result, "dummy": True}
     
     # ------------------------------------------------------------------
     # Nearby restaurants

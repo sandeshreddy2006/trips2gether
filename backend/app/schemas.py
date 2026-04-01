@@ -120,6 +120,78 @@ class GroupUpdateRoleIn(BaseModel):
     role: Literal["member", "admin", "viewer"]
 
 
+class GroupShortlistCreateIn(BaseModel):
+    place_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    address: str | None = None
+    photo_url: str | None = None
+    photo_reference: str | None = None
+    rating: float | None = None
+    types: list[str] = Field(default_factory=list)
+
+
+class GroupShortlistItemOut(BaseModel):
+    id: int
+    group_id: int
+    place_id: str
+    name: str
+    address: str | None = None
+    photo_url: str | None = None
+    photo_reference: str | None = None
+    rating: float | None = None
+    types: list[str] = []
+    added_by: int
+    created_at: datetime
+
+
+class GroupShortlistListOut(BaseModel):
+    items: list[GroupShortlistItemOut]
+
+
+class GroupShortlistFlightCreateIn(BaseModel):
+    flight_offer_id: str = Field(min_length=1)
+    airline: str = Field(min_length=1)
+    logo_url: str | None = None
+    price: float
+    currency: str = Field(min_length=1)
+    duration: str = Field(min_length=1)
+    stops: int = Field(ge=0)
+    departure_time: str | None = None
+    arrival_time: str | None = None
+    departure_airport: str = Field(min_length=1)
+    arrival_airport: str = Field(min_length=1)
+    cabin_class: str | None = None
+    baggages: list[dict] = Field(default_factory=list)
+    slices: list[dict] = Field(default_factory=list)
+    emissions_kg: str | None = None
+
+
+class GroupShortlistFlightItemOut(BaseModel):
+    id: int
+    group_id: int
+    flight_offer_id: str
+    airline: str
+    logo_url: str | None = None
+    price: float
+    currency: str
+    duration: str
+    stops: int
+    departure_time: str | None = None
+    arrival_time: str | None = None
+    departure_airport: str
+    arrival_airport: str
+    cabin_class: str | None = None
+    baggages: list[dict] = []
+    slices: list[dict] = []
+    emissions_kg: str | None = None
+    added_by: int
+    created_at: datetime
+
+
+class GroupShortlistFlightListOut(BaseModel):
+    items: list[GroupShortlistFlightItemOut]
+
+
 class ProfileOut(BaseModel):
     id: int
     user_id: int
@@ -136,6 +208,7 @@ class ProfileOut(BaseModel):
     room_sharing: Optional[str] = None
     cuisine_preference: Optional[str] = None
     dietary_restrictions: Optional[str] = None
+    wallet_balance: float = 0.00
     created_at: datetime
     updated_at: datetime
 
@@ -173,6 +246,36 @@ class ProfileUpdate(BaseModel):
         return v
 
 
+class WalletTopUpIn(BaseModel):
+    amount: float = Field(..., ge=1, le=5000, description="Top-up amount in USD")
+    currency: Literal["USD"] = "USD"
+
+
+class WalletTopUpOut(BaseModel):
+    payment_intent_id: str
+    amount_added: float
+    currency: str
+    wallet_balance: float
+    payment_status: str
+
+
+class WalletCheckoutSessionOut(BaseModel):
+    session_id: str
+    checkout_url: str
+
+
+class WalletTopUpConfirmIn(BaseModel):
+    session_id: str
+
+
+class WalletTopUpConfirmOut(BaseModel):
+    amount_added: float
+    currency: str
+    wallet_balance: float
+    payment_status: str
+    already_processed: bool = False
+
+
 # -------------------------
 # Destination Search Schemas
 # -------------------------
@@ -204,6 +307,88 @@ class DestinationSearchResponse(BaseModel):
     message: Optional[str] = None
     cached: Optional[bool] = False
     dummy: Optional[bool] = False
+
+
+class DestinationDetailOut(BaseModel):
+    """Detailed destination/place response from Google Places Details API"""
+    place_id: str
+    name: str
+    address: Optional[str] = None
+    rating: Optional[float] = None
+    user_ratings_total: Optional[int] = None
+    types: List[str] = []
+    business_status: Optional[str] = None
+    primary_type_display_name: Optional[str] = None
+    location: Optional[DestinationLocation] = None
+    website: Optional[str] = None
+    phone: Optional[str] = None
+    editorial_summary: Optional[str] = None
+    weekday_descriptions: List[str] = []
+
+
+# -------------------------
+# Flight Search Schemas
+# -------------------------
+
+class FlightSearchIn(BaseModel):
+    origin: str = Field(min_length=3, max_length=3, description="IATA airport/city code, e.g. JFK")
+    destination: str = Field(min_length=3, max_length=3, description="IATA airport/city code, e.g. CDG")
+    depart_date: str = Field(description="Outbound departure date in YYYY-MM-DD format")
+    return_date: Optional[str] = Field(default=None, description="Return date in YYYY-MM-DD format")
+    travelers: int = Field(ge=1, le=9)
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def validate_iata_code(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if len(normalized) != 3 or not normalized.isalpha():
+            raise ValueError("Use a valid 3-letter IATA airport or city code")
+        return normalized
+
+
+class LayoverInfo(BaseModel):
+    airport: str
+    duration: str  # formatted as "2h 15m"
+
+
+class BaggageInfo(BaseModel):
+    type: str      # "checked_baggage" or "carry_on"
+    quantity: int
+
+
+class FlightSliceSummaryOut(BaseModel):
+    origin: str
+    destination: str
+    departure_date: Optional[str] = None
+    departure_time: Optional[str] = None
+    arrival_date: Optional[str] = None
+    arrival_time: Optional[str] = None
+    stops: int = 0
+    layovers: list[LayoverInfo] = []
+
+
+class FlightOfferOut(BaseModel):
+    id: str
+    airline: str
+    logo_url: Optional[str] = None
+    price: float
+    currency: str
+    duration: str
+    stops: int
+    departure_time: Optional[str] = None
+    arrival_time: Optional[str] = None
+    departure_airport: str
+    arrival_airport: str
+    cabin_class: Optional[str] = None
+    baggages: list[BaggageInfo] = []
+    slices: list[FlightSliceSummaryOut] = []
+    emissions_kg: Optional[str] = None
+
+
+class FlightSearchResponse(BaseModel):
+    status: str
+    results: list[FlightOfferOut]
+    message: Optional[str] = None
 
 
 # -------------------------
@@ -303,3 +488,92 @@ class FaceVerificationOut(BaseModel):
     success: bool
     message: str
     distance: Optional[float] = None  # For debugging
+
+
+# -------------------------
+# Flight Booking Schemas (Duffel Integration)
+# -------------------------
+
+class PassengerIn(BaseModel):
+    """Passenger details for booking"""
+    given_name: str = Field(min_length=1)
+    family_name: str = Field(min_length=1)
+    email: EmailStr
+    phone_number: str = Field(min_length=7, max_length=20)
+    born_at: str = Field(description="Date of birth in YYYY-MM-DD format")
+    gender: Literal["male", "female", "other"]
+    title: Literal["mr", "ms", "mrs", "mx"]
+
+
+class BookingCreateIn(BaseModel):
+    """Request to create a flight booking order"""
+    offer_id: str = Field(min_length=1)
+    passengers: list[PassengerIn] = Field(min_items=1, max_items=9)
+    payment_type: Literal["card", "bank_transfer", "balance"] = "balance"
+    total_amount: str = Field(min_length=1, description="Offer total amount as string, e.g. '123.45'")
+    currency: str = Field(min_length=3, max_length=3, description="ISO currency code, e.g. USD")
+
+
+class PaymentMethodIn(BaseModel):
+    """Payment method details"""
+    type: str
+    currency: str
+    amount: str
+
+
+class DuffelOrderResponseOut(BaseModel):
+    """Order response from Duffel API"""
+    id: str
+    booking_reference: Optional[str] = None
+    total_amount: str
+    total_currency: str
+    type: str
+    payment_status: Optional[Dict[str, Any]] = None
+    slices: list[dict] = []
+    passengers: list[dict] = []
+
+
+class BookingCreateOut(BaseModel):
+    """Response after creating a booking"""
+    status: str
+    order_id: str
+    booking_reference: Optional[str] = None
+    total_amount: str
+    total_currency: str
+    payment_required: bool
+    remaining_balance: float
+
+
+class BookingStatusOut(BaseModel):
+    """Status of an existing booking"""
+    order_id: str
+    booking_reference: Optional[str] = None
+    status: str
+    total_amount: str
+    total_currency: str
+    payment_status: Optional[str] = None
+    passengers: list[dict] = []
+    slices: list[dict] = []
+    created_at: Optional[datetime] = None
+
+
+class BookingOut(BaseModel):
+    """Booking details for history/retrieval"""
+    id: int
+    order_id: str
+    booking_reference: str
+    total_amount: str
+    currency: str
+    payment_status: str
+    offer_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BookingListOut(BaseModel):
+    """List of bookings for a user"""
+    bookings: list[BookingOut]
+    total_count: int

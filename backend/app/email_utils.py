@@ -3,6 +3,9 @@ import smtplib
 import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from io import BytesIO
+from typing import Any
 
 
 def get_logo_url():
@@ -10,7 +13,7 @@ def get_logo_url():
     return "https://imagedelivery.net/aXD6F8TpSqFkWdaUpALrGA/fc05a0df-3ad1-4d0d-1990-5c45c51fe000/public"
 
 
-def send_email(sender_email, sender_password, recipient_email, subject, body):
+def send_email(sender_email, sender_password, recipient_email, subject, body, attachments: list[dict[str, Any]] | None = None):
     """Send email using Gmail SMTP"""
     try:
         msg = MIMEMultipart()
@@ -19,6 +22,17 @@ def send_email(sender_email, sender_password, recipient_email, subject, body):
         msg['To'] = recipient_email
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'html'))
+
+        for attachment in attachments or []:
+            content = attachment.get("content")
+            filename = attachment.get("filename", "attachment.bin")
+            mime_type = attachment.get("mime_type", "application/octet-stream")
+            if not content:
+                continue
+
+            part = MIMEApplication(content, _subtype=mime_type.split("/")[-1])
+            part.add_header("Content-Disposition", "attachment", filename=filename)
+            msg.attach(part)
 
         mailserver = smtplib.SMTP('smtp.gmail.com', 587)
         mailserver.starttls()
@@ -31,6 +45,104 @@ def send_email(sender_email, sender_password, recipient_email, subject, body):
         print(f"Email send failed: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
+
+
+def generate_booking_confirmation_pdf(
+    booking_reference: str,
+    order_id: str,
+    total_amount: str,
+    currency: str,
+    payment_status: str,
+    created_at: str,
+    passengers: list[dict] | None = None,
+    slices: list[dict] | None = None,
+    remaining_balance: float | None = None,
+) -> bytes:
+    """Generate a lightweight colored PDF summary without external dependencies."""
+
+    def _escape_pdf_text(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    lines = [
+        "Trips2gether - Booking Confirmation",
+        "",
+        f"Booking Reference: {booking_reference}",
+        f"Order ID: {order_id}",
+        f"Total Amount: {currency} {total_amount}",
+        f"Payment Status: {payment_status}",
+        f"Booked At: {created_at}",
+    ]
+    if remaining_balance is not None:
+        lines.append(f"Wallet Balance Remaining: USD {remaining_balance:.2f}")
+
+    lines.extend(["", "Passengers:"])
+    if passengers:
+        for idx, pax in enumerate(passengers, start=1):
+            full_name = f"{(pax.get('title') or '').strip()} {(pax.get('given_name') or '').strip()} {(pax.get('family_name') or '').strip()}".strip() or "Passenger"
+            email = pax.get("email") or "N/A"
+            lines.append(f"{idx}. {full_name} - {email}")
+    else:
+        lines.append("No passenger details available")
+
+    lines.extend(["", "Itinerary:"])
+    if slices:
+        for idx, slice_item in enumerate(slices, start=1):
+            origin = (slice_item.get("origin") or {}).get("iata_code", "N/A")
+            destination = (slice_item.get("destination") or {}).get("iata_code", "N/A")
+            duration = slice_item.get("duration") or "N/A"
+            lines.append(f"{idx}. {origin} -> {destination} ({duration})")
+    else:
+        lines.append("No itinerary details available")
+
+    content_parts = []
+    y = 770
+    for idx, line in enumerate(lines):
+        font = "/F1 11 Tf"
+        color = "0.12 0.16 0.20 rg"
+        if idx == 0:
+            font = "/F1 20 Tf"
+            color = "0.055 0.247 0.18 rg"
+        elif line in ("Passengers:", "Itinerary:"):
+            font = "/F1 14 Tf"
+            color = "0.08 0.32 0.23 rg"
+
+        safe = _escape_pdf_text(line)
+        content_parts.append(f"BT {font} {color} 50 {y} Td ({safe}) Tj ET")
+        y -= 18
+        if y < 40:
+            break
+
+    content_stream = "\n".join(content_parts).encode("latin-1", errors="replace")
+
+    objects = [
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+        b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+        b"5 0 obj\n<< /Length " + str(len(content_stream)).encode("ascii") + b" >>\nstream\n" + content_stream + b"\nendstream\nendobj\n",
+    ]
+
+    buffer = BytesIO()
+    buffer.write(b"%PDF-1.4\n")
+    offsets = [0]
+    for obj in objects:
+        offsets.append(buffer.tell())
+        buffer.write(obj)
+
+    xref_pos = buffer.tell()
+    buffer.write(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    buffer.write(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        buffer.write(f"{offset:010d} 00000 n \n".encode("ascii"))
+
+    buffer.write(
+        (
+            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_pos}\n%%EOF\n"
+        ).encode("ascii")
+    )
+
+    return buffer.getvalue()
 
 
 def get_welcome_email_template(name):
@@ -796,6 +908,228 @@ def get_account_deletion_email_template(name: str, deleted_at: str) -> str:
             <div class="footer">
                 <p><strong>Trips2gether</strong> © 2026</p>
                 <p>Made with ❤ for travelers, by travelers</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+def get_booking_confirmation_email_template(
+    name: str,
+    booking_reference: str,
+    order_id: str,
+    total_amount: str,
+    currency: str,
+    payment_status: str,
+    created_at: str,
+    passengers: list[dict] | None = None,
+    slices: list[dict] | None = None,
+    remaining_balance: float | None = None,
+) -> str:
+    """HTML email template sent after successful booking creation."""
+    logo_url = get_logo_url()
+
+    passenger_rows = ""
+    for idx, pax in enumerate(passengers or [], start=1):
+        full_name = f"{(pax.get('title') or '').strip()} {(pax.get('given_name') or '').strip()} {(pax.get('family_name') or '').strip()}".strip()
+        passenger_rows += f"""
+            <tr>
+                <td style=\"padding: 10px 12px; border-bottom: 1px solid #eef2f7;\">{idx}</td>
+                <td style=\"padding: 10px 12px; border-bottom: 1px solid #eef2f7;\">{full_name or 'Passenger'}</td>
+                <td style=\"padding: 10px 12px; border-bottom: 1px solid #eef2f7;\">{(pax.get('email') or 'N/A')}</td>
+            </tr>
+        """
+
+    slice_rows = ""
+    for slice_item in slices or []:
+        origin = (slice_item.get("origin") or {}).get("iata_code", "N/A")
+        destination = (slice_item.get("destination") or {}).get("iata_code", "N/A")
+        duration = slice_item.get("duration") or "N/A"
+        slice_rows += f"""
+            <tr>
+                <td style=\"padding: 10px 12px; border-bottom: 1px solid #eef2f7;\">{origin} → {destination}</td>
+                <td style=\"padding: 10px 12px; border-bottom: 1px solid #eef2f7;\">{duration}</td>
+            </tr>
+        """
+
+    balance_row = ""
+    if remaining_balance is not None:
+        balance_row = f"""
+            <div class=\"meta-item\">
+                <div class=\"meta-label\">Wallet Balance Remaining</div>
+                <div class=\"meta-value\">USD {remaining_balance:.2f}</div>
+            </div>
+        """
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset=\"UTF-8\">
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+        <style>
+            body {{
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+                background: #f3f5f7;
+                color: #2a2f36;
+            }}
+            .container {{
+                max-width: 680px;
+                margin: 0 auto;
+                background: #ffffff;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+            }}
+            .header {{
+                background: linear-gradient(135deg, #0E3F2E 0%, #186C50 100%);
+                color: #ffffff;
+                text-align: center;
+                padding: 28px 24px;
+            }}
+            .logo {{
+                max-width: 140px;
+                height: auto;
+                margin-bottom: 10px;
+            }}
+            .header h1 {{
+                margin: 0;
+                font-size: 26px;
+            }}
+            .header p {{
+                margin: 8px 0 0;
+                opacity: 0.95;
+            }}
+            .content {{
+                padding: 28px 24px;
+            }}
+            .meta-grid {{
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+                margin: 18px 0 22px;
+            }}
+            .meta-item {{
+                border: 1px solid #d8e2dc;
+                border-radius: 8px;
+                padding: 12px;
+                background: #f8fbf9;
+            }}
+            .meta-label {{
+                color: #6b7280;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                margin-bottom: 4px;
+            }}
+            .meta-value {{
+                color: #14523b;
+                font-weight: 700;
+                font-size: 15px;
+                word-break: break-word;
+            }}
+            .section-title {{
+                margin: 20px 0 10px;
+                font-size: 18px;
+                color: #14523b;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                overflow: hidden;
+                margin-top: 8px;
+            }}
+            th {{
+                text-align: left;
+                background: #f0f5f2;
+                color: #374151;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                padding: 10px 12px;
+            }}
+            .footer {{
+                text-align: center;
+                color: #8a8f98;
+                background: #f8fafb;
+                padding: 16px 24px;
+                font-size: 12px;
+                border-top: 1px solid #eaedf0;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class=\"container\">
+            <div class=\"header\">
+                <img src=\"{logo_url}\" alt=\"Trips2gether\" class=\"logo\">
+                <h1>Booking Confirmed</h1>
+                <p>Your trip booking details are ready</p>
+            </div>
+
+            <div class=\"content\">
+                <p>Hi {name},</p>
+                <p>Your booking has been successfully created. Keep this email for your records.</p>
+
+                <div class=\"meta-grid\">
+                    <div class=\"meta-item\">
+                        <div class=\"meta-label\">Booking Reference</div>
+                        <div class=\"meta-value\">{booking_reference}</div>
+                    </div>
+                    <div class=\"meta-item\">
+                        <div class=\"meta-label\">Order ID</div>
+                        <div class=\"meta-value\">{order_id}</div>
+                    </div>
+                    <div class=\"meta-item\">
+                        <div class=\"meta-label\">Total Amount</div>
+                        <div class=\"meta-value\">{currency} {total_amount}</div>
+                    </div>
+                    <div class=\"meta-item\">
+                        <div class=\"meta-label\">Payment Status</div>
+                        <div class=\"meta-value\">{payment_status}</div>
+                    </div>
+                    <div class=\"meta-item\">
+                        <div class=\"meta-label\">Booked At</div>
+                        <div class=\"meta-value\">{created_at}</div>
+                    </div>
+                    {balance_row}
+                </div>
+
+                <h3 class=\"section-title\">Passengers</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {passenger_rows or '<tr><td colspan=\"3\" style=\"padding: 10px 12px;\">No passenger details available.</td></tr>'}
+                    </tbody>
+                </table>
+
+                <h3 class=\"section-title\">Itinerary</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Route</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {slice_rows or '<tr><td colspan=\"2\" style=\"padding: 10px 12px;\">No itinerary details available.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class=\"footer\">
+                <p><strong>Trips2gether</strong> © 2026</p>
+                <p>Have a great trip.</p>
             </div>
         </div>
     </body>

@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "../../AuthContext";
 import "./destination.css";
 
 const RestaurantMap = dynamic(() => import("./RestaurantMap"), { ssr: false });
@@ -19,6 +20,22 @@ interface Destination {
     photo_reference?: string;
     location?: { lat: number | null; lng: number | null };
     business_status?: string;
+}
+
+interface DestinationDetail {
+    place_id: string;
+    name: string;
+    address?: string;
+    rating?: number;
+    user_ratings_total?: number;
+    types: string[];
+    business_status?: string;
+    primary_type_display_name?: string;
+    location?: { lat: number | null; lng: number | null };
+    website?: string;
+    phone?: string;
+    editorial_summary?: string;
+    weekday_descriptions?: string[];
 }
 
 interface NearbyRestaurant {
@@ -77,11 +94,13 @@ const THINGS_BY_DESTINATION: { [key: string]: ThingToDo[] } = {
 export default function DestinationDetail() {
     const params = useParams();
     const router = useRouter();
+    const { isAuthenticated } = useAuth();
     const [destination, setDestination] = useState<Destination | null>(null);
     const [thingsToDo, setThingsToDo] = useState<ThingToDo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState("overview");
+    const [destinationDetail, setDestinationDetail] = useState<DestinationDetail | null>(null);
 
     const [restaurants, setRestaurants] = useState<NearbyRestaurant[]>([]);
     const [restaurantsLoading, setRestaurantsLoading] = useState(false);
@@ -104,8 +123,28 @@ export default function DestinationDetail() {
     const [overviewDetail, setOverviewDetail] = useState<any>(null);
     const [overviewDetailLoading, setOverviewDetailLoading] = useState(false);
     const [overviewDetailError, setOverviewDetailError] = useState<string | null>(null);
+    // Save to Group Plan state
+    const [userGroups, setUserGroups] = useState<{ id: number; name: string; role: string }[]>([]);
+    const [groupsLoading, setGroupsLoading] = useState(false);
+    const [showGroupSelector, setShowGroupSelector] = useState(false);
+    const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error" | "warning"; text: string } | null>(null);
 
     const placeId = params.id as string;
+
+    const handleBackNavigation = () => {
+        if (typeof window !== "undefined" && window.history.length > 1) {
+            window.history.back();
+            setTimeout(() => {
+                window.location.reload();
+            }, 120);
+            return;
+        }
+
+        router.push("/");
+        router.refresh();
+    };
 
     useEffect(() => {
         // Retrieve destination data from sessionStorage
@@ -133,6 +172,23 @@ export default function DestinationDetail() {
             setLoading(false);
         }
     }, [placeId]);
+
+    useEffect(() => {
+        if (!destination?.place_id) return;
+
+        const fetchDestinationDetails = async () => {
+            try {
+                const res = await fetch(`/api/destinations/details/${encodeURIComponent(destination.place_id)}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                setDestinationDetail(data);
+            } catch {
+                // Keep page usable even if detail fetch fails.
+            }
+        };
+
+        fetchDestinationDetails();
+    }, [destination?.place_id]);
 
     const fetchRestaurants = async (lat: number, lng: number, radius: number) => {
         setRestaurantsLoading(true);
@@ -187,13 +243,99 @@ export default function DestinationDetail() {
         };
         fetchOverviewDetail();
     }, [isRestaurant, placeId, overviewDetail, overviewDetailLoading]);
+    useEffect(() => {
+        const fetchGroups = async () => {
+            setGroupsLoading(true);
+            try {
+                const res = await fetch("/api/groups");
+                if (res.ok) {
+                    const data = await res.json();
+                    setUserGroups(data.groups || []);
+                }
+            } catch {
+                // silently fail — user may not be authenticated
+            } finally {
+                setGroupsLoading(false);
+            }
+        };
+        fetchGroups();
+    }, []);
+
+    const handleSaveToGroup = async () => {
+        if (!selectedGroupId || !destination) return;
+        setSaving(true);
+        setSaveMessage(null);
+        try {
+            const res = await fetch(`/api/groups/${selectedGroupId}/shortlist`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    place_id: destination.place_id,
+                    name: destination.name,
+                    address: destination.address ?? null,
+                    photo_url: destination.photo_url ?? null,
+                    photo_reference: destination.photo_reference ?? null,
+                    rating: destination.rating ?? null,
+                    types: destination.types,
+                }),
+            });
+            if (res.status === 409) {
+                setSaveMessage({ type: "warning", text: "Already in this group's shortlist." });
+            } else if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                const detail = body?.detail;
+                if (Array.isArray(detail) && detail.length > 0) {
+                    const first = detail[0];
+                    throw new Error(first?.msg || `Error (${res.status})`);
+                }
+                throw new Error(detail || `Error (${res.status})`);
+            } else {
+                const groupName = userGroups.find(g => g.id === selectedGroupId)?.name ?? "group";
+                setSaveMessage({ type: "success", text: `Saved to "${groupName}"!` });
+                setShowGroupSelector(false);
+                setSelectedGroupId(null);
+            }
+        } catch (err: any) {
+            setSaveMessage({ type: "error", text: err.message || "Failed to save destination." });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const getFallbackRestaurantImage = (name: string): string => {
+        const safeName = name.replace(/[&<>"']/g, "");
+        const initials = safeName
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0]?.toUpperCase() ?? "")
+            .join("") || "R";
+
+        const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" fill="none">
+                <defs>
+                    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="#effaf4"/>
+                        <stop offset="100%" stop-color="#dcefe6"/>
+                    </linearGradient>
+                </defs>
+                <rect width="400" height="300" rx="24" fill="url(#g)"/>
+                <circle cx="200" cy="122" r="42" fill="#145c46" opacity="0.12"/>
+                <text x="200" y="133" text-anchor="middle" font-family="Manrope, Arial, sans-serif" font-size="28" font-weight="800" fill="#145c46">${initials}</text>
+                <text x="200" y="210" text-anchor="middle" font-family="Manrope, Arial, sans-serif" font-size="20" font-weight="700" fill="#145c46">${safeName.slice(0, 28)}</text>
+                <text x="200" y="236" text-anchor="middle" font-family="Manrope, Arial, sans-serif" font-size="13" fill="#5b6475">Photo unavailable</text>
+            </svg>
+        `;
+
+        return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    };
 
     const getRestaurantImageUrl = (r: NearbyRestaurant): string => {
         if (r.photo_reference) {
             return `/api/destinations/image?photo_reference=${encodeURIComponent(r.photo_reference)}&width=400&height=300`;
         }
         if (r.photo_url) return r.photo_url;
-        return "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+        return getFallbackRestaurantImage(r.name);
     };
 
     const availableCuisines = Array.from(
@@ -272,6 +414,78 @@ export default function DestinationDetail() {
             );
     };
 
+    const formatBusinessStatus = (status?: string) => {
+        if (!status) return "Status unavailable";
+        if (status === "OPERATIONAL") return "Open";
+
+        return status
+            .toLowerCase()
+            .split("_")
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(" ");
+    };
+
+    const buildOverviewDescription = (dest: Destination) => {
+        if (destinationDetail?.editorial_summary) {
+            return destinationDetail.editorial_summary;
+        }
+
+        const primaryType = formatTypes(dest.types)[0]?.toLowerCase() ?? "destination";
+        const ratingText = dest.rating != null ? `${dest.rating.toFixed(1)} rating` : "no public rating";
+        const reviewText = dest.user_ratings_total != null
+            ? `${dest.user_ratings_total.toLocaleString()} reviews`
+            : "limited review volume";
+        const statusText = dest.business_status ? `Current status is ${formatBusinessStatus(dest.business_status).toLowerCase()}.` : "";
+
+        return `${dest.name} is listed as a ${primaryType} with ${ratingText} and ${reviewText}. ${statusText} Use this page to compare nearby food options and decide if it fits your group plan.`.replace(/\s+/g, " ").trim();
+    };
+
+    const buildBestTimeText = (types: string[]) => {
+        if (destinationDetail?.weekday_descriptions && destinationDetail.weekday_descriptions.length > 0) {
+            return `Typical opening pattern: ${destinationDetail.weekday_descriptions[0]}`;
+        }
+
+        const normalized = types.map((t) => t.toLowerCase());
+        if (normalized.some((t) => t.includes("island") || t.includes("beach") || t.includes("natural"))) {
+            return "Dry-season months are usually the best for clear weather and easier local transport.";
+        }
+        if (normalized.some((t) => t.includes("tourist") || t.includes("point_of_interest") || t.includes("museum"))) {
+            return "Weekday mornings and shoulder seasons usually give a better experience with shorter queues.";
+        }
+        return "Shoulder seasons are usually the safest pick for balanced weather, prices, and crowd levels.";
+    };
+
+    const buildCurrencyText = (address?: string) => {
+        if (destinationDetail?.website) {
+            return `Official website available: ${destinationDetail.website}`;
+        }
+
+        const a = (address || "").toLowerCase();
+        if (a.includes("spain") || a.includes("france") || a.includes("germany") || a.includes("italy") || a.includes("portugal")) {
+            return "Likely currency: EUR. Confirm local pricing and card acceptance before booking activities.";
+        }
+        if (a.includes("united kingdom") || a.includes("london")) {
+            return "Likely currency: GBP. Many attractions use timed entry, so pre-booking helps avoid price surges.";
+        }
+        if (a.includes("japan") || a.includes("tokyo")) {
+            return "Likely currency: JPY. Keep a mix of digital payments and some cash for smaller spots.";
+        }
+        return "Check local currency and payment methods before you finalize your daily plan.";
+    };
+
+    const buildBudgetText = (rating?: number, reviews?: number) => {
+        const sourceRating = destinationDetail?.rating ?? rating;
+        const sourceReviews = destinationDetail?.user_ratings_total ?? reviews;
+
+        if (sourceRating != null && sourceRating >= 4.6 && (sourceReviews ?? 0) > 10000) {
+            return "This place is highly in-demand. Book nearby stays and key activities early to avoid peak pricing.";
+        }
+        if ((sourceReviews ?? 0) > 1000) {
+            return "Expect moderate-to-high demand around peak hours; reserve popular spots in advance when possible.";
+        }
+        return "Demand looks moderate. You can usually keep plans flexible and compare options closer to your visit date.";
+    };
+
     if (loading) {
         return (
             <div className="destination-detail-container">
@@ -286,13 +500,18 @@ export default function DestinationDetail() {
                 <div className="error-container">
                     <h2>Oops!</h2>
                     <p>{error || "Destination not found"}</p>
-                    <button className="back-button" onClick={() => router.back()}>
+                    <button className="back-button" onClick={handleBackNavigation}>
                         ← Go Back
                     </button>
                 </div>
             </div>
         );
     }
+
+    const overviewDescription = buildOverviewDescription(destination);
+    const bestTimeText = buildBestTimeText(destinationDetail?.types ?? destination.types);
+    const currencyText = buildCurrencyText(destinationDetail?.address ?? destination.address);
+    const budgetText = buildBudgetText(destinationDetail?.rating ?? destination.rating, destinationDetail?.user_ratings_total ?? destination.user_ratings_total);
 
     return (
         <div className="destination-detail-container">
@@ -306,20 +525,24 @@ export default function DestinationDetail() {
                         e.currentTarget.src = "https://via.placeholder.com/1500x600?text=" + encodeURIComponent(destination.name);
                     }}
                 />
-                <button className="back-button-hero" onClick={() => router.back()}>
+                <button className="back-button-hero" onClick={handleBackNavigation}>
                     ← Back
                 </button>
                 <div className="hero-overlay">
                     <div className="hero-content">
                         <h1 className="hero-title">{destination.name}</h1>
-                        {destination.rating && (
-                            <div className="hero-rating">
+                        <div className="hero-rating">
+                            {destination.rating != null ? (
                                 <span className="rating-stars">★ {destination.rating.toFixed(1)}</span>
-                                {destination.user_ratings_total && (
-                                    <span className="rating-count">({destination.user_ratings_total.toLocaleString()} reviews)</span>
-                                )}
-                            </div>
-                        )}
+                            ) : (
+                                <span className="rating-stars">Rating unavailable</span>
+                            )}
+                            <span className="rating-count">
+                                {destination.user_ratings_total != null
+                                    ? `(${destination.user_ratings_total.toLocaleString()} reviews)`
+                                    : "(No reviews yet)"}
+                            </span>
+                        </div>
                         {destination.types.length > 0 && (
                             <div className="hero-categories">
                                 {formatTypes(destination.types).map((type, idx) => (
@@ -374,7 +597,9 @@ export default function DestinationDetail() {
                             <div className="info-grid">
                                 {destination.address && (
                                     <div className="info-card">
-                                        <div className="info-icon">📍</div>
+                                        <div className="info-icon" aria-hidden="true">
+                                            <img src="/location.svg" alt="" />
+                                        </div>
                                         <div className="info-content">
                                             <h3>Location</h3>
                                             <p>{destination.address}</p>
@@ -384,7 +609,9 @@ export default function DestinationDetail() {
 
                                 {!isRestaurant && destination.location?.lat && destination.location?.lng && (
                                     <div className="info-card">
-                                        <div className="info-icon"></div>
+                                        <div className="info-icon" aria-hidden="true">
+                                            <img src="/compass.svg" alt="" />
+                                        </div>
                                         <div className="info-content">
                                             <h3>Coordinates</h3>
                                             <p>{destination.location.lat.toFixed(4)}, {destination.location.lng.toFixed(4)}</p>
@@ -394,11 +621,11 @@ export default function DestinationDetail() {
 
                                 {destination.business_status && (
                                     <div className="info-card">
-                                        <div className="info-icon"></div>
+                                        <div className="info-icon">●</div>
                                         <div className="info-content">
                                             <h3>Status</h3>
                                             <p className={`status-${destination.business_status.toLowerCase()}`}>
-                                                {destination.business_status === "OPERATIONAL" ? "Open" : destination.business_status}
+                                                {formatBusinessStatus(destination.business_status)}
                                             </p>
                                         </div>
                                     </div>
@@ -415,6 +642,7 @@ export default function DestinationDetail() {
                                 ) : (
                                     <p>Discover the beauty and culture of {destination.name}. This destination offers amazing experiences with {destination.user_ratings_total?.toLocaleString()} visitor reviews and a {destination.rating?.toFixed(1)} star rating.</p>
                                 )}
+                                <p>{overviewDescription}</p>
                             </div>
 
                             {isRestaurant && (
@@ -753,7 +981,7 @@ export default function DestinationDetail() {
                                                             src={getRestaurantImageUrl(r)}
                                                             alt={r.name}
                                                             onError={(e) => {
-                                                                e.currentTarget.src = "https://via.placeholder.com/400x300?text=" + encodeURIComponent(r.name);
+                                                                e.currentTarget.src = getFallbackRestaurantImage(r.name);
                                                             }}
                                                         />
                                                     </div>
@@ -788,15 +1016,15 @@ export default function DestinationDetail() {
                             <div className="info-columns">
                                 <div className="info-column">
                                     <h3>Best Time to Visit</h3>
-                                    <p>April - October (Spring and Fall seasons offer pleasant weather and fewer crowds)</p>
+                                    <p>{bestTimeText}</p>
                                 </div>
                                 <div className="info-column">
                                     <h3>💱 Currency</h3>
-                                    <p>€ EUR (for European destinations) or local currency</p>
+                                    <p>{currencyText}</p>
                                 </div>
                                 <div className="info-column">
                                     <h3>💰 Budget Guide</h3>
-                                    <p>Budget: $30-50/day | Mid-range: $50-150/day | Luxury: $150+/day</p>
+                                    <p>{budgetText}</p>
                                 </div>
                             </div>
                         </div>
@@ -824,16 +1052,90 @@ export default function DestinationDetail() {
                             <button className="btn btn-plan">Plan Trip</button>
                         </div>
                     )}
+                    <div className="sidebar-card plan-card">
+                        <h3 className="save-title">
+                            <img src="/save.svg" alt="" aria-hidden="true" />
+                            <span>Save to Group Plan</span>
+                        </h3>
+                        <p>Shortlist this destination so your group can discuss it later.</p>
+
+                        {!isAuthenticated ? (
+                            <p className="save-no-groups">Sign in to save destinations to a group plan.</p>
+                        ) : !showGroupSelector ? (
+                            <button
+                                className="btn btn-plan"
+                                onClick={() => setShowGroupSelector(true)}
+                                disabled={groupsLoading}
+                            >
+                                {groupsLoading ? "Loading..." : "Save to Group Plan"}
+                            </button>
+                        ) : (
+                            <div className="save-group-selector">
+                                {userGroups.length === 0 ? (
+                                    <p className="save-no-groups">You are not a member of any group yet. Create or join a group first.</p>
+                                ) : (
+                                    <>
+                                        <select
+                                            className="group-select"
+                                            value={selectedGroupId ?? ""}
+                                            onChange={(e) => setSelectedGroupId(Number(e.target.value) || null)}
+                                        >
+                                            <option value="">Select a group...</option>
+                                            {userGroups.map(g => (
+                                                <option key={g.id} value={g.id}>{g.name}</option>
+                                            ))}
+                                        </select>
+                                        <div className="save-actions">
+                                            <button
+                                                className="btn btn-plan"
+                                                onClick={handleSaveToGroup}
+                                                disabled={!selectedGroupId || saving}
+                                            >
+                                                {saving ? "Saving..." : "Confirm"}
+                                            </button>
+                                            <button
+                                                className="btn btn-cancel"
+                                                onClick={() => {
+                                                    setShowGroupSelector(false);
+                                                    setSaveMessage(null);
+                                                    setSelectedGroupId(null);
+                                                }}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                                {saveMessage && (
+                                    <p className={`save-message save-message-${saveMessage.type}`}>
+                                        {saveMessage.text}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {saveMessage && !showGroupSelector && (
+                            <p className={`save-message save-message-${saveMessage.type}`}>
+                                {saveMessage.text}
+                            </p>
+                        )}
+                    </div>
 
                     <div className="sidebar-card">
                         <h3>Quick Info</h3>
                         <div className="quick-info-item">
                             <span className="label">Rating</span>
-                            <span className="value">★ {destination.rating?.toFixed(1)}</span>
+                            <span className="value">
+                                {destination.rating != null ? `★ ${destination.rating.toFixed(1)}` : "N/A"}
+                            </span>
                         </div>
                         <div className="quick-info-item">
                             <span className="label">Reviews</span>
-                            <span className="value">{destination.user_ratings_total?.toLocaleString()}</span>
+                            <span className="value">
+                                {destination.user_ratings_total != null
+                                    ? destination.user_ratings_total.toLocaleString()
+                                    : "N/A"}
+                            </span>
                         </div>
                         {destination.location?.lat && destination.location?.lng && (
                             <button

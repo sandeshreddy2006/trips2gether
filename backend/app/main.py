@@ -2,7 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, inspect, text
+from sqlalchemy.exc import DataError
 from datetime import datetime, timedelta
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
@@ -24,9 +25,23 @@ from .schemas import (
     GroupMemberOut,
     GroupMemberListOut,
     GroupUpdateRoleIn,
+    GroupShortlistCreateIn,
+    GroupShortlistItemOut,
+    GroupShortlistListOut,
+    GroupShortlistFlightCreateIn,
+    GroupShortlistFlightItemOut,
+    GroupShortlistFlightListOut,
     ProfileOut, 
     ProfileUpdate,
+    WalletTopUpIn,
+    WalletTopUpOut,
+    WalletCheckoutSessionOut,
+    WalletTopUpConfirmIn,
+    WalletTopUpConfirmOut,
+    FlightSearchIn,
+    FlightSearchResponse,
     DestinationSearchResponse,
+    DestinationDetailOut,
     NearbyRestaurantsResponse,
     RestaurantDetailOut,
     FaceEncodingIn,
@@ -34,6 +49,11 @@ from .schemas import (
     FaceVerificationCheckOut,
     FaceVerificationIn,
     FaceVerificationOut,
+    BookingCreateIn,
+    BookingCreateOut,
+    BookingStatusOut,
+    BookingOut,
+    BookingListOut,
 )
 from .auth import (
     hash_password,
@@ -44,18 +64,22 @@ from .auth import (
     verify_recaptcha,
     get_current_user_info,
 )
-from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template, get_email_verification_template, get_account_deletion_email_template
+from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template, get_email_verification_template, get_account_deletion_email_template, get_booking_confirmation_email_template, generate_booking_confirmation_pdf
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
+from .flightbookings import _select_diverse_offers, _serialize_duffel_offer
+from .shortlist import serialize_shortlist_item, serialize_shortlist_flight_item
 from jose import JWTError
 import os
 import requests
 import json
 import math
+import stripe
 from apscheduler.schedulers.background import BackgroundScheduler
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
+DUFFEL_API_URL = "https://api.duffel.com/air/offer_requests"
 
 print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
@@ -1077,6 +1101,96 @@ def delete_account(response: Response, request: Request, background_tasks: Backg
 # Group endpoints
 # -------------------------
 
+@app.post("/flights/search", response_model=FlightSearchResponse)
+def search_flights(body: FlightSearchIn):
+    """Search flights with Duffel offer requests using test/live API key from backend env."""
+    duffel_api_key = os.getenv("DUFFEL_API_KEY")
+    if not duffel_api_key:
+        raise HTTPException(status_code=500, detail="Duffel API key is not configured on the server")
+
+    try:
+        depart_date = datetime.strptime(body.depart_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Departure date must be in YYYY-MM-DD format")
+
+    return_date = None
+    if body.return_date:
+        try:
+            return_date = datetime.strptime(body.return_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Return date must be in YYYY-MM-DD format")
+
+    today = datetime.utcnow().date()
+    if depart_date < today:
+        raise HTTPException(status_code=422, detail="Departure date cannot be in the past")
+    if return_date and return_date < depart_date:
+        raise HTTPException(status_code=422, detail="Return date cannot be before departure")
+
+    slices = [
+        {
+            "origin": body.origin,
+            "destination": body.destination,
+            "departure_date": body.depart_date,
+        }
+    ]
+    if body.return_date:
+        slices.append(
+            {
+                "origin": body.destination,
+                "destination": body.origin,
+                "departure_date": body.return_date,
+            }
+        )
+
+    payload = {
+        "data": {
+            "slices": slices,
+            "passengers": [{"type": "adult"} for _ in range(body.travelers)],
+            "cabin_class": "economy",
+        }
+    }
+
+    try:
+        response = requests.post(
+            f"{DUFFEL_API_URL}?return_offers=true&supplier_timeout=10000",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Duffel-Version": "v2",
+                "Authorization": f"Bearer {duffel_api_key}",
+            },
+            json=payload,
+            timeout=15,
+        )
+    except requests.Timeout:
+        raise HTTPException(status_code=504, detail="Flight search timed out. Please try again.")
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Unable to reach the flight provider right now")
+
+    if not response.ok:
+        detail = "Flight provider returned an error"
+        try:
+            body_json = response.json()
+            errors = body_json.get("errors") or []
+            if errors:
+                detail = errors[0].get("message") or errors[0].get("title") or detail
+            elif body_json.get("error"):
+                detail = body_json.get("error")
+        except ValueError:
+            pass
+        raise HTTPException(status_code=502, detail=detail)
+
+    data = response.json().get("data", {})
+    offers = data.get("offers", []) or []
+    selected_offers = _select_diverse_offers(offers, limit=20)
+    serialized_offers = [_serialize_duffel_offer(offer) for offer in selected_offers]
+
+    return {
+        "status": "success",
+        "results": serialized_offers,
+        "message": None if serialized_offers else "No matching flights found for this route.",
+    }
+
 @app.post("/groups", response_model=dict)
 def create_group(body: GroupCreateIn, request: Request, db: Session = Depends(get_db)):
     """Create a new travel group. The creator is automatically assigned as Owner."""
@@ -1518,6 +1632,278 @@ def update_member_role(
     return {"ok": True, "message": f"Role updated to {body.role}"}
 
 
+
+
+
+@app.get("/groups/{group_id}/shortlist", response_model=GroupShortlistListOut)
+def list_group_shortlist(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """List shortlisted destinations for a group. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    items = (
+        db.query(models.GroupShortlistDestination)
+        .filter(models.GroupShortlistDestination.group_id == group_id)
+        .order_by(models.GroupShortlistDestination.created_at.desc())
+        .all()
+    )
+
+    return {"items": [serialize_shortlist_item(item) for item in items]}
+
+
+@app.post("/groups/{group_id}/shortlist", response_model=dict)
+def add_group_shortlist_destination(
+    group_id: int,
+    body: GroupShortlistCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Add a destination to group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    existing = (
+        db.query(models.GroupShortlistDestination)
+        .filter(
+            models.GroupShortlistDestination.group_id == group_id,
+            models.GroupShortlistDestination.place_id == body.place_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Destination already shortlisted for this group")
+
+    photo_reference = body.photo_reference.strip() if body.photo_reference else None
+    # Google Places photo references can exceed older VARCHAR(255) schemas in production.
+    # Keep the API stable by dropping overly long references instead of crashing the request.
+    if photo_reference and len(photo_reference) > 255:
+        photo_reference = None
+
+    item = models.GroupShortlistDestination(
+        group_id=group_id,
+        place_id=body.place_id.strip(),
+        name=body.name.strip(),
+        address=(body.address.strip() if body.address else None),
+        photo_url=(body.photo_url.strip() if body.photo_url else None),
+        photo_reference=photo_reference,
+        rating=body.rating,
+        destination_types_json=json.dumps(body.types or []),
+        added_by=current_user.id,
+    )
+    db.add(item)
+    try:
+        db.commit()
+    except DataError as exc:
+        db.rollback()
+        if "photo_reference" not in str(exc).lower():
+            raise HTTPException(status_code=500, detail="Failed to save shortlisted destination")
+
+        item.photo_reference = None
+        db.add(item)
+        db.commit()
+
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "message": "Destination added to shortlist",
+        "item": serialize_shortlist_item(item),
+    }
+
+
+@app.delete("/groups/{group_id}/shortlist/{place_id}", response_model=dict)
+def remove_group_shortlist_destination(
+    group_id: int,
+    place_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Remove a destination from group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    item = (
+        db.query(models.GroupShortlistDestination)
+        .filter(
+            models.GroupShortlistDestination.group_id == group_id,
+            models.GroupShortlistDestination.place_id == place_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Shortlisted destination not found")
+
+    db.delete(item)
+    db.commit()
+
+    return {"ok": True, "message": "Destination removed from shortlist"}
+
+
+@app.get("/groups/{group_id}/flight-shortlist", response_model=GroupShortlistFlightListOut)
+def list_group_flight_shortlist(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """List shortlisted flights for a group. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    items = (
+        db.query(models.GroupShortlistFlight)
+        .filter(models.GroupShortlistFlight.group_id == group_id)
+        .order_by(models.GroupShortlistFlight.created_at.desc())
+        .all()
+    )
+
+    return {"items": [serialize_shortlist_flight_item(item) for item in items]}
+
+
+@app.post("/groups/{group_id}/flight-shortlist", response_model=dict)
+def add_group_shortlist_flight(
+    group_id: int,
+    body: GroupShortlistFlightCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Add a flight to group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    offer_id = body.flight_offer_id.strip()
+    existing = (
+        db.query(models.GroupShortlistFlight)
+        .filter(
+            models.GroupShortlistFlight.group_id == group_id,
+            models.GroupShortlistFlight.flight_offer_id == offer_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Flight already shortlisted for this group")
+
+    item = models.GroupShortlistFlight(
+        group_id=group_id,
+        flight_offer_id=offer_id,
+        airline=body.airline.strip(),
+        logo_url=(body.logo_url.strip() if body.logo_url else None),
+        price=body.price,
+        currency=body.currency.strip(),
+        duration=body.duration.strip(),
+        stops=body.stops,
+        departure_time=(body.departure_time.strip() if body.departure_time else None),
+        arrival_time=(body.arrival_time.strip() if body.arrival_time else None),
+        departure_airport=body.departure_airport.strip(),
+        arrival_airport=body.arrival_airport.strip(),
+        cabin_class=(body.cabin_class.strip() if body.cabin_class else None),
+        baggages_json=json.dumps(body.baggages or []),
+        slices_json=json.dumps(body.slices or []),
+        emissions_kg=(body.emissions_kg.strip() if body.emissions_kg else None),
+        added_by=current_user.id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "message": "Flight added to shortlist",
+        "item": serialize_shortlist_flight_item(item),
+    }
+
+
+@app.delete("/groups/{group_id}/flight-shortlist/{flight_offer_id}", response_model=dict)
+def remove_group_shortlist_flight(
+    group_id: int,
+    flight_offer_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Remove a flight from group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    item = (
+        db.query(models.GroupShortlistFlight)
+        .filter(
+            models.GroupShortlistFlight.group_id == group_id,
+            models.GroupShortlistFlight.flight_offer_id == flight_offer_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Shortlisted flight not found")
+
+    db.delete(item)
+    db.commit()
+
+    return {"ok": True, "message": "Flight removed from shortlist"}
+
+
 # Profile Endpoints
 
 @app.get("/profile/get", response_model=ProfileOut)
@@ -1588,6 +1974,180 @@ async def update_profile(profile_update: ProfileUpdate, request: Request, db: Se
     db.refresh(profile)
     
     return profile
+
+
+@app.post("/wallet/top-up-demo", response_model=WalletTopUpOut)
+def top_up_demo_wallet(body: WalletTopUpIn, request: Request, db: Session = Depends(get_db)):
+    """Run a Stripe test payment and credit the user's demo wallet on success."""
+    user = get_current_user_info(request, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    stripe_api_key = os.getenv("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    stripe.api_key = stripe_api_key
+
+    try:
+        payment_intent = stripe.PaymentIntent.create(
+            amount=int(round(body.amount * 100)),
+            currency=body.currency.lower(),
+            automatic_payment_methods={
+                "enabled": True,
+                "allow_redirects": "never",
+            },
+            confirm=True,
+            payment_method="pm_card_visa",
+            description=f"Trips2gether demo wallet top-up for user {user.id}",
+            metadata={
+                "user_id": str(user.id),
+                "profile_id": str(profile.id),
+                "kind": "wallet_top_up_demo",
+            },
+        )
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe demo payment failed: {message}")
+
+    if payment_intent.status != "succeeded":
+        raise HTTPException(status_code=502, detail="Stripe payment did not succeed")
+
+    profile.wallet_balance = round(float(profile.wallet_balance or 0) + body.amount, 2)
+    profile.updated_at = datetime.now()
+    db.commit()
+    db.refresh(profile)
+
+    return WalletTopUpOut(
+        payment_intent_id=payment_intent.id,
+        amount_added=round(body.amount, 2),
+        currency=body.currency,
+        wallet_balance=round(float(profile.wallet_balance), 2),
+        payment_status=payment_intent.status,
+    )
+
+
+@app.post("/wallet/top-up-checkout-session", response_model=WalletCheckoutSessionOut)
+def create_wallet_checkout_session(body: WalletTopUpIn, request: Request, db: Session = Depends(get_db)):
+    """Create a Stripe-hosted checkout session for wallet top-up."""
+    user = get_current_user_info(request, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    stripe_api_key = os.getenv("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    stripe.api_key = stripe_api_key
+    frontend_base_url = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": body.currency.lower(),
+                        "product_data": {
+                            "name": "Trips2gether Wallet Top-up",
+                        },
+                        "unit_amount": int(round(body.amount * 100)),
+                    },
+                    "quantity": 1,
+                }
+            ],
+            success_url=f"{frontend_base_url}/profile?wallet_topup=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{frontend_base_url}/profile?wallet_topup=cancel",
+            metadata={
+                "user_id": str(user.id),
+                "profile_id": str(profile.id),
+                "kind": "wallet_top_up_checkout",
+            },
+        )
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe checkout failed: {message}")
+
+    return WalletCheckoutSessionOut(
+        session_id=session.id,
+        checkout_url=session.url,
+    )
+
+
+@app.post("/wallet/top-up-confirm", response_model=WalletTopUpConfirmOut)
+def confirm_wallet_top_up(body: WalletTopUpConfirmIn, request: Request, db: Session = Depends(get_db)):
+    """Confirm Stripe checkout result and credit wallet only once."""
+    user = get_current_user_info(request, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    stripe_api_key = os.getenv("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    stripe.api_key = stripe_api_key
+
+    try:
+        session = stripe.checkout.Session.retrieve(body.session_id)
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe confirmation failed: {message}")
+
+    raw_metadata = getattr(session, "metadata", None)
+    if hasattr(raw_metadata, "to_dict"):
+        metadata = raw_metadata.to_dict()
+    elif raw_metadata:
+        metadata = dict(raw_metadata)
+    else:
+        metadata = {}
+
+    if str(metadata.get("user_id", "")) != str(user.id):
+        raise HTTPException(status_code=403, detail="Session does not belong to current user")
+
+    if session.payment_status != "paid":
+        raise HTTPException(status_code=400, detail="Checkout payment not completed")
+
+    existing = db.query(models.WalletTopUp).filter(models.WalletTopUp.stripe_session_id == session.id).first()
+    amount_added = round(float((session.amount_total or 0) / 100), 2)
+    currency = (session.currency or "usd").upper()
+
+    if existing:
+        return WalletTopUpConfirmOut(
+            amount_added=existing.amount,
+            currency=existing.currency,
+            wallet_balance=round(float(profile.wallet_balance or 0), 2),
+            payment_status=existing.payment_status,
+            already_processed=True,
+        )
+
+    wallet_topup = models.WalletTopUp(
+        profile_id=profile.id,
+        stripe_session_id=session.id,
+        amount=amount_added,
+        currency=currency,
+        payment_status="paid",
+    )
+
+    profile.wallet_balance = round(float(profile.wallet_balance or 0) + amount_added, 2)
+    profile.updated_at = datetime.now()
+    db.add(wallet_topup)
+    db.commit()
+    db.refresh(profile)
+
+    return WalletTopUpConfirmOut(
+        amount_added=amount_added,
+        currency=currency,
+        wallet_balance=round(float(profile.wallet_balance), 2),
+        payment_status="paid",
+        already_processed=False,
+    )
 
 
 @app.post("/profile/upload-avatar")
@@ -1800,6 +2360,30 @@ def get_destination_photo(
             status_code=500, 
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
+
+@app.get("/destinations/details/{place_id}", response_model=DestinationDetailOut)
+def get_destination_detail(place_id: str):
+    """Fetch detailed place data for a destination using Google Places Details API."""
+    if not place_id or not place_id.strip():
+        raise HTTPException(status_code=400, detail="place_id is required")
+
+    try:
+        places_service = get_places_service()
+        result = places_service.get_destination_details(place_id.strip())
+
+        if result["status"] == "error":
+            raise HTTPException(status_code=502, detail=result.get("message", "Failed to fetch destination details"))
+
+        if not result.get("result"):
+            raise HTTPException(status_code=404, detail="Destination details not found")
+
+        return DestinationDetailOut(**result["result"])
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @app.get("/destinations/image")
 def get_destination_image(
@@ -2032,3 +2616,288 @@ def disable_face_verification(request: Request, db: Session = Depends(get_db)):
             status_code=500,
             detail=f"Failed to disable face verification: {str(e)}"
         )
+
+
+# -------------------------
+# Flight Booking Endpoints (Duffel Integration)
+# -------------------------
+
+@app.post("/bookings/create-order", response_model=BookingCreateOut)
+def create_booking(body: BookingCreateIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Create a flight booking order using Duffel API. Only authenticated users."""
+    # Verify user is authenticated
+    current_user = get_current_user_info(request, db)
+    
+    # Get user's profile
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    
+    # Get Duffel API key (secure on backend only)
+    duffel_api_key = os.getenv("DUFFEL_API_KEY")
+    if not duffel_api_key:
+        raise HTTPException(status_code=500, detail="Booking service not configured")
+    
+    gender_map = {"male": "m", "female": "f", "other": "m"}
+
+    try:
+        # Fetch the offer from Duffel to get the correct passenger IDs
+        offer_response = requests.get(
+            f"https://api.duffel.com/air/offers/{body.offer_id}",
+            headers={
+                "Accept": "application/json",
+                "Duffel-Version": "v2",
+                "Authorization": f"Bearer {duffel_api_key}",
+            },
+            timeout=10
+        )
+        if not offer_response.ok:
+            raise HTTPException(status_code=502, detail="Could not retrieve offer details")
+
+        offer_data = offer_response.json().get("data", {})
+        offer_passengers = offer_data.get("passengers", [])
+        # Use the offer's actual total to avoid amount mismatch
+        offer_total_amount = offer_data.get("total_amount", body.total_amount)
+        offer_total_currency = offer_data.get("total_currency", body.currency)
+        planned_charge = float(offer_total_amount)
+
+        if len(offer_passengers) != len(body.passengers):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Offer requires {len(offer_passengers)} passenger(s), got {len(body.passengers)}"
+            )
+
+        if profile.wallet_balance < planned_charge:
+            raise HTTPException(status_code=402, detail="Insufficient wallet balance")
+
+        # Build Duffel order creation payload using offer's passenger IDs
+        passengers_payload = []
+        for offer_pax, passenger in zip(offer_passengers, body.passengers):
+            # Phone is already E.164 (e.g. +14155550123) from the frontend
+            raw_phone = passenger.phone_number.strip()
+            digits_only = "".join(c for c in raw_phone if c.isdigit())
+            e164_phone = "+" + digits_only if not raw_phone.startswith("+") else raw_phone
+
+            passengers_payload.append({
+                "id": offer_pax["id"],
+                "given_name": passenger.given_name,
+                "family_name": passenger.family_name,
+                "email": passenger.email,
+                "phone_number": e164_phone,
+                "born_on": passenger.born_at,
+                "gender": gender_map.get(passenger.gender, "m"),
+                "title": passenger.title,
+            })
+        
+        # Build payment payload using the offer's confirmed total amount
+        payment_payload = [{
+            "type": body.payment_type,
+            "currency": offer_total_currency,
+            "amount": offer_total_amount
+        }]
+        
+        order_payload = {
+            "data": {
+                "type": "instant",
+                "selected_offers": [body.offer_id],
+                "passengers": passengers_payload,
+                "payments": payment_payload,
+                "metadata": {
+                    "user_id": str(current_user.id),
+                    "booking_timestamp": datetime.utcnow().isoformat()
+                }
+            }
+        }
+        
+        # Call Duffel API to create order
+        print(f"[Duffel] Sending order payload: {json.dumps(order_payload, indent=2)}")
+        response = requests.post(
+            "https://api.duffel.com/air/orders",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Duffel-Version": "v2",
+                "Authorization": f"Bearer {duffel_api_key}",
+            },
+            json=order_payload,
+            timeout=90  # Duffel sandbox order creation can take 20-45s
+        )
+        
+        if not response.ok:
+            error_detail = "Failed to create booking"
+            try:
+                error_body = response.json()
+                print(f"[Duffel Error] Status {response.status_code}: {error_body}")
+                errors = error_body.get("errors", [])
+                if errors:
+                    error_detail = errors[0].get("message", error_detail)
+            except ValueError:
+                print(f"[Duffel Error] Status {response.status_code}: {response.text}")
+            raise HTTPException(status_code=502, detail=error_detail)
+        
+        order_data = response.json().get("data", {})
+        order_id = order_data.get("id", "")
+        booking_reference = order_data.get("booking_reference")
+        total_amount = order_data.get("total_amount", "0")
+        total_currency = order_data.get("total_currency", "USD")
+        
+        # Deduct from user's wallet balance
+        charge = float(total_amount)
+        profile.wallet_balance = round(profile.wallet_balance - charge, 2)
+        
+        # Save booking to database after Duffel confirms it
+        booking = models.Booking(
+            profile_id=profile.id,
+            order_id=order_id,
+            booking_reference=booking_reference,
+            total_amount=total_amount,
+            currency=total_currency,
+            payment_status="paid",
+            offer_id=body.offer_id,
+            passengers_json=json.dumps([p.model_dump() for p in body.passengers]),
+            slices_json=json.dumps(order_data.get("slices", []))
+        )
+        db.add(booking)
+        db.commit()
+        db.refresh(booking)
+
+        try:
+            formatted_time = datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
+            booking_pdf = generate_booking_confirmation_pdf(
+                booking_reference=booking_reference or "N/A",
+                order_id=order_id,
+                total_amount=total_amount,
+                currency=total_currency,
+                payment_status="pending",
+                created_at=formatted_time,
+                passengers=[p.model_dump() for p in body.passengers],
+                slices=order_data.get("slices", []),
+                remaining_balance=profile.wallet_balance,
+            )
+            background_tasks.add_task(
+                send_email,
+                sender_email=os.getenv("SMTP_EMAIL"),
+                sender_password=os.getenv("SMTP_PASSWORD"),
+                recipient_email=current_user.email,
+                subject=f"Booking Confirmed - {booking_reference}",
+                body=get_booking_confirmation_email_template(
+                    name=current_user.name,
+                    booking_reference=booking_reference or "N/A",
+                    order_id=order_id,
+                    total_amount=total_amount,
+                    currency=total_currency,
+                    payment_status="pending",
+                    created_at=formatted_time,
+                    passengers=[p.model_dump() for p in body.passengers],
+                    slices=order_data.get("slices", []),
+                    remaining_balance=profile.wallet_balance,
+                ),
+                attachments=[
+                    {
+                        "filename": f"booking-{booking_reference or order_id}.pdf",
+                        "content": booking_pdf,
+                        "mime_type": "application/pdf",
+                    }
+                ],
+            )
+        except Exception as email_exc:
+            # Booking should remain successful even if email dispatch fails.
+            print(f"[Booking Email] Failed to queue confirmation email: {email_exc}")
+
+        return BookingCreateOut(
+            status="confirmed",
+            order_id=order_id,
+            booking_reference=booking_reference,
+            total_amount=total_amount,
+            total_currency=total_currency,
+            payment_required=False,
+            remaining_balance=profile.wallet_balance
+        )
+    
+    except requests.Timeout:
+        raise HTTPException(status_code=504, detail="Booking service timeout")
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail="Unable to reach booking service")
+    except ValueError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Invalid booking amount returned by provider")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Booking error: {str(e)}")
+
+
+@app.get("/bookings/{order_id}/status", response_model=BookingStatusOut)
+def get_booking_status(order_id: str, request: Request, db: Session = Depends(get_db)):
+    """Retrieve booking status from Duffel API. Only authenticated users."""
+    # Verify user is authenticated
+    current_user = get_current_user_info(request, db)
+    
+    # Get Duffel API key
+    duffel_api_key = os.getenv("DUFFEL_API_KEY")
+    if not duffel_api_key:
+        raise HTTPException(status_code=500, detail="Booking service not configured")
+    
+    try:
+        # Fetch order from Duffel
+        response = requests.get(
+            f"https://api.duffel.com/air/orders/{order_id}",
+            headers={
+                "Accept": "application/json",
+                "Duffel-Version": "v2",
+                "Authorization": f"Bearer {duffel_api_key}",
+            },
+            timeout=10
+        )
+        
+        if not response.ok:
+            if response.status_code == 404:
+                raise HTTPException(status_code=404, detail="Booking not found")
+            raise HTTPException(status_code=502, detail="Failed to retrieve booking status")
+        
+        order_data = response.json().get("data", {})
+        payment_status_obj = order_data.get("payment_status", {})
+        
+        return BookingStatusOut(
+            order_id=order_data.get("id", ""),
+            booking_reference=order_data.get("booking_reference"),
+            status=order_data.get("type", "unknown"),
+            total_amount=order_data.get("total_amount", "0"),
+            total_currency=order_data.get("total_currency", "USD"),
+            payment_status=payment_status_obj.get("status") if payment_status_obj else None,
+            passengers=order_data.get("passengers", []),
+            slices=order_data.get("slices", []),
+            created_at=datetime.fromisoformat(order_data.get("created_at", "").replace("Z", "+00:00")) if order_data.get("created_at") else None
+        )
+    
+    except requests.Timeout:
+        raise HTTPException(status_code=504, detail="Booking service timeout")
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Unable to reach booking service")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving booking: {str(e)}")
+
+
+@app.get("/bookings", response_model=BookingListOut)
+def get_user_bookings(request: Request, db: Session = Depends(get_db)):
+    """Retrieve all bookings for the authenticated user."""
+    # Verify user is authenticated
+    current_user = get_current_user_info(request, db)
+    
+    # Get user's profile
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    
+    # Get all bookings for this profile, ordered by most recent first
+    bookings = db.query(models.Booking).filter(
+        models.Booking.profile_id == profile.id
+    ).order_by(models.Booking.created_at.desc()).all()
+    
+    return BookingListOut(
+        bookings=bookings,
+        total_count=len(bookings)
+    )
