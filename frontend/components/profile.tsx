@@ -607,7 +607,7 @@ export default function Profile() {
         <div className="profile-container">
             <div className="profile-header">
                 <div className="profile-banner">
-                    <img src="/profile-banner.jpg" alt="Banner" className="banner-image" onError={(e) => {
+                    <img src="/banner.png" alt="Banner" className="banner-image" onError={(e) => {
                         (e.target as HTMLImageElement).style.background = "linear-gradient(135deg, #2E6B55, #186C50)";
                     }} />
                 </div>
