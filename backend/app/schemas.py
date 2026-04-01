@@ -208,6 +208,7 @@ class ProfileOut(BaseModel):
     room_sharing: Optional[str] = None
     cuisine_preference: Optional[str] = None
     dietary_restrictions: Optional[str] = None
+    wallet_balance: float = 0.00
     created_at: datetime
     updated_at: datetime
 
@@ -243,6 +244,36 @@ class ProfileUpdate(BaseModel):
             if info.data['budget_min'] > v:
                 raise ValueError('Minimum budget cannot be greater than maximum budget')
         return v
+
+
+class WalletTopUpIn(BaseModel):
+    amount: float = Field(..., ge=1, le=5000, description="Top-up amount in USD")
+    currency: Literal["USD"] = "USD"
+
+
+class WalletTopUpOut(BaseModel):
+    payment_intent_id: str
+    amount_added: float
+    currency: str
+    wallet_balance: float
+    payment_status: str
+
+
+class WalletCheckoutSessionOut(BaseModel):
+    session_id: str
+    checkout_url: str
+
+
+class WalletTopUpConfirmIn(BaseModel):
+    session_id: str
+
+
+class WalletTopUpConfirmOut(BaseModel):
+    amount_added: float
+    currency: str
+    wallet_balance: float
+    payment_status: str
+    already_processed: bool = False
 
 
 # -------------------------
@@ -453,3 +484,92 @@ class FaceVerificationOut(BaseModel):
     success: bool
     message: str
     distance: Optional[float] = None  # For debugging
+
+
+# -------------------------
+# Flight Booking Schemas (Duffel Integration)
+# -------------------------
+
+class PassengerIn(BaseModel):
+    """Passenger details for booking"""
+    given_name: str = Field(min_length=1)
+    family_name: str = Field(min_length=1)
+    email: EmailStr
+    phone_number: str = Field(min_length=7, max_length=20)
+    born_at: str = Field(description="Date of birth in YYYY-MM-DD format")
+    gender: Literal["male", "female", "other"]
+    title: Literal["mr", "ms", "mrs", "mx"]
+
+
+class BookingCreateIn(BaseModel):
+    """Request to create a flight booking order"""
+    offer_id: str = Field(min_length=1)
+    passengers: list[PassengerIn] = Field(min_items=1, max_items=9)
+    payment_type: Literal["card", "bank_transfer", "balance"] = "balance"
+    total_amount: str = Field(min_length=1, description="Offer total amount as string, e.g. '123.45'")
+    currency: str = Field(min_length=3, max_length=3, description="ISO currency code, e.g. USD")
+
+
+class PaymentMethodIn(BaseModel):
+    """Payment method details"""
+    type: str
+    currency: str
+    amount: str
+
+
+class DuffelOrderResponseOut(BaseModel):
+    """Order response from Duffel API"""
+    id: str
+    booking_reference: Optional[str] = None
+    total_amount: str
+    total_currency: str
+    type: str
+    payment_status: Optional[Dict[str, Any]] = None
+    slices: list[dict] = []
+    passengers: list[dict] = []
+
+
+class BookingCreateOut(BaseModel):
+    """Response after creating a booking"""
+    status: str
+    order_id: str
+    booking_reference: Optional[str] = None
+    total_amount: str
+    total_currency: str
+    payment_required: bool
+    remaining_balance: float
+
+
+class BookingStatusOut(BaseModel):
+    """Status of an existing booking"""
+    order_id: str
+    booking_reference: Optional[str] = None
+    status: str
+    total_amount: str
+    total_currency: str
+    payment_status: Optional[str] = None
+    passengers: list[dict] = []
+    slices: list[dict] = []
+    created_at: Optional[datetime] = None
+
+
+class BookingOut(BaseModel):
+    """Booking details for history/retrieval"""
+    id: int
+    order_id: str
+    booking_reference: str
+    total_amount: str
+    currency: str
+    payment_status: str
+    offer_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BookingListOut(BaseModel):
+    """List of bookings for a user"""
+    bookings: list[BookingOut]
+    total_count: int

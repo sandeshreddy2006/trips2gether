@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, inspect, text
 from sqlalchemy.exc import DataError
 from datetime import datetime, timedelta
 from .db import Base, engine, get_db
@@ -33,6 +33,11 @@ from .schemas import (
     GroupShortlistFlightListOut,
     ProfileOut, 
     ProfileUpdate,
+    WalletTopUpIn,
+    WalletTopUpOut,
+    WalletCheckoutSessionOut,
+    WalletTopUpConfirmIn,
+    WalletTopUpConfirmOut,
     FlightSearchIn,
     FlightSearchResponse,
     DestinationSearchResponse,
@@ -44,6 +49,11 @@ from .schemas import (
     FaceVerificationCheckOut,
     FaceVerificationIn,
     FaceVerificationOut,
+    BookingCreateIn,
+    BookingCreateOut,
+    BookingStatusOut,
+    BookingOut,
+    BookingListOut,
 )
 from .auth import (
     hash_password,
@@ -64,6 +74,7 @@ import os
 import requests
 import json
 import math
+import stripe
 from apscheduler.schedulers.background import BackgroundScheduler
 
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -73,6 +84,29 @@ DUFFEL_API_URL = "https://api.duffel.com/air/offer_requests"
 print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
+
+
+def _ensure_schema_columns() -> None:
+    """Add columns that older local SQLite databases may be missing."""
+    inspector = inspect(engine)
+
+    if "profiles" not in inspector.get_table_names():
+        return
+
+    profile_columns = {column["name"] for column in inspector.get_columns("profiles")}
+    with engine.begin() as connection:
+        if "wallet_balance" not in profile_columns:
+            print("[Startup] Adding missing profiles.wallet_balance column...")
+            connection.execute(
+                text("ALTER TABLE profiles ADD COLUMN wallet_balance FLOAT NOT NULL DEFAULT 0.0")
+            )
+            print("[Startup] Added profiles.wallet_balance column.")
+
+        # Requested behavior: reset wallet balance to 0 for all existing profiles.
+        connection.execute(text("UPDATE profiles SET wallet_balance = 0.0"))
+
+
+_ensure_schema_columns()
 
 
 app = FastAPI(title="trips2gether API")
@@ -1965,6 +1999,172 @@ async def update_profile(profile_update: ProfileUpdate, request: Request, db: Se
     return profile
 
 
+@app.post("/wallet/top-up-demo", response_model=WalletTopUpOut)
+def top_up_demo_wallet(body: WalletTopUpIn, request: Request, db: Session = Depends(get_db)):
+    """Run a Stripe test payment and credit the user's demo wallet on success."""
+    user = get_current_user_info(request, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    stripe_api_key = os.getenv("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    stripe.api_key = stripe_api_key
+
+    try:
+        payment_intent = stripe.PaymentIntent.create(
+            amount=int(round(body.amount * 100)),
+            currency=body.currency.lower(),
+            automatic_payment_methods={
+                "enabled": True,
+                "allow_redirects": "never",
+            },
+            confirm=True,
+            payment_method="pm_card_visa",
+            description=f"Trips2gether demo wallet top-up for user {user.id}",
+            metadata={
+                "user_id": str(user.id),
+                "profile_id": str(profile.id),
+                "kind": "wallet_top_up_demo",
+            },
+        )
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe demo payment failed: {message}")
+
+    if payment_intent.status != "succeeded":
+        raise HTTPException(status_code=502, detail="Stripe payment did not succeed")
+
+    profile.wallet_balance = round(float(profile.wallet_balance or 0) + body.amount, 2)
+    profile.updated_at = datetime.now()
+    db.commit()
+    db.refresh(profile)
+
+    return WalletTopUpOut(
+        payment_intent_id=payment_intent.id,
+        amount_added=round(body.amount, 2),
+        currency=body.currency,
+        wallet_balance=round(float(profile.wallet_balance), 2),
+        payment_status=payment_intent.status,
+    )
+
+
+@app.post("/wallet/top-up-checkout-session", response_model=WalletCheckoutSessionOut)
+def create_wallet_checkout_session(body: WalletTopUpIn, request: Request, db: Session = Depends(get_db)):
+    """Create a Stripe-hosted checkout session for wallet top-up."""
+    user = get_current_user_info(request, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    stripe_api_key = os.getenv("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    stripe.api_key = stripe_api_key
+    frontend_base_url = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": body.currency.lower(),
+                        "product_data": {
+                            "name": "Trips2gether Wallet Top-up",
+                        },
+                        "unit_amount": int(round(body.amount * 100)),
+                    },
+                    "quantity": 1,
+                }
+            ],
+            success_url=f"{frontend_base_url}/profile?wallet_topup=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{frontend_base_url}/profile?wallet_topup=cancel",
+            metadata={
+                "user_id": str(user.id),
+                "profile_id": str(profile.id),
+                "kind": "wallet_top_up_checkout",
+            },
+        )
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe checkout failed: {message}")
+
+    return WalletCheckoutSessionOut(
+        session_id=session.id,
+        checkout_url=session.url,
+    )
+
+
+@app.post("/wallet/top-up-confirm", response_model=WalletTopUpConfirmOut)
+def confirm_wallet_top_up(body: WalletTopUpConfirmIn, request: Request, db: Session = Depends(get_db)):
+    """Confirm Stripe checkout result and credit wallet only once."""
+    user = get_current_user_info(request, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    stripe_api_key = os.getenv("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    stripe.api_key = stripe_api_key
+
+    try:
+        session = stripe.checkout.Session.retrieve(body.session_id)
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe confirmation failed: {message}")
+
+    if str(session.metadata.get("user_id", "")) != str(user.id):
+        raise HTTPException(status_code=403, detail="Session does not belong to current user")
+
+    if session.payment_status != "paid":
+        raise HTTPException(status_code=400, detail="Checkout payment not completed")
+
+    existing = db.query(models.WalletTopUp).filter(models.WalletTopUp.stripe_session_id == session.id).first()
+    amount_added = round(float((session.amount_total or 0) / 100), 2)
+    currency = (session.currency or "usd").upper()
+
+    if existing:
+        return WalletTopUpConfirmOut(
+            amount_added=existing.amount,
+            currency=existing.currency,
+            wallet_balance=round(float(profile.wallet_balance or 0), 2),
+            payment_status=existing.payment_status,
+            already_processed=True,
+        )
+
+    wallet_topup = models.WalletTopUp(
+        profile_id=profile.id,
+        stripe_session_id=session.id,
+        amount=amount_added,
+        currency=currency,
+        payment_status="paid",
+    )
+
+    profile.wallet_balance = round(float(profile.wallet_balance or 0) + amount_added, 2)
+    profile.updated_at = datetime.now()
+    db.add(wallet_topup)
+    db.commit()
+    db.refresh(profile)
+
+    return WalletTopUpConfirmOut(
+        amount_added=amount_added,
+        currency=currency,
+        wallet_balance=round(float(profile.wallet_balance), 2),
+        payment_status="paid",
+        already_processed=False,
+    )
+
+
 @app.post("/profile/upload-avatar")
 async def upload_avatar(file: UploadFile = File(...), request: Request = None, db: Session = Depends(get_db)):
     """
@@ -2431,3 +2631,245 @@ def disable_face_verification(request: Request, db: Session = Depends(get_db)):
             status_code=500,
             detail=f"Failed to disable face verification: {str(e)}"
         )
+
+
+# -------------------------
+# Flight Booking Endpoints (Duffel Integration)
+# -------------------------
+
+@app.post("/bookings/create-order", response_model=BookingCreateOut)
+def create_booking(body: BookingCreateIn, request: Request, db: Session = Depends(get_db)):
+    """Create a flight booking order using Duffel API. Only authenticated users."""
+    # Verify user is authenticated
+    current_user = get_current_user_info(request, db)
+    
+    # Get user's profile
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    
+    # Get Duffel API key (secure on backend only)
+    duffel_api_key = os.getenv("DUFFEL_API_KEY")
+    if not duffel_api_key:
+        raise HTTPException(status_code=500, detail="Booking service not configured")
+    
+    gender_map = {"male": "m", "female": "f", "other": "m"}
+
+    try:
+        # Fetch the offer from Duffel to get the correct passenger IDs
+        offer_response = requests.get(
+            f"https://api.duffel.com/air/offers/{body.offer_id}",
+            headers={
+                "Accept": "application/json",
+                "Duffel-Version": "v2",
+                "Authorization": f"Bearer {duffel_api_key}",
+            },
+            timeout=10
+        )
+        if not offer_response.ok:
+            raise HTTPException(status_code=502, detail="Could not retrieve offer details")
+
+        offer_data = offer_response.json().get("data", {})
+        offer_passengers = offer_data.get("passengers", [])
+        # Use the offer's actual total to avoid amount mismatch
+        offer_total_amount = offer_data.get("total_amount", body.total_amount)
+        offer_total_currency = offer_data.get("total_currency", body.currency)
+        planned_charge = float(offer_total_amount)
+
+        if len(offer_passengers) != len(body.passengers):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Offer requires {len(offer_passengers)} passenger(s), got {len(body.passengers)}"
+            )
+
+        if profile.wallet_balance < planned_charge:
+            raise HTTPException(status_code=402, detail="Insufficient wallet balance")
+
+        # Build Duffel order creation payload using offer's passenger IDs
+        passengers_payload = []
+        for offer_pax, passenger in zip(offer_passengers, body.passengers):
+            # Phone is already E.164 (e.g. +14155550123) from the frontend
+            raw_phone = passenger.phone_number.strip()
+            digits_only = "".join(c for c in raw_phone if c.isdigit())
+            e164_phone = "+" + digits_only if not raw_phone.startswith("+") else raw_phone
+
+            passengers_payload.append({
+                "id": offer_pax["id"],
+                "given_name": passenger.given_name,
+                "family_name": passenger.family_name,
+                "email": passenger.email,
+                "phone_number": e164_phone,
+                "born_on": passenger.born_at,
+                "gender": gender_map.get(passenger.gender, "m"),
+                "title": passenger.title,
+            })
+        
+        # Build payment payload using the offer's confirmed total amount
+        payment_payload = [{
+            "type": body.payment_type,
+            "currency": offer_total_currency,
+            "amount": offer_total_amount
+        }]
+        
+        order_payload = {
+            "data": {
+                "type": "instant",
+                "selected_offers": [body.offer_id],
+                "passengers": passengers_payload,
+                "payments": payment_payload,
+                "metadata": {
+                    "user_id": str(current_user.id),
+                    "booking_timestamp": datetime.utcnow().isoformat()
+                }
+            }
+        }
+        
+        # Call Duffel API to create order
+        print(f"[Duffel] Sending order payload: {json.dumps(order_payload, indent=2)}")
+        response = requests.post(
+            "https://api.duffel.com/air/orders",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Duffel-Version": "v2",
+                "Authorization": f"Bearer {duffel_api_key}",
+            },
+            json=order_payload,
+            timeout=90  # Duffel sandbox order creation can take 20-45s
+        )
+        
+        if not response.ok:
+            error_detail = "Failed to create booking"
+            try:
+                error_body = response.json()
+                print(f"[Duffel Error] Status {response.status_code}: {error_body}")
+                errors = error_body.get("errors", [])
+                if errors:
+                    error_detail = errors[0].get("message", error_detail)
+            except ValueError:
+                print(f"[Duffel Error] Status {response.status_code}: {response.text}")
+            raise HTTPException(status_code=502, detail=error_detail)
+        
+        order_data = response.json().get("data", {})
+        order_id = order_data.get("id", "")
+        booking_reference = order_data.get("booking_reference")
+        total_amount = order_data.get("total_amount", "0")
+        total_currency = order_data.get("total_currency", "USD")
+        
+        # Deduct from user's wallet balance
+        charge = float(total_amount)
+        profile.wallet_balance = round(profile.wallet_balance - charge, 2)
+        
+        # Save booking to database after Duffel confirms it
+        booking = models.Booking(
+            profile_id=profile.id,
+            order_id=order_id,
+            booking_reference=booking_reference,
+            total_amount=total_amount,
+            currency=total_currency,
+            payment_status="paid",
+            offer_id=body.offer_id,
+            passengers_json=json.dumps([p.model_dump() for p in body.passengers]),
+            slices_json=json.dumps(order_data.get("slices", []))
+        )
+        db.add(booking)
+        db.commit()
+        db.refresh(booking)
+
+        return BookingCreateOut(
+            status="confirmed",
+            order_id=order_id,
+            booking_reference=booking_reference,
+            total_amount=total_amount,
+            total_currency=total_currency,
+            payment_required=False,
+            remaining_balance=profile.wallet_balance
+        )
+    
+    except requests.Timeout:
+        raise HTTPException(status_code=504, detail="Booking service timeout")
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail="Unable to reach booking service")
+    except ValueError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Invalid booking amount returned by provider")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Booking error: {str(e)}")
+
+
+@app.get("/bookings/{order_id}/status", response_model=BookingStatusOut)
+def get_booking_status(order_id: str, request: Request, db: Session = Depends(get_db)):
+    """Retrieve booking status from Duffel API. Only authenticated users."""
+    # Verify user is authenticated
+    current_user = get_current_user_info(request, db)
+    
+    # Get Duffel API key
+    duffel_api_key = os.getenv("DUFFEL_API_KEY")
+    if not duffel_api_key:
+        raise HTTPException(status_code=500, detail="Booking service not configured")
+    
+    try:
+        # Fetch order from Duffel
+        response = requests.get(
+            f"https://api.duffel.com/air/orders/{order_id}",
+            headers={
+                "Accept": "application/json",
+                "Duffel-Version": "v2",
+                "Authorization": f"Bearer {duffel_api_key}",
+            },
+            timeout=10
+        )
+        
+        if not response.ok:
+            if response.status_code == 404:
+                raise HTTPException(status_code=404, detail="Booking not found")
+            raise HTTPException(status_code=502, detail="Failed to retrieve booking status")
+        
+        order_data = response.json().get("data", {})
+        payment_status_obj = order_data.get("payment_status", {})
+        
+        return BookingStatusOut(
+            order_id=order_data.get("id", ""),
+            booking_reference=order_data.get("booking_reference"),
+            status=order_data.get("type", "unknown"),
+            total_amount=order_data.get("total_amount", "0"),
+            total_currency=order_data.get("total_currency", "USD"),
+            payment_status=payment_status_obj.get("status") if payment_status_obj else None,
+            passengers=order_data.get("passengers", []),
+            slices=order_data.get("slices", []),
+            created_at=datetime.fromisoformat(order_data.get("created_at", "").replace("Z", "+00:00")) if order_data.get("created_at") else None
+        )
+    
+    except requests.Timeout:
+        raise HTTPException(status_code=504, detail="Booking service timeout")
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Unable to reach booking service")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving booking: {str(e)}")
+
+
+@app.get("/bookings", response_model=BookingListOut)
+def get_user_bookings(request: Request, db: Session = Depends(get_db)):
+    """Retrieve all bookings for the authenticated user."""
+    # Verify user is authenticated
+    current_user = get_current_user_info(request, db)
+    
+    # Get user's profile
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    
+    # Get all bookings for this profile, ordered by most recent first
+    bookings = db.query(models.Booking).filter(
+        models.Booking.profile_id == profile.id
+    ).order_by(models.Booking.created_at.desc()).all()
+    
+    return BookingListOut(
+        bookings=bookings,
+        total_count=len(bookings)
+    )

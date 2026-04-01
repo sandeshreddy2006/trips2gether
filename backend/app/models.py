@@ -186,6 +186,47 @@ class Profile(Base):
     face_encoding = Column(Text, nullable=True)  # Stored as JSON array of face descriptor
     face_verification_enabled = Column(Boolean, default=False, nullable=False)
     face_last_verified_at = Column(DateTime, nullable=True)
-    
+
+    # Wallet (sandbox balance for demo flight bookings)
+    wallet_balance = Column(Float, nullable=False, default=0.00)
+
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    bookings = relationship("Booking", back_populates="profile", cascade="all, delete-orphan")
+    wallet_topups = relationship("WalletTopUp", back_populates="profile", cascade="all, delete-orphan")
+
+
+class Booking(Base):
+    __tablename__ = "bookings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False, index=True)
+    order_id = Column(String(255), unique=True, nullable=False, index=True)
+    booking_reference = Column(String(255), nullable=False, index=True)
+    total_amount = Column(String(50), nullable=False)
+    currency = Column(String(12), nullable=False)
+    payment_status = Column(String(50), nullable=False, default="pending")
+    passengers_json = Column(Text, nullable=False, default="[]")  # JSON array of passenger details
+    offer_id = Column(String(255), nullable=True)  # Duffel offer ID
+    slices_json = Column(Text, nullable=True, default="[]")  # Flight details as JSON
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    profile = relationship("Profile", back_populates="bookings")
+
+
+class WalletTopUp(Base):
+    __tablename__ = "wallet_topups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=False, index=True)
+    stripe_session_id = Column(String(255), unique=True, nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    currency = Column(String(12), nullable=False, default="USD")
+    payment_status = Column(String(50), nullable=False, default="paid")
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    profile = relationship("Profile", back_populates="wallet_topups")

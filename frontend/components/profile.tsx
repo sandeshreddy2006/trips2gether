@@ -217,6 +217,7 @@ export default function Profile() {
         bio: "Travel enthusiast and foodie. Love exploring new destinations and meeting new people!",
         budget_min: 1000,
         budget_max: 3000,
+        wallet_balance: 0,
         travel_mode: "Adventure",
         preferred_destination: "Southeast Asia",
         travel_pace: "Moderate",
@@ -229,9 +230,19 @@ export default function Profile() {
     const [editData, setEditData] = useState({ ...profile });
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [walletError, setWalletError] = useState<string | null>(null);
     const [bioError, setBioError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+    const [walletTopUpLoading, setWalletTopUpLoading] = useState(false);
+    const [customTopUpAmount, setCustomTopUpAmount] = useState<string>("");
+
+    const clearWalletTopUpParams = () => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("wallet_topup");
+        url.searchParams.delete("session_id");
+        window.history.replaceState({}, "", url.toString());
+    };
 
     // for account deletion
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -275,6 +286,61 @@ export default function Profile() {
             loadProfile();
         }
     }, [user]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const topupStatus = params.get("wallet_topup");
+        const sessionId = params.get("session_id");
+
+        const confirmCheckoutTopUp = async (sid: string) => {
+            setWalletTopUpLoading(true);
+            setWalletError(null);
+            try {
+                const response = await fetch("/api/wallet/top-up-confirm", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    credentials: "include",
+                    body: JSON.stringify({ session_id: sid }),
+                });
+
+                const rawText = await response.text();
+                const data = rawText ? JSON.parse(rawText) : {};
+
+                if (!response.ok) {
+                    throw new Error(data.detail || "Failed to confirm checkout payment");
+                }
+
+                setProfile((prev) => ({ ...prev, wallet_balance: data.wallet_balance }));
+                setEditData((prev) => ({ ...prev, wallet_balance: data.wallet_balance }));
+
+                if (data.already_processed) {
+                    setSuccessMessage("Wallet top-up was already confirmed.");
+                } else {
+                    setSuccessMessage(
+                        `Wallet topped up by ${data.currency} ${Number(data.amount_added).toFixed(2)} after secure Stripe checkout.`
+                    );
+                }
+                setTimeout(() => setSuccessMessage(null), 3000);
+            } catch (error: any) {
+                const message = error instanceof SyntaxError
+                    ? "Backend returned a non-JSON error. Check backend logs and retry."
+                    : error.message || "Failed to confirm checkout payment";
+                setWalletError(message);
+            } finally {
+                setWalletTopUpLoading(false);
+                clearWalletTopUpParams();
+            }
+        };
+
+        if (topupStatus === "success" && sessionId) {
+            void confirmCheckoutTopUp(sessionId);
+        } else if (topupStatus === "cancel") {
+            setWalletError("Stripe checkout was cancelled.");
+            clearWalletTopUpParams();
+        }
+    }, []);
 
     // Load face verification status
     useEffect(() => {
@@ -433,6 +499,41 @@ export default function Profile() {
 
     const handleInputChange = (field: string, value: string | number) => {
         setEditData({ ...editData, [field]: value });
+    };
+
+    const handleWalletTopUp = async (amount: number) => {
+        setWalletTopUpLoading(true);
+        setWalletError(null);
+
+        try {
+            const response = await fetch("/api/wallet/top-up-checkout-session", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                credentials: "include",
+                body: JSON.stringify({ amount, currency: "USD" }),
+            });
+
+            const rawText = await response.text();
+            const data = rawText ? JSON.parse(rawText) : {};
+            if (!response.ok) {
+                throw new Error(data.detail || "Failed to create Stripe checkout session");
+            }
+
+            if (!data.checkout_url) {
+                throw new Error("Stripe checkout URL not returned");
+            }
+
+            window.location.href = data.checkout_url;
+        } catch (error: any) {
+            const message = error instanceof SyntaxError
+                ? "Backend returned a non-JSON error. Check the backend logs and restart the server."
+                : error.message || "Failed to top up wallet";
+            setWalletError(message);
+        } finally {
+            setWalletTopUpLoading(false);
+        }
     };
 
     const handleDeleteAccount = async () => {
@@ -696,6 +797,48 @@ export default function Profile() {
                                         </div>
                                     </div>
                                 )}
+                            </div>
+
+                            <div className="profile-card">
+                                <div className="section-header">
+                                    <h2>Wallet</h2>
+                                </div>
+                                <div className="wallet-panel">
+                                    <div className="wallet-balance-item">
+                                        <span className="wallet-balance-label">Available Balance</span>
+                                        <span className="wallet-balance-value">
+                                            USD {Number(profile.wallet_balance ?? 0).toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="wallet-topup-actions">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="5000"
+                                            step="1"
+                                            placeholder="Enter amount (USD)"
+                                            value={customTopUpAmount}
+                                            onChange={(e) => setCustomTopUpAmount(e.target.value)}
+                                            disabled={walletTopUpLoading}
+                                            className="wallet-topup-input"
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                const amt = parseFloat(customTopUpAmount);
+                                                if (!amt || amt < 1 || amt > 5000) {
+                                                    setWalletError("Please enter an amount between USD 1 and USD 5000.");
+                                                    return;
+                                                }
+                                                handleWalletTopUp(amt);
+                                            }}
+                                            disabled={walletTopUpLoading || !customTopUpAmount}
+                                            className="btn btn-primary wallet-topup-btn"
+                                        >
+                                            {walletTopUpLoading ? "Processing..." : "Top Up"}
+                                        </button>
+                                    </div>
+                                    {walletError && <div className="form-error wallet-error">{walletError}</div>}
+                                </div>
                             </div>
 
                             {/* Security Section */}
