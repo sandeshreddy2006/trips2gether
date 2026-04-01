@@ -267,6 +267,25 @@ body {
     line-height: 1.8;
 }
 
+.overview-restaurant-detail {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.overview-restaurant-detail .detail-info-grid {
+    margin-top: 16px;
+}
+
+.overview-restaurant-detail .detail-hours-section {
+    margin-top: 20px;
+}
+
+.overview-restaurant-detail .detail-actions {
+    margin-top: 20px;
+    padding-top: 20px;
+}
+
 /* Info Columns */
 .info-columns {
     display: grid;
