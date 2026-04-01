@@ -32,10 +32,6 @@ from .schemas import (
     ProfileUpdate,
     FlightSearchIn,
     FlightSearchResponse,
-    FlightOfferOut,
-    FlightSliceSummaryOut,
-    BaggageInfo,
-    LayoverInfo,
     DestinationSearchResponse,
     NearbyRestaurantsResponse,
     RestaurantDetailOut,
@@ -57,6 +53,7 @@ from .auth import (
 from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template, get_email_verification_template, get_account_deletion_email_template
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
+from .flightbookings import _select_diverse_offers, _serialize_duffel_offer
 from jose import JWTError
 import os
 import requests
@@ -120,154 +117,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-def _format_duffel_duration(duration: str | None) -> str:
-    if not duration:
-        return "N/A"
-
-    hours = 0
-    minutes = 0
-    current = ""
-    in_time = False
-
-    for char in duration:
-        if char == "T":
-            in_time = True
-            continue
-        if not in_time:
-            continue
-        if char.isdigit():
-            current += char
-            continue
-        if char == "H" and current:
-            hours = int(current)
-            current = ""
-        elif char == "M" and current:
-            minutes = int(current)
-            current = ""
-
-    parts: list[str] = []
-    if hours:
-        parts.append(f"{hours}h")
-    if minutes or not parts:
-        parts.append(f"{minutes}m")
-    return " ".join(parts)
-
-
-def _format_duffel_time(value: str | None) -> str | None:
-    if not value:
-        return None
-    timestamp = value.replace("Z", "+00:00")
-    try:
-        return datetime.fromisoformat(timestamp).strftime("%H:%M")
-    except ValueError:
-        return value
-
-
-def _calculate_layover(arriving_at: str | None, departing_at: str | None) -> str:
-    """Return layover duration formatted as '2h 15m' from two ISO datetime strings."""
-    if not arriving_at or not departing_at:
-        return "N/A"
-    try:
-        arr = datetime.fromisoformat(arriving_at.replace("Z", "+00:00"))
-        dep = datetime.fromisoformat(departing_at.replace("Z", "+00:00"))
-        total_minutes = int((dep - arr).total_seconds() // 60)
-        if total_minutes < 0:
-            return "N/A"
-        hours, mins = divmod(total_minutes, 60)
-        return f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
-    except (ValueError, TypeError):
-        return "N/A"
-
-
-def _serialize_duffel_offer(offer: dict) -> FlightOfferOut:
-    slices = offer.get("slices", []) or []
-    slice_summaries: list[FlightSliceSummaryOut] = []
-    carrier_names: list[str] = []
-    logo_url: str | None = None
-    total_stops = 0
-
-    for slice_item in slices:
-        segments = slice_item.get("segments", []) or []
-        if not segments:
-            continue
-
-        first_segment = segments[0]
-        last_segment = segments[-1]
-        total_stops += max(0, len(segments) - 1)
-
-        # Build layover list between consecutive segments
-        layovers: list[LayoverInfo] = []
-        for i in range(len(segments) - 1):
-            layover_airport = (
-                segments[i].get("destination", {}).get("iata_code")
-                or segments[i + 1].get("origin", {}).get("iata_code")
-                or "N/A"
-            )
-            layover_duration = _calculate_layover(
-                segments[i].get("arriving_at"),
-                segments[i + 1].get("departing_at"),
-            )
-            layovers.append(LayoverInfo(airport=layover_airport, duration=layover_duration))
-
-        for segment in segments:
-            operating_carrier = segment.get("operating_carrier", {}) or {}
-            marketing_carrier = segment.get("marketing_carrier", {}) or {}
-            carrier_name = operating_carrier.get("name") or marketing_carrier.get("name")
-            if carrier_name and carrier_name not in carrier_names:
-                carrier_names.append(carrier_name)
-
-            if not logo_url:
-                logo_url = (
-                    operating_carrier.get("logo_symbol_url")
-                    or operating_carrier.get("logo_lockup_url")
-                    or marketing_carrier.get("logo_symbol_url")
-                    or marketing_carrier.get("logo_lockup_url")
-                )
-
-        slice_summaries.append(
-            FlightSliceSummaryOut(
-                origin=first_segment.get("origin", {}).get("iata_code") or slice_item.get("origin", {}).get("iata_code") or "N/A",
-                destination=last_segment.get("destination", {}).get("iata_code") or slice_item.get("destination", {}).get("iata_code") or "N/A",
-                departure_time=_format_duffel_time(first_segment.get("departing_at")),
-                arrival_time=_format_duffel_time(last_segment.get("arriving_at")),
-                stops=max(0, len(segments) - 1),
-                layovers=layovers,
-            )
-        )
-
-    # Extract baggage and cabin class from first passenger
-    passengers = offer.get("passengers", []) or []
-    baggages: list[BaggageInfo] = []
-    cabin_class: str | None = None
-    if passengers:
-        p = passengers[0]
-        cabin_class = p.get("cabin_class")
-        for bag in (p.get("baggages") or []):
-            bag_type = bag.get("type")
-            quantity = bag.get("quantity", 0)
-            if bag_type is not None:
-                baggages.append(BaggageInfo(type=str(bag_type), quantity=int(quantity or 0)))
-
-    first_slice = slice_summaries[0] if slice_summaries else None
-
-    return FlightOfferOut(
-        id=offer.get("id", "unknown-offer"),
-        airline=carrier_names[0] if carrier_names else "Unknown airline",
-        logo_url=logo_url,
-        price=float(offer.get("total_amount") or 0),
-        currency=offer.get("total_currency") or "USD",
-        duration=_format_duffel_duration(offer.get("total_duration")),
-        stops=total_stops,
-        departure_time=first_slice.departure_time if first_slice else None,
-        arrival_time=first_slice.arrival_time if first_slice else None,
-        departure_airport=first_slice.origin if first_slice else "N/A",
-        arrival_airport=first_slice.destination if first_slice else "N/A",
-        cabin_class=cabin_class,
-        baggages=baggages,
-        slices=slice_summaries,
-    )
 
 
 # -------------------------
@@ -1317,7 +1166,8 @@ def search_flights(body: FlightSearchIn):
 
     data = response.json().get("data", {})
     offers = data.get("offers", []) or []
-    serialized_offers = [_serialize_duffel_offer(offer) for offer in offers[:12]]
+    selected_offers = _select_diverse_offers(offers, limit=20)
+    serialized_offers = [_serialize_duffel_offer(offer) for offer in selected_offers]
 
     return {
         "status": "success",

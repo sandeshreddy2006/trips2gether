@@ -267,7 +267,9 @@ class BaggageInfo(BaseModel):
 class FlightSliceSummaryOut(BaseModel):
     origin: str
     destination: str
+    departure_date: Optional[str] = None
     departure_time: Optional[str] = None
+    arrival_date: Optional[str] = None
     arrival_time: Optional[str] = None
     stops: int = 0
     layovers: list[LayoverInfo] = []
@@ -288,6 +290,7 @@ class FlightOfferOut(BaseModel):
     cabin_class: Optional[str] = None
     baggages: list[BaggageInfo] = []
     slices: list[FlightSliceSummaryOut] = []
+    emissions_kg: Optional[str] = None
 
 
 class FlightSearchResponse(BaseModel):
