@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../AuthContext";
 import AirportAutocomplete from "./AirportAutocomplete";
 import "./bookings.css";
@@ -88,6 +89,7 @@ function getCarryOnQty(flight: FlightResult): number {
 
 export default function BookingsPage() {
     const { isAuthenticated, isLoading } = useAuth();
+    const router = useRouter();
     const [form, setForm] = useState<FormState>({
         tripType: "round_trip",
         origin: "",
@@ -737,6 +739,13 @@ export default function BookingsPage() {
                                         disabled={groupsLoading}
                                     >
                                         {groupsLoading ? "Loading groups..." : "Save to Group Plan"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="book-now-btn"
+                                        onClick={() => router.push(`/bookings/book?offer_id=${flight.id}&passengers=${form.travelers}&amount=${flight.price}&currency=${flight.currency}`)}
+                                    >
+                                        Book Now
                                     </button>
                                 </div>
                             </div>

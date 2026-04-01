@@ -909,6 +909,28 @@
     cursor: not-allowed;
 }
 
+.book-now-btn {
+    margin-top: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(135deg, #2E6B55 0%, #186C50 100%);
+    color: #fff;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    white-space: nowrap;
+    align-self: flex-end;
+    box-shadow: 0 2px 8px rgba(14, 63, 46, 0.25);
+}
+
+.book-now-btn:hover {
+    background: linear-gradient(135deg, #0d2f22 0%, #0a4a35 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(14, 63, 46, 0.35);
+}
+
 .flight-save-panel {
     margin-top: 12px;
     border: 1px solid rgba(46, 107, 85, 0.18);

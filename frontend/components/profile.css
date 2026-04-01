@@ -356,6 +356,80 @@
     line-height: 1.5;
 }
 
+.wallet-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.wallet-balance-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: linear-gradient(135deg, #eaf6ef 0%, #d4edda 100%);
+    border: 1px solid #a8d5b5;
+    border-radius: 12px;
+    padding: 16px 18px;
+}
+
+.wallet-balance-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #2b6846;
+}
+
+.wallet-balance-value {
+    font-weight: 700;
+    font-size: 28px;
+    color: #1a5c38;
+}
+
+.wallet-balance-note {
+    margin: 0;
+    color: #426c54;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.wallet-topup-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.wallet-topup-input {
+    flex: 1;
+    min-width: 160px;
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.wallet-topup-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.wallet-topup-input:disabled {
+    background: #f3f4f6;
+    cursor: not-allowed;
+}
+
+.wallet-topup-btn {
+    min-width: 100px;
+    white-space: nowrap;
+}
+
+.wallet-error {
+    margin-bottom: 0;
+}
+
 .photos-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -726,6 +800,19 @@
 
     .friend-actions {
         flex-wrap: wrap;
+    }
+
+    .wallet-topup-actions {
+        flex-direction: column;
+    }
+
+    .wallet-topup-input {
+        width: 100%;
+        min-width: unset;
+    }
+
+    .wallet-topup-btn {
+        width: 100%;
     }
 }
 
