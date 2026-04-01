@@ -28,6 +28,16 @@ type Destination = {
     business_status?: string;
 };
 
+type Booking = {
+    id: number;
+    order_id: string;
+    booking_reference: string;
+    total_amount: string;
+    currency: string;
+    payment_status: string;
+    created_at: string;
+};
+
 // Helper function to get the image URL (using proxy for Safari compatibility)
 const getImageUrl = (destination: Destination | null): string => {
     if (!destination) return '/trip-marseille.jpg';
@@ -59,6 +69,8 @@ export default function Dashboard() {
     });
     const [loadingDestinations, setLoadingDestinations] = useState(true);
     const [trendingError, setTrendingError] = useState<string | null>(null);
+    const [bookings, setBookings] = useState<Booking[]>([]);
+    const [loadingBookings, setLoadingBookings] = useState(true);
 
     const handleDestinationClick = (destination: Destination | null) => {
         if (!destination) return;
@@ -78,6 +90,27 @@ export default function Dashboard() {
             .then((res) => (res.ok ? res.json() : { groups: [] }))
             .then((data) => setGroups(data.groups || []))
             .catch(() => { });
+    }, []);
+
+    useEffect(() => {
+        const loadBookings = async () => {
+            try {
+                setLoadingBookings(true);
+                const response = await fetch("/api/bookings", { credentials: "include" });
+                if (!response.ok) {
+                    setBookings([]);
+                    return;
+                }
+                const data = await response.json();
+                setBookings(Array.isArray(data?.bookings) ? data.bookings : []);
+            } catch {
+                setBookings([]);
+            } finally {
+                setLoadingBookings(false);
+            }
+        };
+
+        loadBookings();
     }, []);
 
     // Fetch destination data for Panama, Maldives, Suggested Trips, and Barcelona
@@ -300,19 +333,26 @@ export default function Dashboard() {
                     {/* My Bookings */}
                     <div className="bookings-section">
                         <h3 className="sidebar-title">My Bookings</h3>
-                        <div
-                            className="booking-card"
-                            onClick={() => handleDestinationClick(destinationData.barcelona)}
-                            style={{ cursor: destinationData.barcelona ? "pointer" : "default" }}
-                        >
-                            <div className="booking-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.barcelona)}')` }} />
-                            <div className="booking-content">
-                                <h4 className="booking-title">{destinationData.barcelona?.name || 'Barcelona'} Adventure</h4>
-                                <p className="booking-dates">May 15 - May 21</p>
-                                <p className="booking-info">5.4 Days</p>
-                                <button className="view-details-btn">View Details</button>
+                        {loadingBookings ? (
+                            <p className="booking-empty">Loading your bookings...</p>
+                        ) : bookings.length === 0 ? (
+                            <p className="booking-empty">No bookings yet. Start by searching flights.</p>
+                        ) : (
+                            <div className="booking-list">
+                                {bookings.slice(0, 3).map((booking) => (
+                                    <div key={booking.id} className="booking-card">
+                                        <div className="booking-content">
+                                            <h4 className="booking-title">Ref: {booking.booking_reference}</h4>
+                                            <p className="booking-dates">
+                                                {new Date(booking.created_at).toLocaleDateString()} • {booking.currency} {booking.total_amount}
+                                            </p>
+                                            <p className="booking-info">Status: {booking.payment_status}</p>
+                                            <button className="view-details-btn" onClick={() => router.push("/bookings")}>View Details</button>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        </div>
+                        )}
                     </div>
                 </aside>
             </div>

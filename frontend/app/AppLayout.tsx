@@ -224,7 +224,7 @@ export default function AppLayout({
                             />
                             <span>Polls & Planning</span>
                         </a>
-                        <a href="#" className="nav-item">
+                        <a href="/bookings/history" className="nav-item">
                             <img
                                 src="/bookings.svg"
                                 alt="Previous Bookings"
