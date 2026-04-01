@@ -28,11 +28,15 @@ from .schemas import (
     GroupShortlistCreateIn,
     GroupShortlistItemOut,
     GroupShortlistListOut,
+    GroupShortlistFlightCreateIn,
+    GroupShortlistFlightItemOut,
+    GroupShortlistFlightListOut,
     ProfileOut, 
     ProfileUpdate,
     FlightSearchIn,
     FlightSearchResponse,
     DestinationSearchResponse,
+    DestinationDetailOut,
     NearbyRestaurantsResponse,
     RestaurantDetailOut,
     FaceEncodingIn,
@@ -54,6 +58,7 @@ from .email_utils import send_email, get_welcome_email_template, get_login_email
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
 from .flightbookings import _select_diverse_offers, _serialize_duffel_offer
+from .shortlist import serialize_shortlist_item, serialize_shortlist_flight_item
 from jose import JWTError
 import os
 import requests
@@ -1616,27 +1621,7 @@ def update_member_role(
     return {"ok": True, "message": f"Role updated to {body.role}"}
 
 
-def _serialize_shortlist_item(item: models.GroupShortlistDestination) -> GroupShortlistItemOut:
-    try:
-        types = json.loads(item.destination_types_json or "[]")
-        if not isinstance(types, list):
-            types = []
-    except Exception:
-        types = []
 
-    return GroupShortlistItemOut(
-        id=item.id,
-        group_id=item.group_id,
-        place_id=item.place_id,
-        name=item.name,
-        address=item.address,
-        photo_url=item.photo_url,
-        photo_reference=item.photo_reference,
-        rating=item.rating,
-        types=types,
-        added_by=item.added_by,
-        created_at=item.created_at,
-    )
 
 
 @app.get("/groups/{group_id}/shortlist", response_model=GroupShortlistListOut)
@@ -1662,7 +1647,7 @@ def list_group_shortlist(group_id: int, request: Request, db: Session = Depends(
         .all()
     )
 
-    return {"items": [_serialize_shortlist_item(item) for item in items]}
+    return {"items": [serialize_shortlist_item(item) for item in items]}
 
 
 @app.post("/groups/{group_id}/shortlist", response_model=dict)
@@ -1735,7 +1720,7 @@ def add_group_shortlist_destination(
     return {
         "ok": True,
         "message": "Destination added to shortlist",
-        "item": _serialize_shortlist_item(item),
+        "item": serialize_shortlist_item(item),
     }
 
 
@@ -1775,6 +1760,137 @@ def remove_group_shortlist_destination(
     db.commit()
 
     return {"ok": True, "message": "Destination removed from shortlist"}
+
+
+@app.get("/groups/{group_id}/flight-shortlist", response_model=GroupShortlistFlightListOut)
+def list_group_flight_shortlist(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """List shortlisted flights for a group. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    items = (
+        db.query(models.GroupShortlistFlight)
+        .filter(models.GroupShortlistFlight.group_id == group_id)
+        .order_by(models.GroupShortlistFlight.created_at.desc())
+        .all()
+    )
+
+    return {"items": [serialize_shortlist_flight_item(item) for item in items]}
+
+
+@app.post("/groups/{group_id}/flight-shortlist", response_model=dict)
+def add_group_shortlist_flight(
+    group_id: int,
+    body: GroupShortlistFlightCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Add a flight to group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    offer_id = body.flight_offer_id.strip()
+    existing = (
+        db.query(models.GroupShortlistFlight)
+        .filter(
+            models.GroupShortlistFlight.group_id == group_id,
+            models.GroupShortlistFlight.flight_offer_id == offer_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Flight already shortlisted for this group")
+
+    item = models.GroupShortlistFlight(
+        group_id=group_id,
+        flight_offer_id=offer_id,
+        airline=body.airline.strip(),
+        logo_url=(body.logo_url.strip() if body.logo_url else None),
+        price=body.price,
+        currency=body.currency.strip(),
+        duration=body.duration.strip(),
+        stops=body.stops,
+        departure_time=(body.departure_time.strip() if body.departure_time else None),
+        arrival_time=(body.arrival_time.strip() if body.arrival_time else None),
+        departure_airport=body.departure_airport.strip(),
+        arrival_airport=body.arrival_airport.strip(),
+        cabin_class=(body.cabin_class.strip() if body.cabin_class else None),
+        baggages_json=json.dumps(body.baggages or []),
+        slices_json=json.dumps(body.slices or []),
+        emissions_kg=(body.emissions_kg.strip() if body.emissions_kg else None),
+        added_by=current_user.id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "message": "Flight added to shortlist",
+        "item": serialize_shortlist_flight_item(item),
+    }
+
+
+@app.delete("/groups/{group_id}/flight-shortlist/{flight_offer_id}", response_model=dict)
+def remove_group_shortlist_flight(
+    group_id: int,
+    flight_offer_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Remove a flight from group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    item = (
+        db.query(models.GroupShortlistFlight)
+        .filter(
+            models.GroupShortlistFlight.group_id == group_id,
+            models.GroupShortlistFlight.flight_offer_id == flight_offer_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Shortlisted flight not found")
+
+    db.delete(item)
+    db.commit()
+
+    return {"ok": True, "message": "Flight removed from shortlist"}
 
 
 # Profile Endpoints
@@ -2059,6 +2175,30 @@ def get_destination_photo(
             status_code=500, 
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
+
+@app.get("/destinations/details/{place_id}", response_model=DestinationDetailOut)
+def get_destination_detail(place_id: str):
+    """Fetch detailed place data for a destination using Google Places Details API."""
+    if not place_id or not place_id.strip():
+        raise HTTPException(status_code=400, detail="place_id is required")
+
+    try:
+        places_service = get_places_service()
+        result = places_service.get_destination_details(place_id.strip())
+
+        if result["status"] == "error":
+            raise HTTPException(status_code=502, detail=result.get("message", "Failed to fetch destination details"))
+
+        if not result.get("result"):
+            raise HTTPException(status_code=404, detail="Destination details not found")
+
+        return DestinationDetailOut(**result["result"])
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @app.get("/destinations/image")
 def get_destination_image(

@@ -884,6 +884,106 @@
     border-color: transparent;
 }
 
+.save-to-group-btn {
+    margin-top: 6px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(46, 107, 85, 0.28);
+    background: rgba(46, 107, 85, 0.08);
+    color: #1d553e;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    align-self: flex-end;
+}
+
+.save-to-group-btn:hover:not(:disabled) {
+    background: rgba(46, 107, 85, 0.14);
+    transform: translateY(-1px);
+}
+
+.save-to-group-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.flight-save-panel {
+    margin-top: 12px;
+    border: 1px solid rgba(46, 107, 85, 0.18);
+    background: rgba(46, 107, 85, 0.05);
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.flight-save-empty {
+    margin: 0;
+    font-size: 0.84rem;
+    color: #446151;
+}
+
+.flight-save-select {
+    width: 100%;
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid rgba(46, 107, 85, 0.3);
+    background: #fff;
+    color: #143a2a;
+    padding: 0 10px;
+    font-size: 0.86rem;
+}
+
+.flight-save-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+}
+
+.flight-save-confirm-btn,
+.flight-save-cancel-btn {
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.flight-save-confirm-btn {
+    border: none;
+    background: #2e6b55;
+    color: #fff;
+}
+
+.flight-save-confirm-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.flight-save-cancel-btn {
+    border: 1px solid rgba(46, 107, 85, 0.25);
+    background: #fff;
+    color: #2e6b55;
+}
+
+.flight-save-message {
+    margin: 8px 0 0;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.flight-save-message-success {
+    color: #1f6d52;
+}
+
+.flight-save-message-warning {
+    color: #8a5a00;
+}
+
+.flight-save-message-error {
+    color: #9b2222;
+}
+
 /* ─── Sticky compare bar ───────────────────────────── */
 
 .compare-bar {

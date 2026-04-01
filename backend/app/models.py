@@ -78,6 +78,11 @@ class Group(Base):
         back_populates="group",
         cascade="all, delete-orphan",
     )
+    shortlisted_flights = relationship(
+        "GroupShortlistFlight",
+        back_populates="group",
+        cascade="all, delete-orphan",
+    )
     creator = relationship("User", foreign_keys=[created_by])
 
 
@@ -118,6 +123,37 @@ class GroupShortlistDestination(Base):
 
     __table_args__ = (
         UniqueConstraint("group_id", "place_id", name="uq_group_shortlist_group_place"),
+    )
+
+
+class GroupShortlistFlight(Base):
+    __tablename__ = "group_shortlist_flights"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    flight_offer_id = Column(String(255), nullable=False)
+    airline = Column(String(255), nullable=False)
+    logo_url = Column(Text, nullable=True)
+    price = Column(Float, nullable=False)
+    currency = Column(String(12), nullable=False)
+    duration = Column(String(64), nullable=False)
+    stops = Column(Integer, nullable=False, default=0)
+    departure_time = Column(String(16), nullable=True)
+    arrival_time = Column(String(16), nullable=True)
+    departure_airport = Column(String(12), nullable=False)
+    arrival_airport = Column(String(12), nullable=False)
+    cabin_class = Column(String(64), nullable=True)
+    baggages_json = Column(Text, nullable=False, default="[]")
+    slices_json = Column(Text, nullable=False, default="[]")
+    emissions_kg = Column(String(32), nullable=True)
+    added_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    group = relationship("Group", back_populates="shortlisted_flights")
+    adder = relationship("User", foreign_keys=[added_by])
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "flight_offer_id", name="uq_group_shortlist_group_flight_offer"),
     )
 
 

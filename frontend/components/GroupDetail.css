@@ -209,6 +209,15 @@
 
 .group-shortlist-main {
     min-width: 0;
+    transition: opacity 0.2s ease;
+}
+
+.group-shortlist-main:hover {
+    opacity: 0.75;
+}
+
+.group-flight-shortlist-main {
+    width: 100%;
 }
 
 .group-shortlist-name {

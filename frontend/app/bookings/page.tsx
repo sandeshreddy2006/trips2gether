@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../AuthContext";
 import AirportAutocomplete from "./AirportAutocomplete";
 import "./bookings.css";
@@ -53,6 +53,12 @@ type FormState = {
     travelers: number;
 };
 
+type SaveMessage = {
+    flightId: string;
+    type: "success" | "error" | "warning";
+    text: string;
+};
+
 function formatStops(stops: number): string {
     if (stops === 0) return "Nonstop";
     if (stops === 1) return "1 stop";
@@ -103,6 +109,12 @@ export default function BookingsPage() {
     const [filterMaxDuration, setFilterMaxDuration] = useState<number | null>(null);
     const [compareIds, setCompareIds] = useState<string[]>([]);
     const [showCompare, setShowCompare] = useState(false);
+    const [userGroups, setUserGroups] = useState<{ id: number; name: string; role: string }[]>([]);
+    const [groupsLoading, setGroupsLoading] = useState(false);
+    const [showGroupSelectorForFlight, setShowGroupSelectorForFlight] = useState<string | null>(null);
+    const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+    const [savingFlightId, setSavingFlightId] = useState<string | null>(null);
+    const [saveMessage, setSaveMessage] = useState<SaveMessage | null>(null);
 
     const minDate = useMemo(() => new Date().toISOString().split("T")[0], []);
     const availableAirlines = useMemo(
@@ -142,6 +154,27 @@ export default function BookingsPage() {
         () => results.filter((f) => compareIds.includes(f.id)),
         [results, compareIds]
     );
+
+    useEffect(() => {
+        if (!isAuthenticated) return;
+
+        const fetchGroups = async () => {
+            setGroupsLoading(true);
+            try {
+                const res = await fetch("/api/groups");
+                if (res.ok) {
+                    const data = await res.json();
+                    setUserGroups(data.groups || []);
+                }
+            } catch {
+                // Keep flight search functional even if group lookup fails.
+            } finally {
+                setGroupsLoading(false);
+            }
+        };
+
+        fetchGroups();
+    }, [isAuthenticated]);
 
     const validate = (): Partial<Record<keyof FormState, string>> => {
         const nextErrors: Partial<Record<keyof FormState, string>> = {};
@@ -198,6 +231,8 @@ export default function BookingsPage() {
         setSortBy(null);
         setCompareIds([]);
         setShowCompare(false);
+        closeSaveSelector();
+        setSaveMessage(null);
         setFilterStops("any");
         setFilterPriceMin("");
         setFilterPriceMax("");
@@ -292,6 +327,74 @@ export default function BookingsPage() {
                 ? prev.filter((x) => x !== id)
                 : prev.length < 4 ? [...prev, id] : prev
         );
+    };
+
+    const closeSaveSelector = () => {
+        setShowGroupSelectorForFlight(null);
+        setSelectedGroupId(null);
+    };
+
+    const handleSaveFlightToGroup = async (flight: FlightResult) => {
+        if (!selectedGroupId) return;
+
+        setSavingFlightId(flight.id);
+        setSaveMessage(null);
+
+        try {
+            const res = await fetch(`/api/groups/${selectedGroupId}/flight-shortlist`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    flight_offer_id: flight.id,
+                    airline: flight.airline,
+                    logo_url: flight.logoUrl,
+                    price: flight.price,
+                    currency: flight.currency,
+                    duration: flight.duration,
+                    stops: flight.stops,
+                    departure_time: flight.departureTime,
+                    arrival_time: flight.arrivalTime,
+                    departure_airport: flight.departureAirport,
+                    arrival_airport: flight.arrivalAirport,
+                    cabin_class: flight.cabinClass,
+                    baggages: flight.baggages,
+                    slices: flight.slices,
+                    emissions_kg: flight.emissionsKg,
+                }),
+            });
+
+            if (res.status === 409) {
+                setSaveMessage({
+                    flightId: flight.id,
+                    type: "warning",
+                    text: "This flight is already in the selected group's shortlist.",
+                });
+            } else if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                const detail = body?.detail;
+                if (Array.isArray(detail) && detail.length > 0) {
+                    const first = detail[0];
+                    throw new Error(first?.msg || `Error (${res.status})`);
+                }
+                throw new Error(detail || `Error (${res.status})`);
+            } else {
+                const groupName = userGroups.find((g) => g.id === selectedGroupId)?.name ?? "group";
+                setSaveMessage({
+                    flightId: flight.id,
+                    type: "success",
+                    text: `Saved to "${groupName}"!`,
+                });
+                closeSaveSelector();
+            }
+        } catch (err) {
+            setSaveMessage({
+                flightId: flight.id,
+                type: "error",
+                text: err instanceof Error ? err.message : "Failed to save flight.",
+            });
+        } finally {
+            setSavingFlightId(null);
+        }
     };
 
     if (isLoading) {
@@ -624,6 +727,17 @@ export default function BookingsPage() {
                                     >
                                         {compareIds.includes(flight.id) ? "✓ Comparing" : "+ Compare"}
                                     </button>
+                                    <button
+                                        type="button"
+                                        className="save-to-group-btn"
+                                        onClick={() => {
+                                            setShowGroupSelectorForFlight(flight.id);
+                                            setSaveMessage(null);
+                                        }}
+                                        disabled={groupsLoading}
+                                    >
+                                        {groupsLoading ? "Loading groups..." : "Save to Group Plan"}
+                                    </button>
                                 </div>
                             </div>
 
@@ -693,6 +807,50 @@ export default function BookingsPage() {
                                         </div>
                                     ))}
                                 </div>
+                            )}
+
+                            {showGroupSelectorForFlight === flight.id && (
+                                <div className="flight-save-panel">
+                                    {userGroups.length === 0 ? (
+                                        <p className="flight-save-empty">You are not a member of any group yet.</p>
+                                    ) : (
+                                        <>
+                                            <select
+                                                className="flight-save-select"
+                                                value={selectedGroupId ?? ""}
+                                                onChange={(e) => setSelectedGroupId(Number(e.target.value) || null)}
+                                            >
+                                                <option value="">Select a group...</option>
+                                                {userGroups.map((g) => (
+                                                    <option key={g.id} value={g.id}>{g.name}</option>
+                                                ))}
+                                            </select>
+                                            <div className="flight-save-actions">
+                                                <button
+                                                    type="button"
+                                                    className="flight-save-confirm-btn"
+                                                    onClick={() => handleSaveFlightToGroup(flight)}
+                                                    disabled={!selectedGroupId || savingFlightId === flight.id}
+                                                >
+                                                    {savingFlightId === flight.id ? "Saving..." : "Confirm"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="flight-save-cancel-btn"
+                                                    onClick={closeSaveSelector}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {saveMessage?.flightId === flight.id && (
+                                <p className={`flight-save-message flight-save-message-${saveMessage.type}`}>
+                                    {saveMessage.text}
+                                </p>
                             )}
                         </article>
                     ))}
