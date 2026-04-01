@@ -452,6 +452,10 @@ class RestaurantDetailOut(BaseModel):
     phone: Optional[str] = None
     website: Optional[str] = None
     editorial_summary: Optional[str] = None
+    google_maps_url: Optional[str] = None
+    yelp_url: Optional[str] = None
+    opentable_url: Optional[str] = None
+    reservable: bool = False
 
 
 # -------------------------

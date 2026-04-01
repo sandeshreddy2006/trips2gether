@@ -120,6 +120,9 @@ export default function DestinationDetail() {
     const [filterPrices, setFilterPrices] = useState<string[]>([]);
     const [filterMinRating, setFilterMinRating] = useState<number | null>(null);
 
+    const [overviewDetail, setOverviewDetail] = useState<any>(null);
+    const [overviewDetailLoading, setOverviewDetailLoading] = useState(false);
+    const [overviewDetailError, setOverviewDetailError] = useState<string | null>(null);
     // Save to Group Plan state
     const [userGroups, setUserGroups] = useState<{ id: number; name: string; role: string }[]>([]);
     const [groupsLoading, setGroupsLoading] = useState(false);
@@ -220,6 +223,26 @@ export default function DestinationDetail() {
         }
     }, [activeTab, restaurantsFetched, restaurantsLoading, destination, restaurantRadius]);
 
+    const RESTAURANT_TYPES = ["restaurant", "food", "meal_delivery", "meal_takeaway", "cafe", "bar", "bakery"];
+    const isRestaurant = destination?.types?.some(t => RESTAURANT_TYPES.includes(t)) ?? false;
+
+    useEffect(() => {
+        if (!isRestaurant || overviewDetail || overviewDetailLoading) return;
+        const fetchOverviewDetail = async () => {
+            setOverviewDetailLoading(true);
+            try {
+                const res = await fetch(`/api/restaurants/${encodeURIComponent(placeId)}`);
+                if (!res.ok) throw new Error(`Server error (${res.status})`);
+                const data = await res.json();
+                setOverviewDetail(data);
+            } catch (err: any) {
+                setOverviewDetailError(err.message || "Failed to load details");
+            } finally {
+                setOverviewDetailLoading(false);
+            }
+        };
+        fetchOverviewDetail();
+    }, [isRestaurant, placeId, overviewDetail, overviewDetailLoading]);
     useEffect(() => {
         const fetchGroups = async () => {
             setGroupsLoading(true);
@@ -555,15 +578,17 @@ export default function DestinationDetail() {
                                 className={`tab ${activeTab === "restaurants" ? "active" : ""}`}
                                 onClick={() => setActiveTab("restaurants")}
                             >
-                                Restaurants
+                                Nearby Restaurants
                             </button>
                         )}
-                        <button
-                            className={`tab ${activeTab === "info" ? "active" : ""}`}
-                            onClick={() => setActiveTab("info")}
-                        >
-                            Info
-                        </button>
+                        {!isRestaurant && (
+                            <button
+                                className={`tab ${activeTab === "info" ? "active" : ""}`}
+                                onClick={() => setActiveTab("info")}
+                            >
+                                Info
+                            </button>
+                        )}
                     </div>
 
                     {/* Tab Content - Overview */}
@@ -582,7 +607,7 @@ export default function DestinationDetail() {
                                     </div>
                                 )}
 
-                                {destination.location?.lat && destination.location?.lng && (
+                                {!isRestaurant && destination.location?.lat && destination.location?.lng && (
                                     <div className="info-card">
                                         <div className="info-icon" aria-hidden="true">
                                             <img src="/compass.svg" alt="" />
@@ -609,8 +634,128 @@ export default function DestinationDetail() {
 
                             <div className="description-section">
                                 <h2>About {destination.name}</h2>
+                                {isRestaurant ? (
+                                    <p>
+                                        {overviewDetail?.editorial_summary
+                                            || `${destination.name} — rated ${destination.rating?.toFixed(1)} with ${destination.user_ratings_total?.toLocaleString()} reviews.`}
+                                    </p>
+                                ) : (
+                                    <p>Discover the beauty and culture of {destination.name}. This destination offers amazing experiences with {destination.user_ratings_total?.toLocaleString()} visitor reviews and a {destination.rating?.toFixed(1)} star rating.</p>
+                                )}
                                 <p>{overviewDescription}</p>
                             </div>
+
+                            {isRestaurant && (
+                                <div className="overview-restaurant-detail">
+                                    {overviewDetailLoading && (
+                                        <div className="restaurants-loading">
+                                            <div className="loading-spinner-small"></div>
+                                            <p>Loading restaurant details...</p>
+                                        </div>
+                                    )}
+                                    {overviewDetailError && (
+                                        <div className="restaurants-error">
+                                            <p>{overviewDetailError}</p>
+                                        </div>
+                                    )}
+                                    {!overviewDetailLoading && !overviewDetailError && overviewDetail && (
+                                        <>
+                                            {overviewDetail.cuisine_types && overviewDetail.cuisine_types.length > 0 && (
+                                                <div className="detail-cuisines">
+                                                    {overviewDetail.cuisine_types.map((c: string, i: number) => (
+                                                        <span key={i} className="cuisine-tag">{c}</span>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="detail-info-grid">
+                                                {overviewDetail.rating != null && (
+                                                    <div className="detail-info-item">
+                                                        <span className="detail-label">Rating</span>
+                                                        <span className="detail-value">
+                                                            ★ {overviewDetail.rating.toFixed(1)}
+                                                            {overviewDetail.user_ratings_total != null && (
+                                                                <small> ({overviewDetail.user_ratings_total.toLocaleString()})</small>
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                {overviewDetail.price_level && (
+                                                    <div className="detail-info-item">
+                                                        <span className="detail-label">Price</span>
+                                                        <span className="detail-value">{overviewDetail.price_level}</span>
+                                                    </div>
+                                                )}
+                                                {overviewDetail.phone && (
+                                                    <div className="detail-info-item">
+                                                        <span className="detail-label">Phone</span>
+                                                        <span className="detail-value">
+                                                            <a href={`tel:${overviewDetail.phone}`}>{overviewDetail.phone}</a>
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                {overviewDetail.website && (
+                                                    <div className="detail-info-item">
+                                                        <span className="detail-label">Website</span>
+                                                        <span className="detail-value">
+                                                            <a href={overviewDetail.website} target="_blank" rel="noopener noreferrer">Visit website</a>
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {overviewDetail.opening_hours && (
+                                                <div className="detail-hours-section">
+                                                    <div className="detail-hours-header">
+                                                        <span className="detail-label">Opening Hours</span>
+                                                        {overviewDetail.opening_hours.open_now != null && (
+                                                            <span className={`open-badge ${overviewDetail.opening_hours.open_now ? "open-badge-open" : "open-badge-closed"}`}>
+                                                                {overviewDetail.opening_hours.open_now ? "Open now" : "Closed now"}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {overviewDetail.opening_hours.weekday_descriptions?.length > 0 && (
+                                                        <ul className="detail-hours-list">
+                                                            {overviewDetail.opening_hours.weekday_descriptions.map((desc: string, i: number) => (
+                                                                <li key={i}>{desc}</li>
+                                                            ))}
+                                                        </ul>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {(overviewDetail.google_maps_url || overviewDetail.yelp_url || overviewDetail.opentable_url) && (
+                                                <div className="detail-actions">
+                                                    <span className="detail-label">Reserve / Order</span>
+                                                    {overviewDetail.reservable === true && (
+                                                        <span className="reservable-badge">Reservations available</span>
+                                                    )}
+                                                    <div className="action-buttons">
+                                                        {overviewDetail.google_maps_url && (
+                                                            <a href={overviewDetail.google_maps_url} target="_blank" rel="noopener noreferrer" className="action-btn action-btn-google">
+                                                                View on Google Maps
+                                                            </a>
+                                                        )}
+                                                        {overviewDetail.yelp_url && (
+                                                            <a href={overviewDetail.yelp_url} target="_blank" rel="noopener noreferrer" className="action-btn action-btn-yelp">
+                                                                Find on Yelp
+                                                            </a>
+                                                        )}
+                                                        {overviewDetail.opentable_url && (
+                                                            <a href={overviewDetail.opentable_url} target="_blank" rel="noopener noreferrer" className="action-btn action-btn-opentable">
+                                                                Find on OpenTable
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                    <p className="action-notice">
+                                                        You will be redirected to an external site to complete your reservation.
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -888,6 +1033,25 @@ export default function DestinationDetail() {
 
                 {/* Sidebar */}
                 <aside className="detail-sidebar">
+                    {!isRestaurant && (
+                        <div className="sidebar-card plan-card">
+                            <h3>Plan a Group Trip to {destination.name}</h3>
+                            <p>Plan and coordinate a memorable trip with your friends!</p>
+                            <div className="sidebar-section">
+                                <label>Group Members</label>
+                                <div className="avatars">👤 Add friends</div>
+                            </div>
+                            <div className="sidebar-section">
+                                <label>Budget Range</label>
+                                <p>$1000 - $2000 per person</p>
+                            </div>
+                            <div className="sidebar-section">
+                                <label>Dates</label>
+                                <p>Apr 15 - Apr 21, 2024</p>
+                            </div>
+                            <button className="btn btn-plan">Plan Trip</button>
+                        </div>
+                    )}
                     <div className="sidebar-card plan-card">
                         <h3 className="save-title">
                             <img src="/save.svg" alt="" aria-hidden="true" />
@@ -978,7 +1142,7 @@ export default function DestinationDetail() {
                                 className="btn btn-map"
                                 onClick={() =>
                                     window.open(
-                                        `https://www.google.com/maps/search/?api=1&query=${destination.location!.lat},${destination.location!.lng}`,
+                                        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination.name)}&query_place_id=${encodeURIComponent(destination.place_id)}`,
                                         "_blank"
                                     )
                                 }

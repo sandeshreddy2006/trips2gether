@@ -22,6 +22,10 @@ interface RestaurantDetailData {
     phone?: string | null;
     website?: string | null;
     editorial_summary?: string | null;
+    google_maps_url?: string | null;
+    yelp_url?: string | null;
+    opentable_url?: string | null;
+    reservable?: boolean;
 }
 
 interface RestaurantDetailProps {
@@ -36,6 +40,10 @@ function NotAvailable() {
     return <span className="detail-na">Not available</span>;
 }
 
+function isValidUrl(url?: string | null): url is string {
+    return !!url && url.trim().length > 0 && url.startsWith("http");
+}
+
 export default function RestaurantDetail({
     detail,
     loading,
@@ -44,6 +52,11 @@ export default function RestaurantDetail({
     onRetry,
 }: RestaurantDetailProps) {
     const photosRef = useRef<HTMLDivElement>(null);
+
+    const hasGoogle = detail && isValidUrl(detail.google_maps_url);
+    const hasYelp = detail && isValidUrl(detail.yelp_url);
+    const hasOpenTable = detail && isValidUrl(detail.opentable_url);
+    const hasAnyAction = hasGoogle || hasYelp || hasOpenTable;
 
     return (
         <div className="detail-panel-overlay">
@@ -139,6 +152,51 @@ export default function RestaurantDetail({
                                     </span>
                                 </div>
                             </div>
+
+                            {/* Reserve / Order */}
+                            {hasAnyAction && (
+                                <div className="detail-actions">
+                                    <span className="detail-label">Reserve / Order</span>
+                                    {detail.reservable === true && (
+                                        <span className="reservable-badge">Reservations available</span>
+                                    )}
+                                    <div className="action-buttons">
+                                        {hasGoogle && (
+                                            <a
+                                                href={detail.google_maps_url!}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="action-btn action-btn-google"
+                                            >
+                                                View on Google Maps
+                                            </a>
+                                        )}
+                                        {hasYelp && (
+                                            <a
+                                                href={detail.yelp_url!}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="action-btn action-btn-yelp"
+                                            >
+                                                Find on Yelp
+                                            </a>
+                                        )}
+                                        {hasOpenTable && (
+                                            <a
+                                                href={detail.opentable_url!}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="action-btn action-btn-opentable"
+                                            >
+                                                Find on OpenTable
+                                            </a>
+                                        )}
+                                    </div>
+                                    <p className="action-notice">
+                                        You will be redirected to an external site to complete your reservation.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Opening hours */}
                             <div className="detail-hours-section">
