@@ -81,10 +81,6 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
 DUFFEL_API_URL = "https://api.duffel.com/air/offer_requests"
 
-print("[Startup] Dropping all tables for a fresh start...")
-Base.metadata.drop_all(bind=engine)
-print("[Startup] Dropped all tables.")
-
 print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
