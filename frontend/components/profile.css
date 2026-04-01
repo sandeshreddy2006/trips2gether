@@ -407,8 +407,14 @@
     border: 1px solid #d1d5db;
     border-radius: 8px;
     font-size: 15px;
+    color: #2E6B55;
+    caret-color: #2E6B55;
     outline: none;
     transition: border-color 0.2s;
+}
+
+.wallet-topup-input::placeholder {
+    color: #9ca3af;
 }
 
 .wallet-topup-input:focus {
