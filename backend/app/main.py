@@ -64,7 +64,7 @@ from .auth import (
     verify_recaptcha,
     get_current_user_info,
 )
-from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template, get_email_verification_template, get_account_deletion_email_template
+from .email_utils import send_email, get_welcome_email_template, get_login_email_template, get_password_reset_email_template, get_email_verification_template, get_account_deletion_email_template, get_booking_confirmation_email_template, generate_booking_confirmation_pdf
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
 from .flightbookings import _select_diverse_offers, _serialize_duffel_offer
@@ -2623,7 +2623,7 @@ def disable_face_verification(request: Request, db: Session = Depends(get_db)):
 # -------------------------
 
 @app.post("/bookings/create-order", response_model=BookingCreateOut)
-def create_booking(body: BookingCreateIn, request: Request, db: Session = Depends(get_db)):
+def create_booking(body: BookingCreateIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Create a flight booking order using Duffel API. Only authenticated users."""
     # Verify user is authenticated
     current_user = get_current_user_info(request, db)
@@ -2760,6 +2760,49 @@ def create_booking(body: BookingCreateIn, request: Request, db: Session = Depend
         db.add(booking)
         db.commit()
         db.refresh(booking)
+
+        try:
+            formatted_time = datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
+            booking_pdf = generate_booking_confirmation_pdf(
+                booking_reference=booking_reference or "N/A",
+                order_id=order_id,
+                total_amount=total_amount,
+                currency=total_currency,
+                payment_status="pending",
+                created_at=formatted_time,
+                passengers=[p.model_dump() for p in body.passengers],
+                slices=order_data.get("slices", []),
+                remaining_balance=profile.wallet_balance,
+            )
+            background_tasks.add_task(
+                send_email,
+                sender_email=os.getenv("SMTP_EMAIL"),
+                sender_password=os.getenv("SMTP_PASSWORD"),
+                recipient_email=current_user.email,
+                subject=f"Booking Confirmed - {booking_reference}",
+                body=get_booking_confirmation_email_template(
+                    name=current_user.name,
+                    booking_reference=booking_reference or "N/A",
+                    order_id=order_id,
+                    total_amount=total_amount,
+                    currency=total_currency,
+                    payment_status="pending",
+                    created_at=formatted_time,
+                    passengers=[p.model_dump() for p in body.passengers],
+                    slices=order_data.get("slices", []),
+                    remaining_balance=profile.wallet_balance,
+                ),
+                attachments=[
+                    {
+                        "filename": f"booking-{booking_reference or order_id}.pdf",
+                        "content": booking_pdf,
+                        "mime_type": "application/pdf",
+                    }
+                ],
+            )
+        except Exception as email_exc:
+            # Booking should remain successful even if email dispatch fails.
+            print(f"[Booking Email] Failed to queue confirmation email: {email_exc}")
 
         return BookingCreateOut(
             status="confirmed",

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import './BookingConfirmation.css';
 
@@ -62,6 +62,8 @@ export default function BookingConfirmation({
     const [bookingDetails, setBookingDetails] = useState<BookingDetails | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+    const confirmationRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const fetchBookingStatus = async () => {
@@ -141,8 +143,54 @@ export default function BookingConfirmation({
         return parts.join(' ') || 'N/A';
     };
 
+    const handleDownloadPdf = async () => {
+        if (!confirmationRef.current) return;
+
+        try {
+            setIsDownloadingPdf(true);
+            const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+                import('html2canvas'),
+                import('jspdf'),
+            ]);
+
+            const canvas = await html2canvas(confirmationRef.current, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+            });
+
+            const pdf = new jsPDF('p', 'pt', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = pageWidth;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+            heightLeft -= pageHeight;
+
+            while (heightLeft > 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+                heightLeft -= pageHeight;
+            }
+
+            pdf.save(`booking-${bookingReference || orderId}.pdf`);
+        } catch (err) {
+            setError('Unable to generate PDF right now. Please try again.');
+        } finally {
+            setIsDownloadingPdf(false);
+        }
+    };
+
     return (
-        <div className="booking-confirmation">
+        <div className="booking-confirmation" ref={confirmationRef}>
             <div className="confirmation-header">
                 <div className="success-badge">
                     <div className="checkmark">✓</div>
@@ -267,6 +315,9 @@ export default function BookingConfirmation({
 
             {/* Action Buttons */}
             <div className="confirmation-actions">
+                <button className="btn btn-primary" onClick={handleDownloadPdf} disabled={isDownloadingPdf}>
+                    {isDownloadingPdf ? 'Preparing PDF...' : 'Download PDF'}
+                </button>
                 <button className="btn btn-secondary" onClick={onBack || (() => router.back())}>
                     Back
                 </button>
