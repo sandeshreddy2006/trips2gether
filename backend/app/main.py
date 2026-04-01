@@ -2100,7 +2100,15 @@ def confirm_wallet_top_up(body: WalletTopUpConfirmIn, request: Request, db: Sess
         message = getattr(exc, "user_message", None) or str(exc)
         raise HTTPException(status_code=502, detail=f"Stripe confirmation failed: {message}")
 
-    if str(session.metadata.get("user_id", "")) != str(user.id):
+    raw_metadata = getattr(session, "metadata", None)
+    if hasattr(raw_metadata, "to_dict"):
+        metadata = raw_metadata.to_dict()
+    elif raw_metadata:
+        metadata = dict(raw_metadata)
+    else:
+        metadata = {}
+
+    if str(metadata.get("user_id", "")) != str(user.id):
         raise HTTPException(status_code=403, detail="Session does not belong to current user")
 
     if session.payment_status != "paid":
