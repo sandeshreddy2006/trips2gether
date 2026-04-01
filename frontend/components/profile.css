@@ -671,6 +671,64 @@
     }
 }
 
+@media (max-width: 480px) {
+    .profile-banner {
+        height: 140px;
+    }
+
+    .profile-content {
+        padding: 16px;
+    }
+
+    .avatar-container {
+        width: 88px;
+        height: 88px;
+    }
+
+    .profile-name {
+        font-size: 20px;
+    }
+
+    .profile-stats {
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .profile-tabs {
+        margin: 0 -16px;
+        padding: 0 16px;
+        gap: 10px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tab {
+        white-space: nowrap;
+        font-size: 13px;
+    }
+
+    .profile-body {
+        padding: 14px 16px;
+    }
+
+    .profile-card {
+        padding: 16px;
+    }
+
+    .form-actions {
+        flex-direction: column;
+    }
+
+    .friend-row {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .friend-actions {
+        flex-wrap: wrap;
+    }
+}
+
 /* Modern Form Styling */
 .edit-form {
     background: linear-gradient(135deg, #f9fbfa 0%, #f5f9f7 100%);

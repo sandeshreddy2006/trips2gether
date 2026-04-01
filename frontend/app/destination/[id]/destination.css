@@ -1472,3 +1472,86 @@ body {
         padding: 16px;
     }
 }
+
+/* ─── Mobile Responsive ─────────────────────────── */
+
+@media (max-width: 900px) {
+    .detail-wrapper {
+        grid-template-columns: 1fr;
+        margin: -20px 0 0;
+        padding: 20px;
+        gap: 20px;
+    }
+
+    .detail-sidebar {
+        order: -1;
+    }
+
+    .hero-section {
+        height: 300px;
+    }
+
+    .hero-overlay {
+        padding: 24px;
+    }
+
+    .hero-title {
+        font-size: 2rem;
+    }
+
+    .tabs {
+        padding: 0 20px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tab {
+        padding: 14px 16px;
+        font-size: 0.9rem;
+        white-space: nowrap;
+    }
+
+    .tab-content {
+        padding: 24px 20px;
+    }
+
+    .tab-content h2 {
+        font-size: 1.4rem;
+        margin-bottom: 20px;
+    }
+
+    .attraction-image {
+        height: 160px;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-section {
+        height: 240px;
+    }
+
+    .hero-title {
+        font-size: 1.5rem;
+    }
+
+    .detail-wrapper {
+        padding: 14px;
+    }
+
+    .tab-content {
+        padding: 16px 14px;
+    }
+
+    .info-card {
+        padding: 14px;
+    }
+
+    .back-button-hero {
+        padding: 8px 12px;
+        font-size: 0.85rem;
+    }
+
+    .sidebar-card {
+        padding: 16px;
+    }
+}
