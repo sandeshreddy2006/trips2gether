@@ -415,6 +415,12 @@
     font-weight: 700;
 }
 
+.pill-emissions {
+    background: rgba(34, 139, 34, 0.08);
+    color: #1a5c1a;
+    border-color: rgba(34, 139, 34, 0.22);
+}
+
 @media (max-width: 1024px) {
     .flight-search-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -687,4 +693,305 @@
     border: 1px solid rgba(255, 193, 7, 0.3);
     border-radius: 6px;
     padding: 4px 8px;
+}
+
+/* ─── Sort toolbar ─────────────────────────────────── */
+
+.sort-toolbar {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(46, 107, 85, 0.14);
+}
+
+/* ─── Compare toggle button (on each flight card) ──── */
+
+.compare-toggle-btn {
+    margin-top: 6px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(46, 107, 85, 0.28);
+    background: white;
+    color: #2e6b55;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    align-self: flex-end;
+}
+
+.compare-toggle-btn:hover:not(:disabled) {
+    background: rgba(46, 107, 85, 0.08);
+    transform: translateY(-1px);
+}
+
+.compare-toggle-btn:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+}
+
+.compare-toggle-active {
+    background: linear-gradient(135deg, #2e6b55 0%, #186c50 100%);
+    color: white;
+    border-color: transparent;
+}
+
+/* ─── Sticky compare bar ───────────────────────────── */
+
+.compare-bar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 22px;
+    background: #0d3d2a;
+    color: white;
+    border-radius: 18px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+    min-width: min(560px, calc(100vw - 48px));
+}
+
+.compare-bar-info {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.compare-bar-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.compare-bar-clear {
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: transparent;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.compare-bar-clear:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.compare-bar-btn {
+    padding: 9px 20px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(135deg, #f2d34f 0%, #d4a800 100%);
+    color: #0d3d2a;
+    font-size: 0.88rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.compare-bar-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(242, 211, 79, 0.4);
+}
+
+.compare-bar-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* ─── Compare overlay & modal ──────────────────────── */
+
+.compare-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    background: rgba(5, 22, 15, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.compare-modal {
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
+    width: 100%;
+    max-width: 920px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.compare-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 26px;
+    border-bottom: 1px solid rgba(46, 107, 85, 0.15);
+    flex-shrink: 0;
+    background: linear-gradient(135deg, rgba(46, 107, 85, 0.05), transparent);
+}
+
+.compare-modal-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #0d3d2a;
+}
+
+.compare-close-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid rgba(46, 107, 85, 0.2);
+    background: rgba(46, 107, 85, 0.06);
+    color: #0d3d2a;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.compare-close-btn:hover {
+    background: rgba(46, 107, 85, 0.14);
+}
+
+.compare-scroll {
+    overflow: auto;
+    flex: 1;
+    padding: 0 24px 24px 24px;
+}
+
+.compare-table {
+    display: grid;
+    min-width: 400px;
+}
+
+.compare-th {
+    border-bottom: 2px solid rgba(46, 107, 85, 0.18);
+    padding: 16px 8px 12px 0;
+    background: rgba(46, 107, 85, 0.03);
+}
+
+.compare-flight-th {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 8px 12px 8px;
+    text-align: center;
+    border-bottom: 2px solid rgba(46, 107, 85, 0.18);
+    background: rgba(46, 107, 85, 0.03);
+}
+
+.compare-airline-logo {
+    width: 44px;
+    height: 44px;
+    object-fit: contain;
+    border-radius: 10px;
+    border: 1px solid rgba(46, 107, 85, 0.15);
+    padding: 5px;
+}
+
+.compare-fallback-icon {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 0.68rem !important;
+}
+
+.compare-airline-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #0d3d2a;
+    line-height: 1.3;
+}
+
+.compare-field-label {
+    display: flex;
+    align-items: center;
+    padding: 12px 8px 12px 0;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #2e6b55;
+    border-bottom: 1px solid rgba(46, 107, 85, 0.08);
+    background: rgba(46, 107, 85, 0.04);
+}
+
+.compare-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 8px;
+    font-size: 0.88rem;
+    color: #1e4a36;
+    border-bottom: 1px solid rgba(46, 107, 85, 0.08);
+    text-align: center;
+}
+
+.compare-cell strong {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #0d3d2a;
+}
+
+.compare-cell-best {
+    background: rgba(46, 107, 85, 0.07);
+}
+
+.best-badge {
+    display: inline-flex;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #2e6b55, #186c50);
+    color: white;
+}
+
+@media (max-width: 680px) {
+    .compare-bar {
+        bottom: 12px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 14px 16px;
+        min-width: calc(100vw - 32px);
+    }
+
+    .compare-bar-actions {
+        justify-content: flex-end;
+    }
+
+    .compare-overlay {
+        padding: 12px;
+    }
+
+    .compare-modal-header {
+        padding: 16px 18px;
+    }
+
+    .compare-scroll {
+        padding: 0 14px 18px 14px;
+    }
 }

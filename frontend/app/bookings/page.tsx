@@ -18,7 +18,9 @@ type LayoverInfo = {
 type FlightSlice = {
     origin: string;
     destination: string;
+    departure_date: string | null;
     departure_time: string | null;
+    arrival_date: string | null;
     arrival_time: string | null;
     stops: number;
     layovers: LayoverInfo[];
@@ -39,6 +41,7 @@ type FlightResult = {
     cabinClass: string | null;
     baggages: BaggageInfo[];
     slices: FlightSlice[];
+    emissionsKg: string | null;
 };
 
 type FormState = {
@@ -54,6 +57,27 @@ function formatStops(stops: number): string {
     if (stops === 0) return "Nonstop";
     if (stops === 1) return "1 stop";
     return `${stops} stops`;
+}
+
+function parseDurationToMinutes(dur: string): number {
+    if (!dur || dur === "N/A" || dur === "—") return Infinity;
+    const iso = dur.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+    if (iso) return (parseInt(iso[1] || "0") * 60) + parseInt(iso[2] || "0");
+    const human = dur.match(/(\d+)h\s*(\d*)m?/);
+    if (human) return (parseInt(human[1]) * 60) + parseInt(human[2] || "0");
+    return Infinity;
+}
+
+function getCheckedBagQty(flight: FlightResult): number {
+    return flight.baggages
+        .filter((b) => b.type !== "carry_on")
+        .reduce((sum, b) => sum + b.quantity, 0);
+}
+
+function getCarryOnQty(flight: FlightResult): number {
+    return flight.baggages
+        .filter((b) => b.type === "carry_on")
+        .reduce((sum, b) => sum + b.quantity, 0);
 }
 
 export default function BookingsPage() {
@@ -72,6 +96,9 @@ export default function BookingsPage() {
     const [results, setResults] = useState<FlightResult[]>([]);
     const [selectedAirlines, setSelectedAirlines] = useState<string[]>([]);
     const [searched, setSearched] = useState(false);
+    const [sortBy, setSortBy] = useState<"price" | "duration" | "departure" | null>(null);
+    const [compareIds, setCompareIds] = useState<string[]>([]);
+    const [showCompare, setShowCompare] = useState(false);
 
     const minDate = useMemo(() => new Date().toISOString().split("T")[0], []);
     const availableAirlines = useMemo(
@@ -84,6 +111,19 @@ export default function BookingsPage() {
         }
         return results.filter((flight) => selectedAirlines.includes(flight.airline));
     }, [results, selectedAirlines]);
+
+    const sortedResults = useMemo(() => {
+        const list = [...filteredResults];
+        if (sortBy === "price") list.sort((a, b) => a.price - b.price);
+        else if (sortBy === "duration") list.sort((a, b) => parseDurationToMinutes(a.duration) - parseDurationToMinutes(b.duration));
+        else if (sortBy === "departure") list.sort((a, b) => (a.departureTime || "").localeCompare(b.departureTime || ""));
+        return list;
+    }, [filteredResults, sortBy]);
+
+    const compareFlights = useMemo(
+        () => results.filter((f) => compareIds.includes(f.id)),
+        [results, compareIds]
+    );
 
     const validate = (): Partial<Record<keyof FormState, string>> => {
         const nextErrors: Partial<Record<keyof FormState, string>> = {};
@@ -137,6 +177,9 @@ export default function BookingsPage() {
         setLoading(true);
         setSearched(true);
         setSelectedAirlines([]);
+        setSortBy(null);
+        setCompareIds([]);
+        setShowCompare(false);
 
         try {
             const res = await fetch("/api/flights/search", {
@@ -177,7 +220,9 @@ export default function BookingsPage() {
                     slices: (flight.slices || []).map((s: any) => ({
                         origin: s.origin,
                         destination: s.destination,
+                        departure_date: s.departure_date || null,
                         departure_time: s.departure_time,
+                        arrival_date: s.arrival_date || null,
                         arrival_time: s.arrival_time,
                         stops: s.stops,
                         layovers: (s.layovers || []).map((l: any) => ({
@@ -201,6 +246,14 @@ export default function BookingsPage() {
             prev.includes(airline)
                 ? prev.filter((item) => item !== airline)
                 : [...prev, airline]
+        );
+    };
+
+    const toggleCompare = (id: string) => {
+        setCompareIds((prev) =>
+            prev.includes(id)
+                ? prev.filter((x) => x !== id)
+                : prev.length < 4 ? [...prev, id] : prev
         );
     };
 
@@ -352,7 +405,7 @@ export default function BookingsPage() {
                 <div className="results-header">
                     <h2>Matching Flights</h2>
                     {searched && !loading && !apiError && (
-                        <span className="results-count">{filteredResults.length} options found</span>
+                        <span className="results-count">{sortedResults.length} options found</span>
                     )}
                 </div>
 
@@ -387,6 +440,35 @@ export default function BookingsPage() {
                     </div>
                 )}
 
+                {sortedResults.length > 0 && (
+                    <div className="sort-toolbar">
+                        <span className="filters-label">Sort by</span>
+                        <div className="filters-chip-row">
+                            <button
+                                type="button"
+                                className={`filter-chip ${sortBy === "price" ? "filter-chip-active" : ""}`}
+                                onClick={() => setSortBy(sortBy === "price" ? null : "price")}
+                            >
+                                Lowest price
+                            </button>
+                            <button
+                                type="button"
+                                className={`filter-chip ${sortBy === "duration" ? "filter-chip-active" : ""}`}
+                                onClick={() => setSortBy(sortBy === "duration" ? null : "duration")}
+                            >
+                                Shortest duration
+                            </button>
+                            <button
+                                type="button"
+                                className={`filter-chip ${sortBy === "departure" ? "filter-chip-active" : ""}`}
+                                onClick={() => setSortBy(sortBy === "departure" ? null : "departure")}
+                            >
+                                Earliest departure
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {!searched && (
                     <div className="results-placeholder">
                         Enter your route details and search to view curated flight options.
@@ -401,12 +483,12 @@ export default function BookingsPage() {
                     <div className="results-placeholder">No flights found for your selected route.</div>
                 )}
 
-                {searched && !loading && !apiError && results.length > 0 && filteredResults.length === 0 && (
+                {searched && !loading && !apiError && results.length > 0 && sortedResults.length === 0 && (
                     <div className="results-placeholder">No flights match the selected airline filters.</div>
                 )}
 
                 <div className="flight-results-list">
-                    {filteredResults.map((flight) => (
+                    {sortedResults.map((flight) => (
                         <article key={flight.id} className="flight-card">
                             {/* ── Top row: airline identity + price ── */}
                             <div className="flight-top-row">
@@ -439,6 +521,15 @@ export default function BookingsPage() {
                                         {flight.currency} {flight.price.toLocaleString()}
                                     </span>
                                     <span className="flight-price-note">per person</span>
+                                    <button
+                                        type="button"
+                                        className={`compare-toggle-btn ${compareIds.includes(flight.id) ? "compare-toggle-active" : ""}`}
+                                        onClick={() => toggleCompare(flight.id)}
+                                        disabled={!compareIds.includes(flight.id) && compareIds.length >= 4}
+                                        aria-label={compareIds.includes(flight.id) ? "Remove from comparison" : "Add to comparison"}
+                                    >
+                                        {compareIds.includes(flight.id) ? "✓ Comparing" : "+ Compare"}
+                                    </button>
                                 </div>
                             </div>
 
@@ -459,9 +550,12 @@ export default function BookingsPage() {
                                 </span>
                             </div>
 
-                            {/* ── Pills: travelers ── */}
+                            {/* ── Pills: travelers + emissions ── */}
                             <div className="flight-pill-row">
                                 <span className="pill">{form.travelers} traveler{form.travelers > 1 ? "s" : ""}</span>
+                                {flight.emissionsKg && (
+                                    <span className="pill pill-emissions">🌿 {flight.emissionsKg} kg CO₂</span>
+                                )}
                             </div>
 
                             {/* ── Baggage info ── */}
@@ -506,6 +600,175 @@ export default function BookingsPage() {
                     ))}
                 </div>
             </section>
+
+            {/* ── Sticky compare bar ── */}
+            {compareIds.length > 0 && (
+                <div className="compare-bar">
+                    <span className="compare-bar-info">
+                        {compareIds.length} flight{compareIds.length > 1 ? "s" : ""} selected
+                    </span>
+                    <div className="compare-bar-actions">
+                        <button type="button" className="compare-bar-clear" onClick={() => setCompareIds([])}>
+                            Clear selection
+                        </button>
+                        <button
+                            type="button"
+                            className="compare-bar-btn"
+                            onClick={() => setShowCompare(true)}
+                            disabled={compareIds.length < 2}
+                        >
+                            {compareIds.length >= 2 ? `Compare ${compareIds.length} Flights` : "Select 1 more"}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Compare modal ── */}
+            {showCompare && (
+                <div
+                    className="compare-overlay"
+                    onClick={(e) => { if (e.target === e.currentTarget) setShowCompare(false); }}
+                >
+                    <div className="compare-modal">
+                        <div className="compare-modal-header">
+                            <h2>Compare Flights</h2>
+                            <button type="button" className="compare-close-btn" onClick={() => setShowCompare(false)}>✕</button>
+                        </div>
+                        <div className="compare-scroll">
+                            <div
+                                className="compare-table"
+                                style={{ gridTemplateColumns: `150px repeat(${compareFlights.length}, 1fr)` }}
+                            >
+                                {/* Airline header */}
+                                <div className="compare-th" />
+                                {compareFlights.map((f) => (
+                                    <div key={f.id} className="compare-flight-th">
+                                        {f.logoUrl ? (
+                                            <img src={f.logoUrl} alt={`${f.airline} logo`} className="compare-airline-logo" />
+                                        ) : (
+                                            <div className="flight-airline-fallback compare-fallback-icon">
+                                                {f.airline.slice(0, 2).toUpperCase()}
+                                            </div>
+                                        )}
+                                        <span className="compare-airline-name">{f.airline}</span>
+                                    </div>
+                                ))}
+
+                                {/* Price */}
+                                <div className="compare-field-label">Price</div>
+                                {compareFlights.map((f) => {
+                                    const bestPrice = Math.min(...compareFlights.map((x) => x.price));
+                                    const isBest = f.price === bestPrice;
+                                    return (
+                                        <div key={f.id} className={`compare-cell${isBest ? " compare-cell-best" : ""}`}>
+                                            <strong>{f.currency} {f.price.toLocaleString()}</strong>
+                                            {isBest && <span className="best-badge">Best price</span>}
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Duration */}
+                                <div className="compare-field-label">Duration</div>
+                                {compareFlights.map((f) => {
+                                    const bestDur = Math.min(...compareFlights.map((x) => parseDurationToMinutes(x.duration)));
+                                    const isBest = bestDur !== Infinity && parseDurationToMinutes(f.duration) === bestDur;
+                                    return (
+                                        <div key={f.id} className={`compare-cell${isBest ? " compare-cell-best" : ""}`}>
+                                            {f.duration && f.duration !== "N/A" ? f.duration : "—"}
+                                            {isBest && <span className="best-badge">Fastest</span>}
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Stops */}
+                                <div className="compare-field-label">Stops</div>
+                                {compareFlights.map((f) => {
+                                    const minStops = Math.min(...compareFlights.map((x) => x.stops));
+                                    const isBest = f.stops === minStops;
+                                    return (
+                                        <div key={f.id} className={`compare-cell${isBest ? " compare-cell-best" : ""}`}>
+                                            {formatStops(f.stops)}
+                                            {isBest && <span className="best-badge">Best</span>}
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Departure */}
+                                <div className="compare-field-label">Departure</div>
+                                {compareFlights.map((f) => (
+                                    <div key={f.id} className="compare-cell">
+                                        <strong>{f.departureAirport}</strong>
+                                        <span>{f.departureTime || "--:--"}</span>
+                                    </div>
+                                ))}
+
+                                {/* Arrival */}
+                                <div className="compare-field-label">Arrival</div>
+                                {compareFlights.map((f) => (
+                                    <div key={f.id} className="compare-cell">
+                                        <strong>{f.arrivalAirport}</strong>
+                                        <span>{f.arrivalTime || "--:--"}</span>
+                                    </div>
+                                ))}
+
+                                {/* Cabin class — only when at least one flight has it */}
+                                {compareFlights.some((f) => f.cabinClass) && (
+                                    <>
+                                        <div className="compare-field-label">Cabin</div>
+                                        {compareFlights.map((f) => (
+                                            <div key={f.id} className="compare-cell">
+                                                {f.cabinClass ? f.cabinClass.replace(/_/g, " ") : "—"}
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
+
+                                {/* Emissions */}
+                                <div className="compare-field-label">CO₂ Emissions</div>
+                                {compareFlights.map((f) => {
+                                    const vals = compareFlights.map((x) => parseFloat(x.emissionsKg || "0"));
+                                    const best = Math.min(...vals.filter((v) => v > 0));
+                                    const isBest = f.emissionsKg !== null && parseFloat(f.emissionsKg) === best;
+                                    return (
+                                        <div key={f.id} className={`compare-cell${isBest ? " compare-cell-best" : ""}`}>
+                                            {f.emissionsKg ? `${f.emissionsKg} kg` : "—"}
+                                            {isBest && <span className="best-badge">Lowest</span>}
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Baggage */}
+                                <div className="compare-field-label">Baggage</div>
+                                {compareFlights.map((f) => {
+                                    const checkedVals = compareFlights.map((x) => getCheckedBagQty(x));
+                                    const carryVals = compareFlights.map((x) => getCarryOnQty(x));
+                                    const maxChecked = Math.max(...checkedVals);
+                                    const maxCarry = Math.max(...carryVals);
+                                    const currentChecked = getCheckedBagQty(f);
+                                    const currentCarry = getCarryOnQty(f);
+                                    const isBest = (currentChecked > 0 || currentCarry > 0)
+                                        && currentChecked === maxChecked
+                                        && currentCarry === maxCarry;
+                                    return (
+                                        <div key={f.id} className={`compare-cell${isBest ? " compare-cell-best" : ""}`}>
+                                            {f.baggages.length > 0
+                                                ? f.baggages.map((b, i) => (
+                                                    <span key={i} className="baggage-chip">
+                                                        {b.type === "carry_on" ? "🎒" : "🧳"}{" "}
+                                                        {b.quantity}x {b.type === "carry_on" ? "carry-on" : "checked"}
+                                                    </span>
+                                                ))
+                                                : "—"
+                                            }
+                                            {isBest && <span className="best-badge">Most included</span>}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
