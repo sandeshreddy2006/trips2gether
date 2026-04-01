@@ -81,32 +81,13 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGO = os.getenv("JWT_ALGO")
 DUFFEL_API_URL = "https://api.duffel.com/air/offer_requests"
 
+print("[Startup] Dropping all tables for a fresh start...")
+Base.metadata.drop_all(bind=engine)
+print("[Startup] Dropped all tables.")
+
 print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
-
-
-def _ensure_schema_columns() -> None:
-    """Add columns that older local SQLite databases may be missing."""
-    inspector = inspect(engine)
-
-    if "profiles" not in inspector.get_table_names():
-        return
-
-    profile_columns = {column["name"] for column in inspector.get_columns("profiles")}
-    with engine.begin() as connection:
-        if "wallet_balance" not in profile_columns:
-            print("[Startup] Adding missing profiles.wallet_balance column...")
-            connection.execute(
-                text("ALTER TABLE profiles ADD COLUMN wallet_balance FLOAT NOT NULL DEFAULT 0.0")
-            )
-            print("[Startup] Added profiles.wallet_balance column.")
-
-        # Requested behavior: reset wallet balance to 0 for all existing profiles.
-        connection.execute(text("UPDATE profiles SET wallet_balance = 0.0"))
-
-
-_ensure_schema_columns()
 
 
 app = FastAPI(title="trips2gether API")
