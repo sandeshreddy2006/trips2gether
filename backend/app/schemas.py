@@ -148,6 +148,50 @@ class GroupShortlistListOut(BaseModel):
     items: list[GroupShortlistItemOut]
 
 
+class GroupShortlistFlightCreateIn(BaseModel):
+    flight_offer_id: str = Field(min_length=1)
+    airline: str = Field(min_length=1)
+    logo_url: str | None = None
+    price: float
+    currency: str = Field(min_length=1)
+    duration: str = Field(min_length=1)
+    stops: int = Field(ge=0)
+    departure_time: str | None = None
+    arrival_time: str | None = None
+    departure_airport: str = Field(min_length=1)
+    arrival_airport: str = Field(min_length=1)
+    cabin_class: str | None = None
+    baggages: list[dict] = Field(default_factory=list)
+    slices: list[dict] = Field(default_factory=list)
+    emissions_kg: str | None = None
+
+
+class GroupShortlistFlightItemOut(BaseModel):
+    id: int
+    group_id: int
+    flight_offer_id: str
+    airline: str
+    logo_url: str | None = None
+    price: float
+    currency: str
+    duration: str
+    stops: int
+    departure_time: str | None = None
+    arrival_time: str | None = None
+    departure_airport: str
+    arrival_airport: str
+    cabin_class: str | None = None
+    baggages: list[dict] = []
+    slices: list[dict] = []
+    emissions_kg: str | None = None
+    added_by: int
+    created_at: datetime
+
+
+class GroupShortlistFlightListOut(BaseModel):
+    items: list[GroupShortlistFlightItemOut]
+
+
 class ProfileOut(BaseModel):
     id: int
     user_id: int
@@ -232,6 +276,23 @@ class DestinationSearchResponse(BaseModel):
     message: Optional[str] = None
     cached: Optional[bool] = False
     dummy: Optional[bool] = False
+
+
+class DestinationDetailOut(BaseModel):
+    """Detailed destination/place response from Google Places Details API"""
+    place_id: str
+    name: str
+    address: Optional[str] = None
+    rating: Optional[float] = None
+    user_ratings_total: Optional[int] = None
+    types: List[str] = []
+    business_status: Optional[str] = None
+    primary_type_display_name: Optional[str] = None
+    location: Optional[DestinationLocation] = None
+    website: Optional[str] = None
+    phone: Optional[str] = None
+    editorial_summary: Optional[str] = None
+    weekday_descriptions: List[str] = []
 
 
 # -------------------------
