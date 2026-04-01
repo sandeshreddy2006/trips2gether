@@ -28,11 +28,53 @@ type Friend = {
     avatar_url?: string | null;
 };
 
+type ShortlistItem = {
+    id: number;
+    group_id: number;
+    place_id: string;
+    name: string;
+    address: string | null;
+    photo_url: string | null;
+    photo_reference: string | null;
+    rating: number | null;
+    types: string[];
+    added_by: number;
+    created_at: string;
+};
+
+type FlightShortlistItem = {
+    id: number;
+    group_id: number;
+    flight_offer_id: string;
+    airline: string;
+    logo_url: string | null;
+    price: number;
+    currency: string;
+    duration: string;
+    stops: number;
+    departure_time: string | null;
+    arrival_time: string | null;
+    departure_airport: string;
+    arrival_airport: string;
+    cabin_class: string | null;
+    emissions_kg: string | null;
+    added_by: number;
+    created_at: string;
+};
+
+function formatStops(stops: number): string {
+    if (stops === 0) return "Nonstop";
+    if (stops === 1) return "1 stop";
+    return `${stops} stops`;
+}
+
 export default function GroupDetail({ groupId }: { groupId: number }) {
     const router = useRouter();
     const [group, setGroup] = useState<GroupInfo | null>(null);
     const [members, setMembers] = useState<Member[]>([]);
     const [friends, setFriends] = useState<Friend[]>([]);
+    const [shortlist, setShortlist] = useState<ShortlistItem[]>([]);
+    const [flightShortlist, setFlightShortlist] = useState<FlightShortlistItem[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [inviting, setInviting] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -98,6 +140,40 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             alert(err instanceof Error ? err.message : "Failed to invite members");
         } finally {
             setInviting(false);
+        }
+    }
+
+    async function handleRemoveShortlistedDestination(placeId: string) {
+        if (!confirm("Remove this destination from the shortlist?")) return;
+        try {
+            const res = await fetch(`/api/groups/${groupId}/shortlist/${encodeURIComponent(placeId)}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to remove destination from shortlist");
+            }
+            setShortlist((prev) => prev.filter((item) => item.place_id !== placeId));
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to remove destination from shortlist");
+        }
+    }
+
+    async function handleRemoveShortlistedFlight(flightOfferId: string) {
+        if (!confirm("Remove this flight from the shortlist?")) return;
+        try {
+            const res = await fetch(`/api/groups/${groupId}/flight-shortlist/${encodeURIComponent(flightOfferId)}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to remove flight from shortlist");
+            }
+            setFlightShortlist((prev) => prev.filter((item) => item.flight_offer_id !== flightOfferId));
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to remove flight from shortlist");
         }
     }
 
@@ -189,9 +265,11 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     useEffect(() => {
         async function fetchData() {
             try {
-                const [groupRes, membersRes, friendsRes] = await Promise.all([
+                const [groupRes, membersRes, shortlistRes, flightShortlistRes, friendsRes] = await Promise.all([
                     fetch(`/api/groups/${groupId}`, { credentials: "include" }),
                     fetch(`/api/groups/${groupId}/members`, { credentials: "include" }),
+                    fetch(`/api/groups/${groupId}/shortlist`, { credentials: "include" }),
+                    fetch(`/api/groups/${groupId}/flight-shortlist`, { credentials: "include" }),
                     fetch("/api/friends", { credentials: "include" }),
                 ]);
 
@@ -203,6 +281,16 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 setGroup(groupData);
                 const membersData = await membersRes.json();
                 setMembers(membersData.members || []);
+
+                if (shortlistRes.ok) {
+                    const shortlistData = await shortlistRes.json();
+                    setShortlist(shortlistData.items || []);
+                }
+
+                if (flightShortlistRes.ok) {
+                    const flightShortlistData = await flightShortlistRes.json();
+                    setFlightShortlist(flightShortlistData.items || []);
+                }
 
                 if (friendsRes.ok) {
                     const friendsData = await friendsRes.json();
@@ -319,6 +407,81 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                         </div>
                     ))}
                 </div>
+            </div>
+
+            <div className="group-shortlist-section">
+                <h2 className="group-shortlist-title">Shortlisted Destinations ({shortlist.length})</h2>
+                {shortlist.length === 0 ? (
+                    <p className="group-shortlist-empty">No destinations shortlisted yet.</p>
+                ) : (
+                    <div className="group-shortlist-list">
+                        {shortlist.map((item) => (
+                            <div key={item.id} className="group-shortlist-card">
+                                <div
+                                    className="group-shortlist-main"
+                                    onClick={() => router.push(`/destination/${item.place_id}`)}
+                                    style={{ cursor: "pointer" }}
+                                >
+                                    <h3 className="group-shortlist-name">{item.name}</h3>
+                                    {item.address && <p className="group-shortlist-address">{item.address}</p>}
+                                    <div className="group-shortlist-meta">
+                                        {item.rating != null && (
+                                            <span className="group-shortlist-rating">★ {item.rating.toFixed(1)}</span>
+                                        )}
+                                        {item.types?.slice(0, 3).map((type) => (
+                                            <span key={`${item.id}-${type}`} className="group-shortlist-type">
+                                                {type.replaceAll("_", " ")}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <button
+                                    className="group-shortlist-remove-btn"
+                                    onClick={() => handleRemoveShortlistedDestination(item.place_id)}
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div className="group-shortlist-section">
+                <h2 className="group-shortlist-title">Shortlisted Flights ({flightShortlist.length})</h2>
+                {flightShortlist.length === 0 ? (
+                    <p className="group-shortlist-empty">No flights shortlisted yet.</p>
+                ) : (
+                    <div className="group-shortlist-list">
+                        {flightShortlist.map((item) => (
+                            <div key={item.id} className="group-shortlist-card">
+                                <div className="group-shortlist-main group-flight-shortlist-main">
+                                    <h3 className="group-shortlist-name">{item.airline}</h3>
+                                    <p className="group-shortlist-address">
+                                        {item.departure_airport} {item.departure_time || "--:--"} → {item.arrival_airport} {item.arrival_time || "--:--"}
+                                    </p>
+                                    <div className="group-shortlist-meta">
+                                        <span className="group-shortlist-type">{item.currency} {item.price.toLocaleString()}</span>
+                                        <span className="group-shortlist-type">{item.duration}</span>
+                                        <span className="group-shortlist-type">{formatStops(item.stops)}</span>
+                                        {item.cabin_class && (
+                                            <span className="group-shortlist-type">{item.cabin_class.replaceAll("_", " ")}</span>
+                                        )}
+                                        {item.emissions_kg && (
+                                            <span className="group-shortlist-type">{item.emissions_kg} kg CO2</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <button
+                                    className="group-shortlist-remove-btn"
+                                    onClick={() => handleRemoveShortlistedFlight(item.flight_offer_id)}
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {invitableFriends.length > 0 && (

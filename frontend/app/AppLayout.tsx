@@ -18,6 +18,7 @@ export default function AppLayout({
     const [showSignUp, setShowSignUp] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+    const [walletBalance, setWalletBalance] = useState<number>(0);
 
     // Close dropdown when clicking outside
     React.useEffect(() => {
@@ -34,6 +35,40 @@ export default function AppLayout({
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, [profileDropdownOpen]);
+
+    React.useEffect(() => {
+        if (!isAuthenticated || !user) {
+            setWalletBalance(0);
+            return;
+        }
+
+        let isCancelled = false;
+
+        const loadWalletBalance = async () => {
+            try {
+                const response = await fetch("/api/profile/get", {
+                    method: "GET",
+                    credentials: "include",
+                });
+
+                if (!response.ok) return;
+
+                const data = await response.json();
+                const nextBalance = Number(data?.wallet_balance);
+                if (!isCancelled && Number.isFinite(nextBalance)) {
+                    setWalletBalance(nextBalance);
+                }
+            } catch {
+                // Keep existing balance if profile fetch fails.
+            }
+        };
+
+        void loadWalletBalance();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [isAuthenticated, user]);
 
     return (
         <div className="homepage-root">
@@ -173,6 +208,10 @@ export default function AppLayout({
                             <img src="/magnifying-glass.svg" alt="Explore" className="nav-icon" />
                             <span>Explore Destinations</span>
                         </a>
+                        <a href="/bookings" className="nav-item">
+                            <img src="/flight.svg" alt="Book Flights" className="nav-icon" />
+                            <span>Book Flights</span>
+                        </a>
                         <a href="#" className="nav-item">
                             <img src="/flight.svg" alt="My Trips" className="nav-icon" />
                             <span>My Trips</span>
@@ -185,7 +224,7 @@ export default function AppLayout({
                             />
                             <span>Polls & Planning</span>
                         </a>
-                        <a href="#" className="nav-item">
+                        <a href="/bookings/history" className="nav-item">
                             <img
                                 src="/bookings.svg"
                                 alt="Previous Bookings"
@@ -216,7 +255,7 @@ export default function AppLayout({
                             <span className="nav-icon">$</span>
                             <span className="balance-text">
                                 <span className="balance-label">Balance</span>
-                                <span className="balance-amount">$85.20</span>
+                                <span className="balance-amount">${walletBalance.toFixed(2)}</span>
                             </span>
                         </a>
                     </div>
