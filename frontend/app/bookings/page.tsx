@@ -97,6 +97,10 @@ export default function BookingsPage() {
     const [selectedAirlines, setSelectedAirlines] = useState<string[]>([]);
     const [searched, setSearched] = useState(false);
     const [sortBy, setSortBy] = useState<"price" | "duration" | "departure" | null>(null);
+    const [filterStops, setFilterStops] = useState<"any" | "nonstop" | "1" | "2+">("any");
+    const [filterPriceMin, setFilterPriceMin] = useState<string>("");
+    const [filterPriceMax, setFilterPriceMax] = useState<string>("");
+    const [filterMaxDuration, setFilterMaxDuration] = useState<number | null>(null);
     const [compareIds, setCompareIds] = useState<string[]>([]);
     const [showCompare, setShowCompare] = useState(false);
 
@@ -105,12 +109,26 @@ export default function BookingsPage() {
         () => Array.from(new Set(results.map((flight) => flight.airline))).sort(),
         [results]
     );
+    const priceBounds = useMemo(() => {
+        if (results.length === 0) return { min: 0, max: 0 };
+        const prices = results.map((f) => f.price);
+        return { min: Math.min(...prices), max: Math.max(...prices) };
+    }, [results]);
+
     const filteredResults = useMemo(() => {
-        if (selectedAirlines.length === 0) {
-            return results;
-        }
-        return results.filter((flight) => selectedAirlines.includes(flight.airline));
-    }, [results, selectedAirlines]);
+        return results.filter((flight) => {
+            if (selectedAirlines.length > 0 && !selectedAirlines.includes(flight.airline)) return false;
+            if (filterStops === "nonstop" && flight.stops !== 0) return false;
+            if (filterStops === "1" && flight.stops !== 1) return false;
+            if (filterStops === "2+" && flight.stops < 2) return false;
+            const minP = filterPriceMin !== "" ? parseFloat(filterPriceMin) : null;
+            const maxP = filterPriceMax !== "" ? parseFloat(filterPriceMax) : null;
+            if (minP !== null && flight.price < minP) return false;
+            if (maxP !== null && flight.price > maxP) return false;
+            if (filterMaxDuration !== null && parseDurationToMinutes(flight.duration) > filterMaxDuration) return false;
+            return true;
+        });
+    }, [results, selectedAirlines, filterStops, filterPriceMin, filterPriceMax, filterMaxDuration]);
 
     const sortedResults = useMemo(() => {
         const list = [...filteredResults];
@@ -180,6 +198,10 @@ export default function BookingsPage() {
         setSortBy(null);
         setCompareIds([]);
         setShowCompare(false);
+        setFilterStops("any");
+        setFilterPriceMin("");
+        setFilterPriceMax("");
+        setFilterMaxDuration(null);
 
         try {
             const res = await fetch("/api/flights/search", {
@@ -248,6 +270,21 @@ export default function BookingsPage() {
                 : [...prev, airline]
         );
     };
+
+    const clearAllFilters = () => {
+        setSelectedAirlines([]);
+        setFilterStops("any");
+        setFilterPriceMin("");
+        setFilterPriceMax("");
+        setFilterMaxDuration(null);
+    };
+
+    const hasActiveFilters =
+        selectedAirlines.length > 0 ||
+        filterStops !== "any" ||
+        filterPriceMin !== "" ||
+        filterPriceMax !== "" ||
+        filterMaxDuration !== null;
 
     const toggleCompare = (id: string) => {
         setCompareIds((prev) =>
@@ -410,32 +447,89 @@ export default function BookingsPage() {
                 </div>
 
                 {!searched && (
-                    <p className="filters-hint">Airline filters appear here after your search results load.</p>
+                    <p className="filters-hint">Filter options appear here after your search results load.</p>
                 )}
 
                 {availableAirlines.length > 0 && (
-                    <div className="filters-toolbar">
-                        <span className="filters-label">Airlines</span>
-                        <div className="filters-chip-row">
-                            {availableAirlines.map((airline) => (
-                                <button
-                                    key={airline}
-                                    type="button"
-                                    className={`filter-chip ${selectedAirlines.includes(airline) ? "filter-chip-active" : ""}`}
-                                    onClick={() => toggleAirline(airline)}
-                                >
-                                    {airline}
-                                </button>
-                            ))}
-                            {selectedAirlines.length > 0 && (
-                                <button
-                                    type="button"
-                                    className="filter-reset-btn"
-                                    onClick={() => setSelectedAirlines([])}
-                                >
-                                    Clear filters
+                    <div className="filters-panel">
+                        <div className="filters-panel-header">
+                            <span className="filters-panel-title">Filters</span>
+                            {hasActiveFilters && (
+                                <button type="button" className="filter-clear-all-btn" onClick={clearAllFilters}>
+                                    Clear Filters
                                 </button>
                             )}
+                        </div>
+
+                        <div className="filter-section">
+                            <span className="filter-section-label">Price Range ({results[0]?.currency})</span>
+                            <div className="filter-price-inputs">
+                                <input
+                                    type="number"
+                                    placeholder={`Min (${priceBounds.min.toLocaleString()})`}
+                                    className="filter-price-input"
+                                    value={filterPriceMin}
+                                    min={0}
+                                    onChange={(e) => setFilterPriceMin(e.target.value)}
+                                />
+                                <span className="filter-price-sep">—</span>
+                                <input
+                                    type="number"
+                                    placeholder={`Max (${priceBounds.max.toLocaleString()})`}
+                                    className="filter-price-input"
+                                    value={filterPriceMax}
+                                    min={0}
+                                    onChange={(e) => setFilterPriceMax(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="filter-section">
+                            <span className="filter-section-label">Stops</span>
+                            <div className="filters-chip-row">
+                                {(["any", "nonstop", "1", "2+"] as const).map((opt) => (
+                                    <button
+                                        key={opt}
+                                        type="button"
+                                        className={`filter-chip ${filterStops === opt ? "filter-chip-active" : ""}`}
+                                        onClick={() => setFilterStops(opt)}
+                                    >
+                                        {opt === "any" ? "Any" : opt === "nonstop" ? "Nonstop" : opt === "1" ? "1 Stop" : "2+ Stops"}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="filter-section">
+                            <span className="filter-section-label">Airlines</span>
+                            <div className="filters-chip-row">
+                                {availableAirlines.map((airline) => (
+                                    <button
+                                        key={airline}
+                                        type="button"
+                                        className={`filter-chip ${selectedAirlines.includes(airline) ? "filter-chip-active" : ""}`}
+                                        onClick={() => toggleAirline(airline)}
+                                    >
+                                        {airline}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="filter-section">
+                            <span className="filter-section-label">Max Travel Time</span>
+                            <div className="filters-chip-row">
+                                {([null, 360, 600, 900] as (number | null)[]).map((mins) => (
+                                    <button
+                                        key={mins ?? "any"}
+                                        type="button"
+                                        className={`filter-chip ${filterMaxDuration === mins ? "filter-chip-active" : ""}`}
+                                        onClick={() => setFilterMaxDuration(mins)}
+                                    >
+                                        {mins === null ? "Any" : mins === 360 ? "Under 6h" : mins === 600 ? "Under 10h" : "Under 15h"}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -484,7 +578,7 @@ export default function BookingsPage() {
                 )}
 
                 {searched && !loading && !apiError && results.length > 0 && sortedResults.length === 0 && (
-                    <div className="results-placeholder">No flights match the selected airline filters.</div>
+                    <div className="results-placeholder">No flights match your filters. Try adjusting or clearing them.</div>
                 )}
 
                 <div className="flight-results-list">
@@ -563,7 +657,11 @@ export default function BookingsPage() {
                                 <div className="flight-baggage-row">
                                     {flight.baggages.map((bag, bi) => (
                                         <span key={bi} className="baggage-chip">
-                                            {bag.type === "carry_on" ? "🎒" : "🧳"}{" "}
+                                            <img
+                                                src={bag.type === "carry_on" ? "/cabinbag.svg" : "/checkedbag.svg"}
+                                                alt={bag.type === "carry_on" ? "carry-on bag" : "checked bag"}
+                                                className="baggage-chip-icon"
+                                            />
                                             {bag.quantity}x {bag.type === "carry_on" ? "carry-on" : "checked bag"}
                                         </span>
                                     ))}
@@ -754,7 +852,11 @@ export default function BookingsPage() {
                                             {f.baggages.length > 0
                                                 ? f.baggages.map((b, i) => (
                                                     <span key={i} className="baggage-chip">
-                                                        {b.type === "carry_on" ? "🎒" : "🧳"}{" "}
+                                                        <img
+                                                            src={b.type === "carry_on" ? "/cabinbag.svg" : "/checkedbag.svg"}
+                                                            alt={b.type === "carry_on" ? "carry-on bag" : "checked bag"}
+                                                            className="baggage-chip-icon"
+                                                        />
                                                         {b.quantity}x {b.type === "carry_on" ? "carry-on" : "checked"}
                                                     </span>
                                                 ))

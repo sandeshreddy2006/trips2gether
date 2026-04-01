@@ -462,6 +462,49 @@
     background-color: #c9302c;
 }
 
+@media (max-width: 768px) {
+    .group-detail-container {
+        padding: 1.5rem;
+        max-width: 100%;
+    }
+
+    .group-members-section,
+    .group-shortlist-section,
+    .group-invite-section {
+        padding: 1.25rem;
+    }
+
+    .group-edit-actions {
+        flex-direction: column;
+    }
+
+    .group-save-btn,
+    .group-cancel-btn {
+        width: 100%;
+    }
+
+    .group-invite-btn {
+        width: 100%;
+    }
+
+    .group-danger-zone {
+        justify-content: stretch;
+    }
+
+    .group-leave-btn,
+    .group-delete-btn {
+        width: 100%;
+    }
+
+    .group-detail-title-row {
+        flex-wrap: wrap;
+    }
+
+    .group-member-actions {
+        flex-wrap: wrap;
+    }
+}
+
 @media (max-width: 480px) {
     .group-detail-container {
         padding: 1rem;
@@ -474,5 +517,9 @@
     .group-shortlist-card {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .group-shortlist-card>button {
+        align-self: flex-start;
     }
 }
