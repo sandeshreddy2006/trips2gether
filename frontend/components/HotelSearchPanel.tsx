@@ -32,7 +32,12 @@ type HotelSearchResponse = {
     message?: string;
 };
 
-type SortMode = "relevance" | "rating_desc" | "reviews_desc";
+type DisplaySortMode =
+    | "relevance"
+    | "price_low_to_high"
+    | "price_high_to_low"
+    | "rating_high_to_low"
+    | "distance_nearest";
 
 type FormErrors = {
     destination?: string;
@@ -70,7 +75,10 @@ export default function HotelSearchPanel({
     const [checkOut, setCheckOut] = useState(defaultCheckOut());
     const [guests, setGuests] = useState(2);
     const [rooms, setRooms] = useState(1);
-    const [sortBy, setSortBy] = useState<SortMode>("relevance");
+    const [displaySort, setDisplaySort] = useState<DisplaySortMode>("relevance");
+    const [budgetMax, setBudgetMax] = useState(500);
+    const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+    const [selectedHotelTypes, setSelectedHotelTypes] = useState<string[]>([]);
 
     const [errors, setErrors] = useState<FormErrors>({});
     const [hotels, setHotels] = useState<HotelOption[]>([]);
@@ -91,6 +99,120 @@ export default function HotelSearchPanel({
         d.setDate(d.getDate() + 1);
         return d.toISOString().split("T")[0];
     }, [checkIn]);
+
+    const priceValues = useMemo(
+        () => hotels.map((h) => h.price_per_night).filter((p): p is number => typeof p === "number"),
+        [hotels]
+    );
+
+    const absoluteMaxPrice = useMemo(() => {
+        if (priceValues.length === 0) return 500;
+        return Math.ceil(Math.max(...priceValues));
+    }, [priceValues]);
+
+    const availableAmenities = useMemo(() => {
+        const set = new Set<string>();
+        hotels.forEach((hotel) => (hotel.amenities || []).forEach((amenity) => set.add(amenity)));
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [hotels]);
+
+    const availableHotelTypes = useMemo(() => {
+        const set = new Set<string>();
+        hotels.forEach((hotel) => {
+            (hotel.types || []).forEach((type) => {
+                if (["lodging", "hotel", "resort", "inn", "hostel"].includes(type)) {
+                    set.add(type);
+                }
+            });
+        });
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [hotels]);
+
+    const centerPoint = useMemo(() => {
+        const points = hotels.filter(
+            (h) => h.location?.lat != null && h.location?.lng != null
+        );
+        if (points.length === 0) return null;
+        const lat = points.reduce((sum, h) => sum + (h.location?.lat || 0), 0) / points.length;
+        const lng = points.reduce((sum, h) => sum + (h.location?.lng || 0), 0) / points.length;
+        return { lat, lng };
+    }, [hotels]);
+
+    const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+        const R = 6371;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLng = ((lng2 - lng1) * Math.PI) / 180;
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((lat1 * Math.PI) / 180) *
+                Math.cos((lat2 * Math.PI) / 180) *
+                Math.sin(dLng / 2) *
+                Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    };
+
+    const visibleHotels = useMemo(() => {
+        let list = hotels.filter((hotel) => {
+            const perNight = hotel.price_per_night;
+            if (typeof perNight === "number" && perNight > budgetMax) {
+                return false;
+            }
+
+            if (selectedAmenities.length > 0) {
+                const hotelAmenities = hotel.amenities || [];
+                const hasAll = selectedAmenities.every((amenity) => hotelAmenities.includes(amenity));
+                if (!hasAll) return false;
+            }
+
+            if (selectedHotelTypes.length > 0) {
+                const hotelTypes = hotel.types || [];
+                const hasAnyType = selectedHotelTypes.some((type) => hotelTypes.includes(type));
+                if (!hasAnyType) return false;
+            }
+
+            return true;
+        });
+
+        const withDistance = list.map((hotel) => {
+            if (!centerPoint || hotel.location?.lat == null || hotel.location?.lng == null) {
+                return { ...hotel, distance_km: null as number | null };
+            }
+            return {
+                ...hotel,
+                distance_km: haversineKm(centerPoint.lat, centerPoint.lng, hotel.location.lat, hotel.location.lng),
+            };
+        });
+
+        if (displaySort === "price_low_to_high") {
+            withDistance.sort((a, b) => (a.price_per_night || Number.MAX_SAFE_INTEGER) - (b.price_per_night || Number.MAX_SAFE_INTEGER));
+        } else if (displaySort === "price_high_to_low") {
+            withDistance.sort((a, b) => (b.price_per_night || 0) - (a.price_per_night || 0));
+        } else if (displaySort === "rating_high_to_low") {
+            withDistance.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        } else if (displaySort === "distance_nearest") {
+            withDistance.sort((a, b) => {
+                const ad = typeof a.distance_km === "number" ? a.distance_km : Number.MAX_SAFE_INTEGER;
+                const bd = typeof b.distance_km === "number" ? b.distance_km : Number.MAX_SAFE_INTEGER;
+                return ad - bd;
+            });
+        }
+
+        return withDistance;
+    }, [hotels, budgetMax, selectedAmenities, selectedHotelTypes, displaySort, centerPoint]);
+
+    useEffect(() => {
+        setBudgetMax(absoluteMaxPrice);
+        setSelectedAmenities([]);
+        setSelectedHotelTypes([]);
+        setDisplaySort("relevance");
+    }, [absoluteMaxPrice]);
+
+    useEffect(() => {
+        if (selectedHotel && !visibleHotels.some((h) => h.place_id === selectedHotel.place_id)) {
+            setSelectedHotel(null);
+        }
+    }, [visibleHotels, selectedHotel]);
 
     const validate = (): FormErrors => {
         const nextErrors: FormErrors = {};
@@ -159,7 +281,7 @@ export default function HotelSearchPanel({
                     check_out: checkOut,
                     guests,
                     rooms,
-                    sort_by: sortBy,
+                    sort_by: "relevance",
                 }),
             });
 
@@ -206,6 +328,31 @@ export default function HotelSearchPanel({
     };
 
     const closeModal = () => setSelectedHotel(null);
+
+    const toggleAmenity = (amenity: string) => {
+        setSelectedAmenities((prev) =>
+            prev.includes(amenity) ? prev.filter((a) => a !== amenity) : [...prev, amenity]
+        );
+    };
+
+    const toggleHotelType = (hotelType: string) => {
+        setSelectedHotelTypes((prev) =>
+            prev.includes(hotelType) ? prev.filter((t) => t !== hotelType) : [...prev, hotelType]
+        );
+    };
+
+    const clearFilters = () => {
+        setBudgetMax(absoluteMaxPrice);
+        setSelectedAmenities([]);
+        setSelectedHotelTypes([]);
+        setDisplaySort("relevance");
+    };
+
+    const formatTypeLabel = (value: string) =>
+        value
+            .split("_")
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
 
     return (
         <section className="hotel-search-shell">
@@ -277,19 +424,6 @@ export default function HotelSearchPanel({
                     {errors.rooms && <span className="hotel-field-error">{errors.rooms}</span>}
                 </div>
 
-                <div className="hotel-field">
-                    <label htmlFor="hotel-sort">Sort by</label>
-                    <select
-                        id="hotel-sort"
-                        value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value as SortMode)}
-                    >
-                        <option value="relevance">Relevance</option>
-                        <option value="rating_desc">Highest Rating</option>
-                        <option value="reviews_desc">Most Reviewed</option>
-                    </select>
-                </div>
-
                 <button type="submit" className="hotel-submit-btn" disabled={loading}>
                     {loading ? "Searching..." : "Search Hotels"}
                 </button>
@@ -302,8 +436,86 @@ export default function HotelSearchPanel({
             )}
 
             {hotels.length > 0 && (
+                <div className="hotel-filter-panel">
+                    <div className="hotel-filter-item hotel-budget-filter">
+                        <label htmlFor="hotel-budget">
+                            Max Budget Per Night: <strong>{currencyFormatter(budgetMax, "USD")}</strong>
+                        </label>
+                        <input
+                            id="hotel-budget"
+                            type="range"
+                            min={0}
+                            max={absoluteMaxPrice}
+                            value={budgetMax}
+                            onChange={(e) => setBudgetMax(Number(e.target.value))}
+                        />
+                    </div>
+
+                    <div className="hotel-filter-item">
+                        <label htmlFor="hotel-display-sort">Sort</label>
+                        <select
+                            id="hotel-display-sort"
+                            value={displaySort}
+                            onChange={(e) => setDisplaySort(e.target.value as DisplaySortMode)}
+                        >
+                            <option value="relevance">Relevance</option>
+                            <option value="price_low_to_high">Price: Low to High</option>
+                            <option value="price_high_to_low">Price: High to Low</option>
+                            <option value="rating_high_to_low">Rating: High to Low</option>
+                            <option value="distance_nearest">Distance: Nearest First</option>
+                        </select>
+                    </div>
+
+                    {availableHotelTypes.length > 0 && (
+                        <div className="hotel-filter-item hotel-checkbox-filter">
+                            <p>Hotel Type</p>
+                            <div className="hotel-checkbox-grid">
+                                {availableHotelTypes.map((hotelType) => (
+                                    <label key={hotelType} className="hotel-checkbox-label">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedHotelTypes.includes(hotelType)}
+                                            onChange={() => toggleHotelType(hotelType)}
+                                        />
+                                        {formatTypeLabel(hotelType)}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {availableAmenities.length > 0 && (
+                        <div className="hotel-filter-item hotel-checkbox-filter">
+                            <p>Amenities (must include all selected)</p>
+                            <div className="hotel-checkbox-grid">
+                                {availableAmenities.map((amenity) => (
+                                    <label key={amenity} className="hotel-checkbox-label">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedAmenities.includes(amenity)}
+                                            onChange={() => toggleAmenity(amenity)}
+                                        />
+                                        {amenity}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {hotels.length > 0 && visibleHotels.length === 0 && !loading && (
+                <div className="hotel-filter-empty">
+                    <p>No hotels match your current filters.</p>
+                    <button type="button" className="hotel-clear-btn" onClick={clearFilters}>
+                        Clear Filters
+                    </button>
+                </div>
+            )}
+
+            {visibleHotels.length > 0 && (
                 <div className="hotel-results-grid">
-                    {hotels.map((hotel) => {
+                    {visibleHotels.map((hotel) => {
                         return (
                             <article
                                 className="hotel-card"
@@ -325,6 +537,7 @@ export default function HotelSearchPanel({
                                     <div className="hotel-card-meta">
                                         <span>{hotel.rating ? `⭐ ${hotel.rating.toFixed(1)}` : "No rating"}</span>
                                         <span>{hotel.user_ratings_total ? `${hotel.user_ratings_total.toLocaleString()} reviews` : "No reviews"}</span>
+                                        {typeof hotel.distance_km === "number" && <span>{hotel.distance_km.toFixed(1)} km from center</span>}
                                     </div>
                                     <div className="hotel-price-block">
                                         <div className="hotel-per-night-line">
