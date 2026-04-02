@@ -42,6 +42,8 @@ from .schemas import (
     FlightSearchResponse,
     DestinationSearchResponse,
     DestinationDetailOut,
+    HotelSearchIn,
+    HotelSearchResponse,
     NearbyRestaurantsResponse,
     RestaurantDetailOut,
     FaceEncodingIn,
@@ -2198,6 +2200,33 @@ async def upload_avatar(file: UploadFile = File(...), request: Request = None, d
 # -------------------------
 # Destination Search Endpoints
 # -------------------------
+
+@app.post("/hotels/search", response_model=HotelSearchResponse)
+def search_hotels(body: HotelSearchIn):
+    """Search for hotel options by destination, dates, guests, and rooms."""
+    try:
+        places_service = get_places_service()
+        result = places_service.search_hotels(
+            destination=body.destination,
+            check_in=body.check_in.isoformat(),
+            check_out=body.check_out.isoformat(),
+            guests=body.guests,
+            rooms=body.rooms,
+            sort_by=body.sort_by,
+        )
+
+        if result["status"] == "unavailable":
+            raise HTTPException(status_code=503, detail="Service unavailable")
+
+        if result["status"] == "error":
+            raise HTTPException(status_code=502, detail=result.get("message", "Hotel search failed"))
+
+        return HotelSearchResponse(**result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected hotel search error: {str(e)}")
 
 @app.get("/destinations/search", response_model=DestinationSearchResponse)
 def search_destinations(query: str = "", db: Session = Depends(get_db)):
