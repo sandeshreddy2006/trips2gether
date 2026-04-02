@@ -56,6 +56,18 @@ type Booking = {
     created_at: string;
 };
 
+type ArchivedTripHistory = {
+    id: number;
+    group_id: number;
+    group_name: string;
+    title: string;
+    description: string | null;
+    shared_notes: string | null;
+    starts_at: string | null;
+    ends_at: string | null;
+    archived_at: string | null;
+};
+
 // Helper function to get the image URL (using proxy for Safari compatibility)
 const getImageUrl = (destination: Destination | null): string => {
     if (!destination) return '/trip-marseille.jpg';
@@ -89,6 +101,7 @@ export default function Dashboard() {
     const [trendingError, setTrendingError] = useState<string | null>(null);
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loadingBookings, setLoadingBookings] = useState(true);
+    const [archivedHistory, setArchivedHistory] = useState<ArchivedTripHistory[]>([]);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [selectedTripSection, setSelectedTripSection] = useState<TripSection>("upcoming");
 
@@ -110,6 +123,11 @@ export default function Dashboard() {
             .then((res) => (res.ok ? res.json() : { groups: [] }))
             .then((data) => setGroups(data.groups || []))
             .catch(() => { });
+
+        fetch("/api/itinerary/history", { credentials: "include" })
+            .then((res) => (res.ok ? res.json() : { items: [] }))
+            .then((data) => setArchivedHistory(Array.isArray(data.items) ? data.items : []))
+            .catch(() => { setArchivedHistory([]); });
     }, []);
 
     useEffect(() => {
@@ -215,6 +233,8 @@ export default function Dashboard() {
             return endAt < now;
         });
     }, [groups, now]);
+
+    const previousTripCount = previousTrips.length + archivedHistory.length;
 
     const visibleTrips = selectedTripSection === "upcoming"
         ? upcomingTrips
@@ -325,7 +345,7 @@ export default function Dashboard() {
                             className={`trip-section-tab ${selectedTripSection === "previous" ? "active" : ""}`}
                             onClick={() => setSelectedTripSection("previous")}
                         >
-                            Previous Trips ({previousTrips.length})
+                            Previous Trips ({previousTripCount})
                         </button>
                     </div>
 
@@ -333,7 +353,7 @@ export default function Dashboard() {
                         <div className="trip-section-empty">
                             {selectedTripSection === "upcoming" && "No upcoming trips yet. Finalize an itinerary to move it here."}
                             {selectedTripSection === "active" && "No active trips right now."}
-                            {selectedTripSection === "previous" && "No previous trips yet."}
+                            {selectedTripSection === "previous" && previousTripCount === 0 && "No previous trips yet."}
                         </div>
                     ) : (
                         <div className="active-groups-section" id="active-groups-section">
@@ -377,6 +397,45 @@ export default function Dashboard() {
                                             }}
                                         >
                                             Open Itinerary
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {selectedTripSection === "previous" && archivedHistory.length > 0 && (
+                        <div className="active-groups-section">
+                            <h3 className="active-groups-title">Archived Trip History</h3>
+                            <div className="active-groups-grid">
+                                {archivedHistory.map((historyItem) => (
+                                    <div
+                                        key={`history-${historyItem.id}`}
+                                        className="active-group-card"
+                                        onClick={() => router.push(`/group/${historyItem.group_id}/itinerary?historyId=${historyItem.id}`)}
+                                        style={{ cursor: "pointer" }}
+                                    >
+                                        <div className="active-group-info">
+                                            <h4 className="active-group-name">{historyItem.title}</h4>
+                                            <p className="active-group-desc">{historyItem.group_name}</p>
+                                            {historyItem.description && <p className="active-group-desc">{historyItem.description}</p>}
+                                        </div>
+                                        <div className="active-group-meta">
+                                            <span className="active-group-status status-archived">archived</span>
+                                            {historyItem.starts_at && historyItem.ends_at && (
+                                                <span className="active-group-dates">
+                                                    {new Date(historyItem.starts_at).toLocaleDateString()} - {new Date(historyItem.ends_at).toLocaleDateString()}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <button
+                                            className="group-plan-btn"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                router.push(`/group/${historyItem.group_id}/itinerary?historyId=${historyItem.id}`);
+                                            }}
+                                        >
+                                            View Group Itinerary
                                         </button>
                                     </div>
                                 ))}

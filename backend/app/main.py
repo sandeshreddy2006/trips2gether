@@ -126,6 +126,20 @@ def _ensure_trip_plan_shared_notes_column() -> None:
 _ensure_trip_plan_shared_notes_column()
 
 
+def _ensure_trip_plan_history_table() -> None:
+    inspector = inspect(engine)
+    try:
+        has_table = inspector.has_table("trip_plan_history")
+    except Exception:
+        return
+
+    if not has_table:
+        models.TripPlanHistory.__table__.create(bind=engine, checkfirst=True)
+
+
+_ensure_trip_plan_history_table()
+
+
 app = FastAPI(title="trips2gether API")
 
 # Initialize scheduler for cleanup tasks
@@ -283,6 +297,36 @@ def _get_or_create_trip_plan(group: models.Group, db: Session) -> models.TripPla
     db.commit()
     db.refresh(plan)
     return plan
+
+
+def _assert_itinerary_mutable(group: models.Group) -> None:
+    if group.status in ("active", "archived"):
+        raise HTTPException(
+            status_code=400,
+            detail="Itinerary is finalized for this trip state. Only shared notes can be edited.",
+        )
+
+
+def _snapshot_trip_plan_history(
+    group: models.Group,
+    plan: models.TripPlan,
+    items: list[models.ItineraryItem],
+    db: Session,
+) -> None:
+    starts_at = items[0].start_at if items else None
+    ends_at = max((item.end_at or item.start_at) for item in items) if items else None
+    serialized_items = [serialize_itinerary_item(item).model_dump(mode="json") for item in items]
+
+    history = models.TripPlanHistory(
+        group_id=group.id,
+        title=plan.title,
+        description=plan.description,
+        shared_notes=plan.shared_notes,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        items_json=json.dumps(serialized_items),
+    )
+    db.add(history)
 
 
 # -------------------------
@@ -1569,6 +1613,11 @@ def update_group_trip_state(
     if target_state != current_state and target_state not in allowed.get(current_state, set()):
         raise HTTPException(status_code=400, detail=f"Cannot transition trip from {current_state} to {target_state}")
 
+    if target_state == "archived" and current_state != "archived":
+        plan = _get_or_create_trip_plan(group, db)
+        items = _get_itinerary_items(plan.id, db)
+        _snapshot_trip_plan_history(group, plan, items, db)
+
     group.status = target_state
     db.commit()
     db.refresh(group)
@@ -2140,6 +2189,7 @@ def create_or_update_itinerary_plan(
     """Create or update the trip plan metadata for a group."""
     current_user = get_current_user_info(request, db)
     group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
 
     plan = _get_or_create_trip_plan(group, db)
 
@@ -2179,6 +2229,7 @@ def add_itinerary_item(
     """Add a timeline item to a group's itinerary."""
     current_user = get_current_user_info(request, db)
     group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
 
     if body.end_at is not None and body.end_at < body.start_at:
         raise HTTPException(status_code=400, detail="End time cannot be before start time")
@@ -2248,6 +2299,7 @@ def update_itinerary_item(
     """Update a single itinerary item."""
     current_user = get_current_user_info(request, db)
     group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
     plan = _get_or_create_trip_plan(group, db)
 
     item = (
@@ -2310,6 +2362,7 @@ def delete_itinerary_item(
     """Delete an itinerary item and renumber the remaining sequence."""
     current_user = get_current_user_info(request, db)
     group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
     plan = _get_or_create_trip_plan(group, db)
 
     item = (
@@ -2343,6 +2396,7 @@ def reorder_itinerary_items(
     """Persist a reordered itinerary sequence."""
     current_user = get_current_user_info(request, db)
     group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
     plan = _get_or_create_trip_plan(group, db)
 
     items = (
@@ -2362,6 +2416,148 @@ def reorder_itinerary_items(
     payload = _build_itinerary_payload(group, plan, db)
     payload["message"] = "Itinerary order updated"
     return payload
+
+
+@app.post("/groups/{group_id}/itinerary/new-trip", response_model=dict)
+def start_new_trip_from_archived_itinerary(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Archive the current trip snapshot and reset itinerary for a fresh planning cycle."""
+    current_user = get_current_user_info(request, db)
+    group, membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    if membership.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Only group owners or admins can start a new trip")
+
+    if group.status != "archived":
+        raise HTTPException(status_code=400, detail="A new trip can only be started from an archived trip")
+
+    plan = _get_or_create_trip_plan(group, db)
+    items = _get_itinerary_items(plan.id, db)
+
+    existing_history_count = (
+        db.query(func.count(models.TripPlanHistory.id))
+        .filter(models.TripPlanHistory.group_id == group.id)
+        .scalar()
+        or 0
+    )
+    if existing_history_count == 0 and items:
+        _snapshot_trip_plan_history(group, plan, items, db)
+
+    for item in items:
+        db.delete(item)
+
+    plan.shared_notes = None
+    plan.description = f"Chronological plan for {group.name}"
+    plan.title = f"{group.name} Itinerary"
+    group.status = "planning"
+
+    db.commit()
+    db.refresh(plan)
+    db.refresh(group)
+
+    payload = _build_itinerary_payload(group, plan, db)
+    payload["message"] = "Started a fresh trip itinerary"
+    return payload
+
+
+@app.get("/itinerary/history", response_model=dict)
+def list_my_archived_itinerary_history(request: Request, db: Session = Depends(get_db)):
+    """List archived itinerary snapshots for all groups the current user belongs to."""
+    current_user = get_current_user_info(request, db)
+
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+    if not memberships:
+        return {"items": []}
+
+    group_ids = [membership.group_id for membership in memberships]
+    group_by_id = {
+        group.id: group
+        for group in db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    }
+
+    history_items = (
+        db.query(models.TripPlanHistory)
+        .filter(models.TripPlanHistory.group_id.in_(group_ids))
+        .order_by(models.TripPlanHistory.archived_at.desc())
+        .all()
+    )
+
+    results = []
+    for item in history_items:
+        group = group_by_id.get(item.group_id)
+        results.append({
+            "id": item.id,
+            "group_id": item.group_id,
+            "group_name": group.name if group else "Trip Group",
+            "title": item.title,
+            "description": item.description,
+            "shared_notes": item.shared_notes,
+            "starts_at": item.starts_at.isoformat() if item.starts_at else None,
+            "ends_at": item.ends_at.isoformat() if item.ends_at else None,
+            "archived_at": item.archived_at.isoformat() if item.archived_at else None,
+        })
+
+    return {"items": results}
+
+
+@app.get("/itinerary/history/{history_id}", response_model=dict)
+def get_archived_itinerary_history(history_id: int, request: Request, db: Session = Depends(get_db)):
+    """Get one archived itinerary snapshot by id for a member of the owning group."""
+    current_user = get_current_user_info(request, db)
+
+    history_item = db.get(models.TripPlanHistory, history_id)
+    if not history_item:
+        raise HTTPException(status_code=404, detail="Archived itinerary not found")
+
+    membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == history_item.group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, history_item.group_id)
+
+    parsed_items = []
+    try:
+        parsed = json.loads(history_item.items_json or "[]")
+        if isinstance(parsed, list):
+            parsed_items = parsed
+    except Exception:
+        parsed_items = []
+
+    return {
+        "ok": True,
+        "history_id": history_item.id,
+        "group_id": history_item.group_id,
+        "group_name": group.name if group else "Trip Group",
+        "group_status": "archived",
+        "trip_plan": {
+            "id": -history_item.id,
+            "group_id": history_item.group_id,
+            "title": history_item.title,
+            "description": history_item.description,
+            "created_at": history_item.archived_at,
+            "updated_at": history_item.archived_at,
+            "item_count": len(parsed_items),
+            "shared_notes": history_item.shared_notes,
+            "starts_at": history_item.starts_at,
+            "ends_at": history_item.ends_at,
+        },
+        "items": parsed_items,
+        "is_empty": len(parsed_items) == 0,
+    }
 
 
 # Profile Endpoints
