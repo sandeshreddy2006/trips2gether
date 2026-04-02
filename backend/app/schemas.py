@@ -192,6 +192,48 @@ class GroupShortlistFlightListOut(BaseModel):
     items: list[GroupShortlistFlightItemOut]
 
 
+class GroupShortlistHotelCreateIn(BaseModel):
+    place_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    address: str | None = None
+    photo_url: str | None = None
+    photo_reference: str | None = None
+    rating: float | None = None
+    price_level: str | None = None
+    currency: str = "USD"
+    price_per_night: float | None = None
+    total_price: float | None = None
+    nights: int | None = Field(default=None, ge=1)
+    types: list[str] = Field(default_factory=list)
+    amenities: list[str] = Field(default_factory=list)
+    booking_url: str | None = None
+
+
+class GroupShortlistHotelItemOut(BaseModel):
+    id: int
+    group_id: int
+    place_id: str
+    name: str
+    address: str | None = None
+    photo_url: str | None = None
+    photo_reference: str | None = None
+    rating: float | None = None
+    price_level: str | None = None
+    currency: str
+    price_per_night: float | None = None
+    total_price: float | None = None
+    nights: int | None = None
+    types: list[str] = []
+    amenities: list[str] = []
+    booking_url: str | None = None
+    added_by: int
+    created_at: datetime
+
+
+class GroupShortlistHotelListOut(BaseModel):
+    items: list[GroupShortlistHotelItemOut]
+
+
 class ProfileOut(BaseModel):
     id: int
     user_id: int
