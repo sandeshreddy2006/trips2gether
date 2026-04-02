@@ -350,6 +350,26 @@
     color: #132e24;
 }
 
+.timeline-segment-badge {
+    margin: 0 0 0.45rem;
+    display: inline-flex;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #2a6f54;
+    background: rgba(46, 107, 85, 0.12);
+}
+
+.timeline-range-label {
+    margin: 0.3rem 0 0;
+    color: #4d6459;
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+
 .timeline-location {
     margin: 0.45rem 0 0;
     color: #4d6459;

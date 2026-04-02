@@ -56,6 +56,15 @@ type FormState = {
     sourceReference: string;
 };
 
+type TimelineSegment = "single" | "start" | "middle" | "end";
+
+type TimelineEntry = {
+    dayKey: string;
+    sortAt: number;
+    segment: TimelineSegment;
+    item: ItineraryItem;
+};
+
 const ITEM_LABELS: Record<ItineraryItem["item_type"], string> = {
     flight: "Flight",
     accommodation: "Stay",
@@ -104,6 +113,142 @@ function formatTimeLabel(item: ItineraryItem): string {
     return `${startLabel} - ${endLabel}`;
 }
 
+function formatTimeValue(date: Date): string {
+    return new Intl.DateTimeFormat("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+    }).format(date);
+}
+
+function formatDateTimeValue(date: Date): string {
+    return new Intl.DateTimeFormat("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    }).format(date);
+}
+
+function isSameDay(start: Date, end: Date): boolean {
+    return (
+        start.getFullYear() === end.getFullYear()
+        && start.getMonth() === end.getMonth()
+        && start.getDate() === end.getDate()
+    );
+}
+
+function getStartOfDay(date: Date): Date {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number): Date {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+}
+
+function getItemRangeLabel(item: ItineraryItem): string {
+    const start = new Date(item.start_at);
+    const end = item.end_at ? new Date(item.end_at) : null;
+
+    if (Number.isNaN(start.getTime())) {
+        return item.display_time;
+    }
+    if (!end || Number.isNaN(end.getTime())) {
+        return formatDateTimeValue(start);
+    }
+    if (isSameDay(start, end)) {
+        return `${formatDateTimeValue(start)} - ${formatTimeValue(end)}`;
+    }
+
+    return `${formatDateTimeValue(start)} -> ${formatDateTimeValue(end)}`;
+}
+
+function getSegmentTimeLabel(entry: TimelineEntry): string {
+    const start = new Date(entry.item.start_at);
+    const end = entry.item.end_at ? new Date(entry.item.end_at) : null;
+
+    if (Number.isNaN(start.getTime())) {
+        return entry.item.display_time;
+    }
+
+    if (entry.segment === "single") {
+        return formatTimeLabel(entry.item);
+    }
+    if (entry.segment === "start") {
+        return `Starts ${formatTimeValue(start)}`;
+    }
+    if (entry.segment === "middle") {
+        return "Continues all day";
+    }
+    if (end && !Number.isNaN(end.getTime())) {
+        return `Ends ${formatTimeValue(end)}`;
+    }
+    return "Ends";
+}
+
+function getSegmentBadge(entry: TimelineEntry): string | null {
+    if (entry.segment === "single") return null;
+    if (entry.segment === "start") return "Day 1";
+    if (entry.segment === "middle") return "Continues";
+    return "Final day";
+}
+
+function expandTimelineEntries(item: ItineraryItem): TimelineEntry[] {
+    const start = new Date(item.start_at);
+    const end = item.end_at ? new Date(item.end_at) : null;
+
+    if (Number.isNaN(start.getTime())) {
+        return [{
+            dayKey: parseDateKey(item.start_at),
+            sortAt: new Date(item.created_at).getTime() || 0,
+            segment: "single",
+            item,
+        }];
+    }
+
+    if (!end || Number.isNaN(end.getTime()) || end <= start || isSameDay(start, end)) {
+        return [{
+            dayKey: parseDateKey(item.start_at),
+            sortAt: start.getTime(),
+            segment: "single",
+            item,
+        }];
+    }
+
+    const entries: TimelineEntry[] = [];
+    const startDay = getStartOfDay(start);
+    const endDay = getStartOfDay(end);
+
+    let current = startDay;
+    let index = 0;
+    while (current <= endDay) {
+        const dayKey = parseDateKey(current.toISOString());
+        const isStart = index === 0;
+        const isEnd = isSameDay(current, endDay);
+
+        let segment: TimelineSegment = "middle";
+        let sortAt = current.getTime();
+
+        if (isStart) {
+            segment = "start";
+            sortAt = start.getTime();
+        } else if (isEnd) {
+            segment = "end";
+            sortAt = end.getTime();
+        } else {
+            sortAt = current.getTime() + (12 * 60 * 60 * 1000);
+        }
+
+        entries.push({ dayKey, sortAt, segment, item });
+        current = addDays(current, 1);
+        index += 1;
+    }
+
+    return entries;
+}
+
 function parseDateKey(value: string): string {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value.slice(0, 10);
@@ -139,15 +284,26 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     const emptyState = !loading && items.length === 0;
 
     const groupedItems = useMemo(() => {
-        const groups = new Map<string, ItineraryItem[]>();
+        const groups = new Map<string, TimelineEntry[]>();
         for (const item of items) {
-            const key = parseDateKey(item.start_at);
-            if (!groups.has(key)) {
-                groups.set(key, []);
+            const entries = expandTimelineEntries(item);
+            for (const entry of entries) {
+                if (!groups.has(entry.dayKey)) {
+                    groups.set(entry.dayKey, []);
+                }
+                groups.get(entry.dayKey)!.push(entry);
             }
-            groups.get(key)!.push(item);
         }
-        return Array.from(groups.entries());
+
+        return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([dayKey, entries]) => {
+            const sorted = entries.sort((first, second) => {
+                if (first.sortAt === second.sortAt) {
+                    return new Date(first.item.created_at).getTime() - new Date(second.item.created_at).getTime();
+                }
+                return first.sortAt - second.sortAt;
+            });
+            return [dayKey, sorted] as [string, TimelineEntry[]];
+        });
     }, [items]);
 
     const refreshItinerary = async () => {
@@ -443,29 +599,40 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                         <div className="timeline-root">
                             {groupedItems.map(([dayKey, dayItems]) => (
                                 <section key={dayKey} className="timeline-day-section">
-                                    <div className="timeline-day-label">{formatTimelineKey(dayItems[0].start_at)}</div>
+                                    <div className="timeline-day-label">{formatTimelineKey(dayKey)}</div>
                                     <div className="timeline-day-line">
-                                        {dayItems.map((item) => (
-                                            <article key={item.id} className="timeline-card">
+                                        {dayItems.map((entry) => {
+                                            const { item } = entry;
+                                            const rangeLabel = getItemRangeLabel(item);
+                                            const segmentBadge = getSegmentBadge(entry);
+                                            const normalizedDisplayLocation = (item.display_location || "").toLowerCase();
+                                            const normalizedAddress = (item.location_address || "").toLowerCase();
+                                            const showAddress = Boolean(item.location_address) && !normalizedDisplayLocation.includes(normalizedAddress);
+
+                                            return (
+                                            <article key={`${item.id}-${dayKey}-${entry.segment}`} className="timeline-card">
                                                 <div className="timeline-marker">
                                                     <span>{ITEM_ICONS[item.item_type]}</span>
                                                 </div>
                                                 <div className="timeline-card-body">
                                                     <div className="timeline-card-topline">
                                                         <span className="timeline-type">{ITEM_LABELS[item.item_type]}</span>
-                                                        <span className="timeline-time">{formatTimeLabel(item)}</span>
+                                                        <span className="timeline-time">{getSegmentTimeLabel(entry)}</span>
                                                     </div>
+                                                    {segmentBadge && <p className="timeline-segment-badge">{segmentBadge}</p>}
                                                     <h3>{item.title}</h3>
+                                                    <p className="timeline-range-label">{rangeLabel}</p>
                                                     <p className="timeline-location">{item.display_location}</p>
-                                                    {(item.location_address || item.notes) && (
+                                                    {(showAddress || item.notes) && (
                                                         <div className="timeline-meta-block">
-                                                            {item.location_address && <p>{item.location_address}</p>}
+                                                            {showAddress && <p>{item.location_address}</p>}
                                                             {item.notes && <p>{item.notes}</p>}
                                                         </div>
                                                     )}
                                                 </div>
                                             </article>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </section>
                             ))}
