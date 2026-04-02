@@ -27,6 +27,13 @@ class GooglePlacesService:
     """
     
     BASE_URL = "https://places.googleapis.com/v1"
+    _PRICE_LEVEL_MAP = {
+        "PRICE_LEVEL_FREE": "Free", #lowkey this will never be used
+        "PRICE_LEVEL_INEXPENSIVE": "$",
+        "PRICE_LEVEL_MODERATE": "$$",
+        "PRICE_LEVEL_EXPENSIVE": "$$$",
+        "PRICE_LEVEL_VERY_EXPENSIVE": "$$$$",
+    }
     
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_PLACES_API")
@@ -162,6 +169,201 @@ class GooglePlacesService:
                 "message": f"Unexpected error: {str(e)}",
                 "results": []
             }
+
+    def search_hotels(
+        self,
+        destination: str,
+        check_in: str,
+        check_out: str,
+        guests: int,
+        rooms: int,
+        sort_by: str = "relevance",
+    ) -> Dict[str, Any]:
+        """Search hotels in a destination and return normalized hotel options."""
+        cache_key = (
+            f"hotel_search_{destination.lower()}_{check_in}_{check_out}_"
+            f"{guests}_{rooms}_{sort_by}"
+        )
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return {
+                "status": "success",
+                "results": cached,
+                "cached": True,
+                "message": "Results loaded from cache",
+            }
+
+        if not self.api_key:
+            return self._get_dummy_hotels(destination, sort_by)
+
+        try:
+            url = f"{self.BASE_URL}/places:searchText"
+            headers = {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": self.api_key,
+                "X-Goog-FieldMask": (
+                    "places.id,places.displayName,places.formattedAddress,"
+                    "places.rating,places.userRatingCount,places.location,"
+                    "places.photos,places.types,places.businessStatus,"
+                    "places.priceLevel,places.websiteUri,places.googleMapsUri"
+                ),
+            }
+            payload = {
+                "textQuery": f"hotels in {destination}",
+                "maxResultCount": 20,
+                "languageCode": "en",
+            }
+
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            if "error" in data:
+                error_msg = data["error"].get("message", "Unknown error from Google Places API")
+                return {
+                    "status": "error",
+                    "message": f"Google Places API error: {error_msg}",
+                    "results": [],
+                }
+
+            places = data.get("places", [])
+            hotels = self._format_hotels(places)
+            hotels = self._sort_hotels(hotels, sort_by)
+            self._save_to_cache(cache_key, hotels)
+
+            return {
+                "status": "success",
+                "results": hotels,
+                "cached": False,
+                "message": "No hotels found" if not hotels else None,
+            }
+
+        except requests.exceptions.Timeout:
+            print("[ERROR] Hotel search timed out")
+            return {
+                "status": "unavailable",
+                "message": "Service unavailable. Hotel provider timed out.",
+                "results": [],
+            }
+        except requests.exceptions.RequestException as e:
+            print(f"[ERROR] Hotel search failed: {e}")
+            return {
+                "status": "unavailable",
+                "message": "Service unavailable. Could not reach hotel provider.",
+                "results": [],
+            }
+        except Exception as e:
+            print(f"[ERROR] Unexpected error in search_hotels: {e}")
+            return {
+                "status": "error",
+                "message": f"Unexpected error: {e}",
+                "results": [],
+            }
+
+    def _format_hotels(self, places: List[Dict]) -> List[Dict]:
+        """Normalize Google Places text search results into hotel options."""
+        hotels: List[Dict] = []
+        for place in places:
+            types = place.get("types", [])
+            if "lodging" not in types and "hotel" not in types:
+                # Keep the response focused on accommodation options only.
+                continue
+
+            photo_url = None
+            photo_reference = None
+            if place.get("photos"):
+                ref = place["photos"][0].get("name")
+                if ref:
+                    photo_reference = ref
+                    photo_url = self.get_photo_url(ref, width=800, height=600)
+
+            lat = place.get("location", {}).get("latitude")
+            lng = place.get("location", {}).get("longitude")
+
+            hotels.append(
+                {
+                    "place_id": place.get("id", ""),
+                    "name": place.get("displayName", {}).get("text", ""),
+                    "address": place.get("formattedAddress"),
+                    "rating": place.get("rating"),
+                    "user_ratings_total": place.get("userRatingCount"),
+                    "price_level": self._PRICE_LEVEL_MAP.get(place.get("priceLevel")),
+                    "types": types,
+                    "photo_url": photo_url,
+                    "photo_reference": photo_reference,
+                    "location": {"lat": lat, "lng": lng},
+                    "business_status": place.get("businessStatus"),
+                    "website": place.get("websiteUri"),
+                    "google_maps_url": place.get("googleMapsUri"),
+                }
+            )
+        return hotels
+
+    @staticmethod
+    def _sort_hotels(hotels: List[Dict], sort_by: str) -> List[Dict]:
+        if sort_by == "rating_desc":
+            return sorted(hotels, key=lambda h: (h.get("rating") or 0, h.get("user_ratings_total") or 0), reverse=True)
+        if sort_by == "reviews_desc":
+            return sorted(hotels, key=lambda h: h.get("user_ratings_total") or 0, reverse=True)
+        return hotels
+
+    def _get_dummy_hotels(self, destination: str, sort_by: str) -> Dict[str, Any]:
+        """Return deterministic dummy hotels for local development."""
+        city = destination.strip().title() or "Destination"
+        dummy_hotels = [
+            {
+                "place_id": f"dummy_hotel_{city.lower()}_1",
+                "name": f"{city} Grand Hotel",
+                "address": f"12 Central Ave, {city}",
+                "rating": 4.6,
+                "user_ratings_total": 2140,
+                "price_level": "$$$",
+                "types": ["lodging", "hotel"],
+                "photo_url": "https://via.placeholder.com/800x600?text=Hotel+1",
+                "photo_reference": None,
+                "location": {"lat": 40.7128, "lng": -74.0060},
+                "business_status": "OPERATIONAL",
+                "website": None,
+                "google_maps_url": None,
+            },
+            {
+                "place_id": f"dummy_hotel_{city.lower()}_2",
+                "name": f"{city} Riverside Inn",
+                "address": f"88 River Walk, {city}",
+                "rating": 4.3,
+                "user_ratings_total": 980,
+                "price_level": "$$",
+                "types": ["lodging", "inn"],
+                "photo_url": "https://via.placeholder.com/800x600?text=Hotel+2",
+                "photo_reference": None,
+                "location": {"lat": 40.7210, "lng": -74.0019},
+                "business_status": "OPERATIONAL",
+                "website": None,
+                "google_maps_url": None,
+            },
+            {
+                "place_id": f"dummy_hotel_{city.lower()}_3",
+                "name": f"{city} Budget Suites",
+                "address": f"5 Market Street, {city}",
+                "rating": 4.0,
+                "user_ratings_total": 420,
+                "price_level": "$",
+                "types": ["lodging"],
+                "photo_url": "https://via.placeholder.com/800x600?text=Hotel+3",
+                "photo_reference": None,
+                "location": {"lat": 40.7081, "lng": -74.0101},
+                "business_status": "OPERATIONAL",
+                "website": None,
+                "google_maps_url": None,
+            },
+        ]
+        sorted_hotels = self._sort_hotels(dummy_hotels, sort_by)
+        return {
+            "status": "success",
+            "results": sorted_hotels,
+            "dummy": True,
+            "message": "Using dummy data (Google Places API key not configured)",
+        }
     
     def _format_places(self, places: List[Dict]) -> List[Dict]:
         """
@@ -655,14 +857,6 @@ class GooglePlacesService:
         "internationalPhoneNumber,editorialSummary,"
         "googleMapsUri,reservable"
     )
-
-    _PRICE_LEVEL_MAP = {
-        "PRICE_LEVEL_FREE": "Free",
-        "PRICE_LEVEL_INEXPENSIVE": "$",
-        "PRICE_LEVEL_MODERATE": "$$",
-        "PRICE_LEVEL_EXPENSIVE": "$$$",
-        "PRICE_LEVEL_VERY_EXPENSIVE": "$$$$",
-    }
 
     def get_restaurant_details(self, place_id: str) -> Dict[str, Any]:
         """Fetch full details for a single restaurant by place ID."""
