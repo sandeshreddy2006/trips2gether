@@ -153,6 +153,22 @@ class ItineraryItem(Base):
     creator = relationship("User", foreign_keys=[created_by])
 
 
+class TripPlanHistory(Base):
+    __tablename__ = "trip_plan_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    shared_notes = Column(Text, nullable=True)
+    starts_at = Column(DateTime, nullable=True)
+    ends_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, server_default=func.now(), nullable=False)
+    items_json = Column(Text, nullable=False, default="[]")
+
+    group = relationship("Group")
+
+
 class GroupShortlistDestination(Base):
     __tablename__ = "group_shortlist_destinations"
 

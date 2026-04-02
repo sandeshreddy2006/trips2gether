@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import "./ItineraryPlanner.css";
 
 type ItineraryPlan = {
@@ -389,6 +389,11 @@ type WarningModalState = {
 
 export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const historyIdParam = searchParams.get("historyId");
+    const parsedHistoryId = historyIdParam ? Number(historyIdParam) : null;
+    const historyId = parsedHistoryId && Number.isFinite(parsedHistoryId) ? parsedHistoryId : null;
+    const isArchivedSnapshotView = historyId !== null;
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -403,6 +408,8 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     const items = response?.items || [];
     const groupName = response?.group_name || "Trip";
     const groupStatus = response?.group_status || "planning";
+    const effectiveGroupStatus = isArchivedSnapshotView ? "archived" : groupStatus;
+    const isTimelineLocked = effectiveGroupStatus === "active" || effectiveGroupStatus === "archived";
     const itemCount = response?.trip_plan.item_count ?? items.length;
     const emptyState = !loading && items.length === 0;
     const editingItem = editingItemId === null ? null : items.find((item) => item.id === editingItemId) || null;
@@ -454,7 +461,11 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     }, [items]);
 
     const refreshItinerary = async () => {
-        const res = await fetch(`/api/groups/${groupId}/itinerary`, {
+        const endpoint = isArchivedSnapshotView
+            ? `/api/itinerary/history/${historyId}`
+            : `/api/groups/${groupId}/itinerary`;
+
+        const res = await fetch(endpoint, {
             credentials: "include",
         });
 
@@ -502,7 +513,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                 clearInterval(intervalId);
             }
         };
-    }, [groupId]);
+    }, [groupId, historyId, isArchivedSnapshotView]);
 
     function updateFormField<K extends keyof FormState>(field: K, value: FormState[K]) {
         setForm((prev) => ({ ...prev, [field]: value }));
@@ -529,6 +540,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     }
 
     async function updateTripState(nextState: "upcoming" | "active" | "archived") {
+        if (isArchivedSnapshotView) return;
         setUpdatingTripState(true);
         setError(null);
         try {
@@ -551,6 +563,10 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     }
 
     async function saveSharedNotes() {
+        if (isArchivedSnapshotView) {
+            setError("Archived snapshots are read-only.");
+            return;
+        }
         setSavingNotes(true);
         setError(null);
         try {
@@ -570,6 +586,29 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             setError(err instanceof Error ? err.message : "Failed to save shared notes");
         } finally {
             setSavingNotes(false);
+        }
+    }
+
+    async function startNewTrip() {
+        if (isArchivedSnapshotView) return;
+        setUpdatingTripState(true);
+        setError(null);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/itinerary/new-trip`, {
+                method: "POST",
+                credentials: "include",
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(getApiErrorMessage(data, "Failed to start a new trip"));
+            }
+            setResponse(data as ItineraryResponse);
+            setSharedNotesDraft((data as ItineraryResponse).trip_plan.shared_notes || "");
+            resetForm();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to start a new trip");
+        } finally {
+            setUpdatingTripState(false);
         }
     }
 
@@ -759,7 +798,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                         Keep flights, hotels, dining, and activities in one chronological view for the whole trip.
                     </p>
                     <div className="itinerary-state-row">
-                        <span className={`itinerary-state-pill state-${groupStatus}`}>{groupStatus}</span>
+                        <span className={`itinerary-state-pill state-${effectiveGroupStatus}`}>{effectiveGroupStatus}</span>
                         {response?.trip_plan.starts_at && response?.trip_plan.ends_at && (
                             <span className="itinerary-state-dates">
                                 {new Date(response.trip_plan.starts_at).toLocaleDateString()} - {new Date(response.trip_plan.ends_at).toLocaleDateString()}
@@ -778,10 +817,19 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                     &larr; Back to Group
                 </button>
                 <div className="itinerary-tip">
-                    Members can add dates, times, and locations, then edit, remove, or reorder items without leaving the page.
+                    {isArchivedSnapshotView
+                        ? "Viewing an archived snapshot. Timeline items and shared notes are read-only."
+                        : isTimelineLocked
+                        ? "This itinerary is finalized. Timeline edits are locked, but shared notes can still be updated."
+                        : "Members can add dates, times, and locations, then edit, remove, or reorder items without leaving the page."}
                 </div>
             </div>
 
+            {isArchivedSnapshotView && (
+                <div className="itinerary-alert itinerary-warning">Viewing archived snapshot for this trip. This view is read-only.</div>
+            )}
+
+            {!isArchivedSnapshotView && (
             <div className="itinerary-state-actions">
                 {(groupStatus === "planning" || groupStatus === "confirmed" || groupStatus === "finalized") && (
                     <button
@@ -831,21 +879,40 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                         {updatingTripState ? "Updating..." : "Archive / Finish Trip"}
                     </button>
                 )}
+                {groupStatus === "archived" && (
+                    <button
+                        className="itinerary-state-btn"
+                        disabled={updatingTripState}
+                        onClick={() => openWarningModal({
+                            title: "Start a fresh trip",
+                            message: "Start a new itinerary cycle? The archived trip remains finalized and a fresh planning itinerary will be created.",
+                            confirmLabel: "Start new trip",
+                            cancelLabel: "Cancel",
+                            tone: "warning",
+                            onConfirm: () => { void startNewTrip(); },
+                        })}
+                    >
+                        {updatingTripState ? "Updating..." : "Start New Trip"}
+                    </button>
+                )}
             </div>
+            )}
 
             {error && <div className="itinerary-alert">{error}</div>}
 
             <div className="itinerary-layout">
                 <aside className="itinerary-panel itinerary-form-panel">
-                    <div className="panel-heading">
-                        <div>
-                            <p className="panel-eyebrow">{editingItem ? "Edit itinerary" : "Add to plan"}</p>
-                            <h2>{editingItem ? "Update timeline item" : "New timeline item"}</h2>
-                        </div>
-                        <span className="panel-pill">{editingItem ? "Editing" : "Chronological"}</span>
-                    </div>
+                    {!isTimelineLocked && (
+                        <>
+                            <div className="panel-heading">
+                                <div>
+                                    <p className="panel-eyebrow">{editingItem ? "Edit itinerary" : "Add to plan"}</p>
+                                    <h2>{editingItem ? "Update timeline item" : "New timeline item"}</h2>
+                                </div>
+                                <span className="panel-pill">{editingItem ? "Editing" : "Chronological"}</span>
+                            </div>
 
-                    <form className="itinerary-form" onSubmit={submitItinerary}>
+                            <form className="itinerary-form" onSubmit={submitItinerary}>
                         <label>
                             Item type
                             <select
@@ -961,17 +1028,19 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             </label>
                         </div>
 
-                        <div className="itinerary-form-actions">
-                            {editingItem && (
-                                <button type="button" className="itinerary-secondary-btn" onClick={() => resetForm()} disabled={saving}>
-                                    Cancel edit
-                                </button>
-                            )}
-                            <button type="submit" className="itinerary-submit-btn" disabled={saving}>
-                                {saving ? "Saving..." : editingItem ? "Save changes" : "Add to itinerary"}
-                            </button>
-                        </div>
-                    </form>
+                                <div className="itinerary-form-actions">
+                                    {editingItem && (
+                                        <button type="button" className="itinerary-secondary-btn" onClick={() => resetForm()} disabled={saving}>
+                                            Cancel edit
+                                        </button>
+                                    )}
+                                    <button type="submit" className="itinerary-submit-btn" disabled={saving}>
+                                        {saving ? "Saving..." : editingItem ? "Save changes" : "Add to itinerary"}
+                                    </button>
+                                </div>
+                            </form>
+                        </>
+                    )}
 
                     <div className="shared-notes-section">
                         <div className="panel-heading shared-notes-heading">
@@ -985,12 +1054,13 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             onChange={(event) => setSharedNotesDraft(event.target.value)}
                             placeholder="Add key reminders, meeting points, emergency contacts, and team notes here."
                             rows={5}
+                            disabled={isArchivedSnapshotView}
                         />
                         <div className="shared-notes-actions">
                             <button
                                 type="button"
                                 className="itinerary-secondary-btn"
-                                disabled={savingNotes}
+                                disabled={savingNotes || isArchivedSnapshotView}
                                 onClick={() => setSharedNotesDraft(response?.trip_plan.shared_notes || "")}
                             >
                                 Reset
@@ -998,7 +1068,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             <button
                                 type="button"
                                 className="itinerary-submit-btn"
-                                disabled={savingNotes}
+                                disabled={savingNotes || isArchivedSnapshotView}
                                 onClick={() => {
                                     if ((response?.trip_plan.shared_notes || "") && !sharedNotesDraft.trim()) {
                                         openWarningModal({
@@ -1051,7 +1121,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                             const normalizedDisplayLocation = (item.display_location || "").toLowerCase();
                                             const normalizedAddress = (item.location_address || "").toLowerCase();
                                             const showAddress = Boolean(item.location_address) && !normalizedDisplayLocation.includes(normalizedAddress);
-                                            const showActions = !renderedActionItems.has(item.id);
+                                            const showActions = !isTimelineLocked && !renderedActionItems.has(item.id);
 
                                             if (showActions) {
                                                 renderedActionItems.add(item.id);
