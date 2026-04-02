@@ -63,6 +63,27 @@ type FlightShortlistItem = {
     created_at: string;
 };
 
+type HotelShortlistItem = {
+    id: number;
+    group_id: number;
+    place_id: string;
+    name: string;
+    address: string | null;
+    photo_url: string | null;
+    photo_reference: string | null;
+    rating: number | null;
+    price_level: string | null;
+    currency: string;
+    price_per_night: number | null;
+    total_price: number | null;
+    nights: number | null;
+    types: string[];
+    amenities: string[];
+    booking_url: string | null;
+    added_by: number;
+    created_at: string;
+};
+
 function formatStops(stops: number): string {
     if (stops === 0) return "Nonstop";
     if (stops === 1) return "1 stop";
@@ -76,6 +97,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [friends, setFriends] = useState<Friend[]>([]);
     const [shortlist, setShortlist] = useState<ShortlistItem[]>([]);
     const [flightShortlist, setFlightShortlist] = useState<FlightShortlistItem[]>([]);
+    const [hotelShortlist, setHotelShortlist] = useState<HotelShortlistItem[]>([]);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [inviting, setInviting] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -178,6 +200,34 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
         }
     }
 
+    async function handleRemoveShortlistedHotel(placeId: string) {
+        if (!confirm("Remove this hotel from the shortlist?")) return;
+        try {
+            const res = await fetch(`/api/groups/${groupId}/hotel-shortlist/${encodeURIComponent(placeId)}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to remove hotel from shortlist");
+            }
+            setHotelShortlist((prev) => prev.filter((item) => item.place_id !== placeId));
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to remove hotel from shortlist");
+        }
+    }
+
+    async function refreshHotelShortlist() {
+        try {
+            const res = await fetch(`/api/groups/${groupId}/hotel-shortlist`, { credentials: "include" });
+            if (!res.ok) return;
+            const data = await res.json().catch(() => ({ items: [] }));
+            setHotelShortlist(data.items || []);
+        } catch {
+            // Keep UI interactive even if refresh fails.
+        }
+    }
+
     async function handleLeaveGroup() {
         if (!confirm("Are you sure you want to leave this group?")) return;
         try {
@@ -266,11 +316,12 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     useEffect(() => {
         async function fetchData() {
             try {
-                const [groupRes, membersRes, shortlistRes, flightShortlistRes, friendsRes] = await Promise.all([
+                const [groupRes, membersRes, shortlistRes, flightShortlistRes, hotelShortlistRes, friendsRes] = await Promise.all([
                     fetch(`/api/groups/${groupId}`, { credentials: "include" }),
                     fetch(`/api/groups/${groupId}/members`, { credentials: "include" }),
                     fetch(`/api/groups/${groupId}/shortlist`, { credentials: "include" }),
                     fetch(`/api/groups/${groupId}/flight-shortlist`, { credentials: "include" }),
+                    fetch(`/api/groups/${groupId}/hotel-shortlist`, { credentials: "include" }),
                     fetch("/api/friends", { credentials: "include" }),
                 ]);
 
@@ -291,6 +342,11 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 if (flightShortlistRes.ok) {
                     const flightShortlistData = await flightShortlistRes.json();
                     setFlightShortlist(flightShortlistData.items || []);
+                }
+
+                if (hotelShortlistRes.ok) {
+                    const hotelShortlistData = await hotelShortlistRes.json();
+                    setHotelShortlist(hotelShortlistData.items || []);
                 }
 
                 if (friendsRes.ok) {
@@ -415,7 +471,48 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                     title="Search Hotels For This Group"
                     subtitle="Compare hotel options with travel dates, guest count, room count, and sorting."
                     initialDestination={shortlist[0]?.name || ""}
+                    groupId={groupId}
+                    onShortlistChange={refreshHotelShortlist}
                 />
+            </div>
+
+            <div className="group-shortlist-section">
+                <h2 className="group-shortlist-title">Shortlisted Accommodations ({hotelShortlist.length})</h2>
+                {hotelShortlist.length === 0 ? (
+                    <p className="group-shortlist-empty">No hotels shortlisted yet.</p>
+                ) : (
+                    <div className="group-shortlist-list">
+                        {hotelShortlist.map((item) => (
+                            <div key={item.id} className="group-shortlist-card">
+                                <div className="group-shortlist-main">
+                                    <h3 className="group-shortlist-name">{item.name}</h3>
+                                    {item.address && <p className="group-shortlist-address">{item.address}</p>}
+                                    <div className="group-shortlist-meta">
+                                        {item.rating != null && (
+                                            <span className="group-shortlist-rating">★ {item.rating.toFixed(1)}</span>
+                                        )}
+                                        {item.price_per_night != null && (
+                                            <span className="group-shortlist-type">
+                                                {item.currency} {item.price_per_night.toFixed(2)} / night
+                                            </span>
+                                        )}
+                                        {item.nights != null && item.total_price != null && (
+                                            <span className="group-shortlist-type">
+                                                {item.currency} {item.total_price.toFixed(2)} total ({item.nights} night{item.nights === 1 ? "" : "s"})
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <button
+                                    className="group-shortlist-remove-btn"
+                                    onClick={() => handleRemoveShortlistedHotel(item.place_id)}
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <div className="group-shortlist-section">

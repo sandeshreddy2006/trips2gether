@@ -83,6 +83,11 @@ class Group(Base):
         back_populates="group",
         cascade="all, delete-orphan",
     )
+    shortlisted_hotels = relationship(
+        "GroupShortlistHotel",
+        back_populates="group",
+        cascade="all, delete-orphan",
+    )
     creator = relationship("User", foreign_keys=[created_by])
 
 
@@ -154,6 +159,36 @@ class GroupShortlistFlight(Base):
 
     __table_args__ = (
         UniqueConstraint("group_id", "flight_offer_id", name="uq_group_shortlist_group_flight_offer"),
+    )
+
+
+class GroupShortlistHotel(Base):
+    __tablename__ = "group_shortlist_hotels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    place_id = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False)
+    address = Column(Text, nullable=True)
+    photo_url = Column(Text, nullable=True)
+    photo_reference = Column(Text, nullable=True)
+    rating = Column(Float, nullable=True)
+    price_level = Column(String(32), nullable=True)
+    currency = Column(String(12), nullable=False, default="USD")
+    price_per_night = Column(Float, nullable=True)
+    total_price = Column(Float, nullable=True)
+    nights = Column(Integer, nullable=True)
+    hotel_types_json = Column(Text, nullable=False, default="[]")
+    amenities_json = Column(Text, nullable=False, default="[]")
+    booking_url = Column(Text, nullable=True)
+    added_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    group = relationship("Group", back_populates="shortlisted_hotels")
+    adder = relationship("User", foreign_keys=[added_by])
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "place_id", name="uq_group_shortlist_group_hotel_place"),
     )
 
 

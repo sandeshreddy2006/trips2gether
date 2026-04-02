@@ -32,6 +32,12 @@ type HotelSearchResponse = {
     message?: string;
 };
 
+type UserGroup = {
+    id: number;
+    name: string;
+    role: string;
+};
+
 type DisplaySortMode =
     | "relevance"
     | "price_low_to_high"
@@ -65,10 +71,14 @@ export default function HotelSearchPanel({
     title = "Find Hotels",
     subtitle = "Search by destination, travel dates, guests, and rooms.",
     initialDestination = "",
+    groupId,
+    onShortlistChange,
 }: {
     title?: string;
     subtitle?: string;
     initialDestination?: string;
+    groupId?: number;
+    onShortlistChange?: () => void;
 }) {
     const [destination, setDestination] = useState(initialDestination);
     const [checkIn, setCheckIn] = useState(defaultCheckIn());
@@ -86,6 +96,13 @@ export default function HotelSearchPanel({
     const [message, setMessage] = useState<string | null>(null);
     const [selectedHotel, setSelectedHotel] = useState<HotelOption | null>(null);
     const [hasSearched, setHasSearched] = useState(false);
+    const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+    const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
+    const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
+    const [groupsLoading, setGroupsLoading] = useState(false);
+    const [showGroupSelectorForHotel, setShowGroupSelectorForHotel] = useState<string | null>(null);
+    const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+    const [bookmarkedGroupByHotel, setBookmarkedGroupByHotel] = useState<Record<string, number>>({});
 
     useEffect(() => {
         if (initialDestination && !destination.trim()) {
@@ -329,6 +346,260 @@ export default function HotelSearchPanel({
 
     const closeModal = () => setSelectedHotel(null);
 
+    const loadBookmarkedHotels = async () => {
+        if (!groupId) return;
+        try {
+            const res = await fetch(`/api/groups/${groupId}/hotel-shortlist`, { credentials: "include" });
+            if (!res.ok) return;
+            const data = await res.json().catch(() => ({ items: [] }));
+            const ids = new Set<string>((data.items || []).map((item: { place_id: string }) => item.place_id));
+            setBookmarkedIds(ids);
+            setBookmarkedGroupByHotel((prev) => {
+                const next = { ...prev };
+                ids.forEach((id) => {
+                    next[id] = groupId;
+                });
+                return next;
+            });
+        } catch {
+            // Non-fatal, keep UI usable even if shortlist lookup fails.
+        }
+    };
+
+    useEffect(() => {
+        void loadBookmarkedHotels();
+    }, [groupId]);
+
+    useEffect(() => {
+        if (groupId) return;
+
+        const loadGroups = async () => {
+            setGroupsLoading(true);
+            try {
+                const res = await fetch("/api/groups", { credentials: "include" });
+                if (!res.ok) {
+                    setUserGroups([]);
+                    setBookmarkedIds(new Set());
+                    setBookmarkedGroupByHotel({});
+                    return;
+                }
+                const data = await res.json().catch(() => ({ groups: [] }));
+                const groups = (data.groups || []) as UserGroup[];
+                setUserGroups(groups);
+
+                if (groups.length === 0) {
+                    setBookmarkedIds(new Set());
+                    setBookmarkedGroupByHotel({});
+                    return;
+                }
+
+                const shortlistResponses = await Promise.all(
+                    groups.map(async (group) => {
+                        const shortlistRes = await fetch(`/api/groups/${group.id}/hotel-shortlist`, {
+                            credentials: "include",
+                        });
+                        if (!shortlistRes.ok) return { groupId: group.id, placeIds: [] as string[] };
+                        const shortlistData = await shortlistRes.json().catch(() => ({ items: [] }));
+                        const placeIds = (shortlistData.items || []).map((item: { place_id: string }) => item.place_id);
+                        return { groupId: group.id, placeIds };
+                    })
+                );
+
+                const ids = new Set<string>();
+                const mapping: Record<string, number> = {};
+                shortlistResponses.forEach(({ groupId: gid, placeIds }) => {
+                    placeIds.forEach((pid: string) => {
+                        ids.add(pid);
+                        if (mapping[pid] == null) {
+                            mapping[pid] = gid;
+                        }
+                    });
+                });
+                setBookmarkedIds(ids);
+                setBookmarkedGroupByHotel(mapping);
+            } catch {
+                setUserGroups([]);
+                setBookmarkedIds(new Set());
+                setBookmarkedGroupByHotel({});
+            } finally {
+                setGroupsLoading(false);
+            }
+        };
+
+        void loadGroups();
+    }, [groupId]);
+
+    const toggleBookmark = async (hotel: HotelOption) => {
+        if (!groupId || bookmarkBusyId) return;
+        setBookmarkBusyId(hotel.place_id);
+
+        try {
+            const alreadyBookmarked = bookmarkedIds.has(hotel.place_id);
+            if (alreadyBookmarked) {
+                const res = await fetch(
+                    `/api/groups/${groupId}/hotel-shortlist/${encodeURIComponent(hotel.place_id)}`,
+                    { method: "DELETE", credentials: "include" }
+                );
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.detail || "Failed to remove hotel from group plan");
+                }
+                setBookmarkedIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(hotel.place_id);
+                    return next;
+                });
+                setBookmarkedGroupByHotel((prev) => {
+                    const next = { ...prev };
+                    delete next[hotel.place_id];
+                    return next;
+                });
+                setMessage("Hotel removed from group plan.");
+            } else {
+                const res = await fetch(`/api/groups/${groupId}/hotel-shortlist`, {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        place_id: hotel.place_id,
+                        name: hotel.name,
+                        address: hotel.address,
+                        photo_url: hotel.photo_url,
+                        photo_reference: hotel.photo_reference,
+                        rating: hotel.rating,
+                        price_level: hotel.price_level,
+                        currency: hotel.currency || "USD",
+                        price_per_night: hotel.price_per_night,
+                        total_price: hotel.total_price,
+                        nights: hotel.nights,
+                        types: hotel.types || [],
+                        amenities: hotel.amenities || [],
+                        booking_url: hotel.booking_url,
+                    }),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.detail || "Failed to save hotel to group plan");
+                }
+                setBookmarkedIds((prev) => new Set(prev).add(hotel.place_id));
+                setBookmarkedGroupByHotel((prev) => ({
+                    ...prev,
+                    [hotel.place_id]: groupId,
+                }));
+                setMessage("Hotel saved to group plan.");
+            }
+
+            onShortlistChange?.();
+        } catch (err) {
+            setMessage(err instanceof Error ? err.message : "Unable to update hotel shortlist.");
+        } finally {
+            setBookmarkBusyId(null);
+        }
+    };
+
+    const handleSaveToSelectedGroup = async (hotel: HotelOption) => {
+        if (!selectedGroupId || bookmarkBusyId) return;
+        setBookmarkBusyId(hotel.place_id);
+        setMessage(null);
+        try {
+            const res = await fetch(`/api/groups/${selectedGroupId}/hotel-shortlist`, {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    place_id: hotel.place_id,
+                    name: hotel.name,
+                    address: hotel.address,
+                    photo_url: hotel.photo_url,
+                    photo_reference: hotel.photo_reference,
+                    rating: hotel.rating,
+                    price_level: hotel.price_level,
+                    currency: hotel.currency || "USD",
+                    price_per_night: hotel.price_per_night,
+                    total_price: hotel.total_price,
+                    nights: hotel.nights,
+                    types: hotel.types || [],
+                    amenities: hotel.amenities || [],
+                    booking_url: hotel.booking_url,
+                }),
+            });
+
+            if (res.status === 409) {
+                setBookmarkedIds((prev) => new Set(prev).add(hotel.place_id));
+                setBookmarkedGroupByHotel((prev) => ({
+                    ...prev,
+                    [hotel.place_id]: selectedGroupId,
+                }));
+                setMessage("Hotel is already in that group's plan.");
+                return;
+            }
+
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to save hotel to group plan");
+            }
+
+            const groupName = userGroups.find((g) => g.id === selectedGroupId)?.name || "group";
+            setBookmarkedIds((prev) => new Set(prev).add(hotel.place_id));
+            setBookmarkedGroupByHotel((prev) => ({
+                ...prev,
+                [hotel.place_id]: selectedGroupId,
+            }));
+            setMessage(`Hotel saved to \"${groupName}\".`);
+            setShowGroupSelectorForHotel(null);
+            setSelectedGroupId(null);
+        } catch (err) {
+            setMessage(err instanceof Error ? err.message : "Unable to save hotel to group plan.");
+        } finally {
+            setBookmarkBusyId(null);
+        }
+    };
+
+    const handleRemoveFromMappedGroup = async (hotel: HotelOption) => {
+        if (bookmarkBusyId) return;
+        const mappedGroupId = bookmarkedGroupByHotel[hotel.place_id];
+        if (!mappedGroupId) {
+            setMessage("Choose a group to remove this hotel from.");
+            setShowGroupSelectorForHotel(hotel.place_id);
+            return;
+        }
+
+        setBookmarkBusyId(hotel.place_id);
+        setMessage(null);
+        try {
+            const res = await fetch(
+                `/api/groups/${mappedGroupId}/hotel-shortlist/${encodeURIComponent(hotel.place_id)}`,
+                {
+                    method: "DELETE",
+                    credentials: "include",
+                }
+            );
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.detail || "Failed to remove hotel from group plan");
+            }
+
+            setBookmarkedIds((prev) => {
+                const next = new Set(prev);
+                next.delete(hotel.place_id);
+                return next;
+            });
+            setBookmarkedGroupByHotel((prev) => {
+                const next = { ...prev };
+                delete next[hotel.place_id];
+                return next;
+            });
+            setShowGroupSelectorForHotel(null);
+            setSelectedGroupId(null);
+            setMessage("Hotel removed from group plan.");
+            onShortlistChange?.();
+        } catch (err) {
+            setMessage(err instanceof Error ? err.message : "Unable to remove hotel from group plan.");
+        } finally {
+            setBookmarkBusyId(null);
+        }
+    };
+
     const toggleAmenity = (amenity: string) => {
         setSelectedAmenities((prev) =>
             prev.includes(amenity) ? prev.filter((a) => a !== amenity) : [...prev, amenity]
@@ -548,7 +819,97 @@ export default function HotelSearchPanel({
                                             Total for {hotel.nights || 1} night{(hotel.nights || 1) > 1 ? "s" : ""}: {currencyFormatter(hotel.total_price, hotel.currency || "USD")}
                                         </div>
                                     </div>
-                                    <button type="button" className="hotel-details-btn">View Details</button>
+                                    <div className="hotel-card-actions">
+                                        <button type="button" className="hotel-details-btn">View Details</button>
+                                        {groupId ? (
+                                            <button
+                                                type="button"
+                                                className={`hotel-save-btn ${bookmarkedIds.has(hotel.place_id) ? "is-bookmarked" : ""}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    void toggleBookmark(hotel);
+                                                }}
+                                                disabled={bookmarkBusyId === hotel.place_id}
+                                            >
+                                                {bookmarkedIds.has(hotel.place_id) ? "♥ Saved" : "♡ Save to Group Plan"}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className={`hotel-save-btn ${bookmarkedIds.has(hotel.place_id) ? "is-bookmarked" : ""}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMessage(null);
+                                                    if (bookmarkedIds.has(hotel.place_id)) {
+                                                        void handleRemoveFromMappedGroup(hotel);
+                                                        return;
+                                                    }
+                                                    setSelectedGroupId(null);
+                                                    setShowGroupSelectorForHotel((prev) =>
+                                                        prev === hotel.place_id ? null : hotel.place_id
+                                                    );
+                                                }}
+                                                disabled={groupsLoading || bookmarkBusyId === hotel.place_id}
+                                            >
+                                                {groupsLoading
+                                                    ? "Loading groups..."
+                                                    : bookmarkBusyId === hotel.place_id
+                                                        ? "Updating..."
+                                                    : bookmarkedIds.has(hotel.place_id)
+                                                        ? "♥ Saved (Click to remove)"
+                                                        : "♡ Save to Group Plan"}
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {!groupId && showGroupSelectorForHotel === hotel.place_id && (
+                                        <div
+                                            className="hotel-save-panel"
+                                            onClick={(e) => e.stopPropagation()}
+                                            onKeyDown={(e) => e.stopPropagation()}
+                                        >
+                                            {userGroups.length === 0 ? (
+                                                <p className="hotel-save-empty">You are not a member of any group yet.</p>
+                                            ) : (
+                                                <>
+                                                    <select
+                                                        className="hotel-save-select"
+                                                        value={selectedGroupId ?? ""}
+                                                        onChange={(e) => setSelectedGroupId(Number(e.target.value) || null)}
+                                                    >
+                                                        <option value="">Select a group...</option>
+                                                        {userGroups.map((group) => (
+                                                            <option key={group.id} value={group.id}>
+                                                                {group.name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <div className="hotel-save-actions">
+                                                        <button
+                                                            type="button"
+                                                            className="hotel-save-confirm-btn"
+                                                            onClick={() => {
+                                                                void handleSaveToSelectedGroup(hotel);
+                                                            }}
+                                                            disabled={!selectedGroupId || bookmarkBusyId === hotel.place_id}
+                                                        >
+                                                            {bookmarkBusyId === hotel.place_id ? "Saving..." : "Confirm"}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="hotel-save-cancel-btn"
+                                                            onClick={() => {
+                                                                setShowGroupSelectorForHotel(null);
+                                                                setSelectedGroupId(null);
+                                                            }}
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </article>
                         );
