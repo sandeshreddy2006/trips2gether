@@ -614,11 +614,29 @@ class ItineraryItemCreateIn(BaseModel):
     details: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ItineraryItemUpdateIn(BaseModel):
+    item_type: Optional[Literal["flight", "accommodation", "dining", "activity", "transfer", "other"]] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+    location_name: Optional[str] = None
+    location_address: Optional[str] = None
+    notes: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_reference: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+
+
+class ItineraryItemReorderIn(BaseModel):
+    item_ids: list[int] = Field(min_length=1)
+
+
 class ItineraryItemOut(BaseModel):
     id: int
     trip_plan_id: int
     item_type: str
     title: str
+    sort_order: int
     start_at: datetime
     end_at: Optional[datetime] = None
     location_name: Optional[str] = None

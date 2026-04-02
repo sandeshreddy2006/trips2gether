@@ -35,6 +35,8 @@ from .schemas import (
     ItineraryPlanOut,
     ItineraryItemCreateIn,
     ItineraryItemOut,
+    ItineraryItemReorderIn,
+    ItineraryItemUpdateIn,
     ItineraryTimelineOut,
     ProfileOut, 
     ProfileUpdate,
@@ -90,6 +92,21 @@ DUFFEL_API_URL = "https://api.duffel.com/air/offer_requests"
 print("[Startup] Running Base.metadata.create_all...")
 Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
+
+
+def _ensure_itinerary_sort_order_column() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("itinerary_items")}
+    except Exception:
+        return
+
+    if "sort_order" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE itinerary_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
+
+
+_ensure_itinerary_sort_order_column()
 
 
 app = FastAPI(title="trips2gether API")
@@ -158,6 +175,75 @@ def _get_group_and_membership(group_id: int, user_id: int, db: Session):
         raise HTTPException(status_code=403, detail="You are not a member of this group")
 
     return group, membership
+
+
+def _get_itinerary_items(plan_id: int, db: Session):
+    return (
+        db.query(models.ItineraryItem)
+        .filter(models.ItineraryItem.trip_plan_id == plan_id)
+        .order_by(
+            models.ItineraryItem.sort_order.asc(),
+            models.ItineraryItem.start_at.asc(),
+            models.ItineraryItem.created_at.asc(),
+        )
+        .all()
+    )
+
+
+def _build_itinerary_payload(group: models.Group, plan: models.TripPlan, db: Session, warnings: list[str] | None = None):
+    items = _get_itinerary_items(plan.id, db)
+    payload = {
+        "ok": True,
+        "trip_plan": serialize_trip_plan(plan, len(items)),
+        "items": [serialize_itinerary_item(item) for item in items],
+        "is_empty": len(items) == 0,
+        "group_name": group.name,
+    }
+    if warnings:
+        payload["warnings"] = warnings
+    return payload
+
+
+def _has_time_conflict(start_at: datetime, end_at: datetime | None, other_start: datetime, other_end: datetime | None) -> bool:
+    candidate_end = end_at or start_at
+    existing_end = other_end or other_start
+    return start_at <= existing_end and other_start <= candidate_end
+
+
+def _build_time_conflict_warnings(plan_id: int, item_id: int | None, start_at: datetime, end_at: datetime | None, db: Session) -> list[str]:
+    query = db.query(models.ItineraryItem).filter(models.ItineraryItem.trip_plan_id == plan_id)
+    if item_id is not None:
+        query = query.filter(models.ItineraryItem.id != item_id)
+
+    conflicts: list[str] = []
+    for item in query.all():
+        if _has_time_conflict(start_at, end_at, item.start_at, item.end_at):
+            conflicts.append(item.title)
+
+    if not conflicts:
+        return []
+
+    preview = ", ".join(conflicts[:3])
+    if len(conflicts) > 3:
+        preview += ", and more"
+    return [f"Time conflict: overlaps with {preview}."]
+
+
+def _resequence_itinerary_items(plan_id: int, db: Session) -> None:
+    items = (
+        db.query(models.ItineraryItem)
+        .filter(models.ItineraryItem.trip_plan_id == plan_id)
+        .order_by(
+            models.ItineraryItem.sort_order.asc(),
+            models.ItineraryItem.start_at.asc(),
+            models.ItineraryItem.created_at.asc(),
+            models.ItineraryItem.id.asc(),
+        )
+        .all()
+    )
+
+    for index, item in enumerate(items):
+        item.sort_order = index
 
 
 def _get_or_create_trip_plan(group: models.Group, db: Session) -> models.TripPlan:
@@ -1954,19 +2040,7 @@ def get_group_itinerary(group_id: int, request: Request, db: Session = Depends(g
     group, _membership = _get_group_and_membership(group_id, current_user.id, db)
 
     plan = _get_or_create_trip_plan(group, db)
-    items = (
-        db.query(models.ItineraryItem)
-        .filter(models.ItineraryItem.trip_plan_id == plan.id)
-        .order_by(models.ItineraryItem.start_at.asc(), models.ItineraryItem.created_at.asc())
-        .all()
-    )
-
-    return {
-        "trip_plan": serialize_trip_plan(plan, len(items)),
-        "items": [serialize_itinerary_item(item) for item in items],
-        "is_empty": len(items) == 0,
-        "group_name": group.name,
-    }
+    return _build_itinerary_payload(group, plan, db)
 
 
 @app.post("/groups/{group_id}/itinerary", response_model=dict)
@@ -2027,10 +2101,13 @@ def add_itinerary_item(
     if not item_title:
         raise HTTPException(status_code=400, detail="Itinerary item title cannot be empty")
 
+    max_sort_order = db.query(func.max(models.ItineraryItem.sort_order)).filter(models.ItineraryItem.trip_plan_id == plan.id).scalar() or 0
+
     item = models.ItineraryItem(
         trip_plan_id=plan.id,
         item_type=body.item_type,
         title=item_title,
+        sort_order=max_sort_order + 1 if max_sort_order > 0 else 0,
         start_at=body.start_at,
         end_at=body.end_at,
         location_name=body.location_name.strip() if body.location_name else None,
@@ -2045,18 +2122,138 @@ def add_itinerary_item(
     db.commit()
     db.refresh(item)
 
-    item_count = (
-        db.query(func.count(models.ItineraryItem.id))
-        .filter(models.ItineraryItem.trip_plan_id == plan.id)
-        .scalar()
-    )
+    warnings = _build_time_conflict_warnings(plan.id, item.id, item.start_at, item.end_at, db)
 
-    return {
-        "ok": True,
-        "message": "Itinerary item added",
-        "item": serialize_itinerary_item(item),
-        "trip_plan": serialize_trip_plan(plan, item_count or 0),
-    }
+    payload = _build_itinerary_payload(group, plan, db, warnings)
+    payload["message"] = "Itinerary item added"
+    return payload
+
+
+@app.patch("/groups/{group_id}/itinerary/items/{item_id}", response_model=dict)
+def update_itinerary_item(
+    group_id: int,
+    item_id: int,
+    body: ItineraryItemUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Update a single itinerary item."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    plan = _get_or_create_trip_plan(group, db)
+
+    item = (
+        db.query(models.ItineraryItem)
+        .filter(
+            models.ItineraryItem.trip_plan_id == plan.id,
+            models.ItineraryItem.id == item_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Itinerary item not found")
+
+    new_start_at = body.start_at if body.start_at is not None else item.start_at
+    new_end_at = body.end_at if body.end_at is not None else item.end_at
+    if new_end_at is not None and new_end_at < new_start_at:
+        raise HTTPException(status_code=400, detail="End time cannot be before start time")
+
+    if body.item_type is not None:
+        item.item_type = body.item_type
+    if body.title is not None:
+        trimmed_title = body.title.strip()
+        if not trimmed_title:
+            raise HTTPException(status_code=400, detail="Itinerary item title cannot be empty")
+        item.title = trimmed_title
+    if body.start_at is not None:
+        item.start_at = body.start_at
+    if body.end_at is not None:
+        item.end_at = body.end_at
+    if body.location_name is not None:
+        item.location_name = body.location_name.strip() or None
+    if body.location_address is not None:
+        item.location_address = body.location_address.strip() or None
+    if body.notes is not None:
+        item.notes = body.notes.strip() or None
+    if body.source_kind is not None:
+        item.source_kind = body.source_kind.strip() or None
+    if body.source_reference is not None:
+        item.source_reference = body.source_reference.strip() or None
+    if body.details is not None:
+        item.details_json = json.dumps(body.details or {})
+
+    db.commit()
+    db.refresh(item)
+
+    warnings = _build_time_conflict_warnings(plan.id, item.id, item.start_at, item.end_at, db)
+    payload = _build_itinerary_payload(group, plan, db, warnings)
+    payload["message"] = "Itinerary item updated"
+    payload["item"] = serialize_itinerary_item(item)
+    return payload
+
+
+@app.delete("/groups/{group_id}/itinerary/items/{item_id}", response_model=dict)
+def delete_itinerary_item(
+    group_id: int,
+    item_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Delete an itinerary item and renumber the remaining sequence."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    plan = _get_or_create_trip_plan(group, db)
+
+    item = (
+        db.query(models.ItineraryItem)
+        .filter(
+            models.ItineraryItem.trip_plan_id == plan.id,
+            models.ItineraryItem.id == item_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Itinerary item not found")
+
+    db.delete(item)
+    db.flush()
+    _resequence_itinerary_items(plan.id, db)
+    db.commit()
+
+    payload = _build_itinerary_payload(group, plan, db)
+    payload["message"] = "Itinerary item deleted"
+    return payload
+
+
+@app.patch("/groups/{group_id}/itinerary/reorder", response_model=dict)
+def reorder_itinerary_items(
+    group_id: int,
+    body: ItineraryItemReorderIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Persist a reordered itinerary sequence."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    plan = _get_or_create_trip_plan(group, db)
+
+    items = (
+        db.query(models.ItineraryItem)
+        .filter(models.ItineraryItem.trip_plan_id == plan.id)
+        .all()
+    )
+    item_by_id = {item.id: item for item in items}
+    if len(body.item_ids) != len(items) or set(body.item_ids) != set(item_by_id):
+        raise HTTPException(status_code=400, detail="Reorder payload must include every itinerary item exactly once")
+
+    for index, item_id in enumerate(body.item_ids):
+        item_by_id[item_id].sort_order = index
+
+    db.commit()
+
+    payload = _build_itinerary_payload(group, plan, db)
+    payload["message"] = "Itinerary order updated"
+    return payload
 
 
 # Profile Endpoints

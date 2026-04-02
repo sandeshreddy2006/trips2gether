@@ -51,6 +51,7 @@ def serialize_itinerary_item(item: models.ItineraryItem) -> ItineraryItemOut:
         trip_plan_id=item.trip_plan_id,
         item_type=item.item_type,
         title=item.title,
+        sort_order=item.sort_order,
         start_at=item.start_at,
         end_at=item.end_at,
         location_name=item.location_name,
