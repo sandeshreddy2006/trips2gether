@@ -4,7 +4,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, inspect, text
 from sqlalchemy.exc import DataError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
 from .schemas import (
@@ -40,6 +40,8 @@ from .schemas import (
     ItineraryItemUpdateIn,
     ItineraryTimelineOut,
     TripStateUpdateIn,
+    GroupPollCreateIn,
+    GroupPollVoteIn,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -157,8 +159,22 @@ def start_scheduler():
             deleted_count = db.query(models.PasswordResetToken).filter(
                 models.PasswordResetToken.expires_at < current_time
             ).delete()
+
+            due_polls = (
+                db.query(models.GroupPoll)
+                .filter(
+                    models.GroupPoll.status == "active",
+                    models.GroupPoll.closes_at <= current_time,
+                )
+                .all()
+            )
+            finalized_count = 0
+            for poll in due_polls:
+                if _finalize_poll_if_due(poll, db):
+                    finalized_count += 1
+
             db.commit()
-            print(f"[Cleanup Job] Deleted {deleted_count} expired password reset tokens")
+            print(f"[Cleanup Job] Deleted {deleted_count} expired password reset tokens; finalized {finalized_count} polls")
         except Exception as e:
             print(f"[Cleanup Job] Error: {e}")
         finally:
@@ -327,6 +343,155 @@ def _snapshot_trip_plan_history(
         items_json=json.dumps(serialized_items),
     )
     db.add(history)
+
+
+def _get_group_member_count(group_id: int, db: Session) -> int:
+    return (
+        db.query(func.count(models.GroupMember.id))
+        .filter(models.GroupMember.group_id == group_id)
+        .scalar()
+        or 0
+    )
+
+
+def _to_naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _finalize_poll_if_due(poll: models.GroupPoll, db: Session) -> bool:
+    if poll.status != "active":
+        return False
+
+    now = datetime.utcnow()
+    closes_at = _to_naive_utc(poll.closes_at)
+    if closes_at > now:
+        return False
+
+    return _close_poll_and_compute_winner(poll, db, now)
+
+
+def _close_poll_and_compute_winner(poll: models.GroupPoll, db: Session, closed_at: datetime | None = None) -> bool:
+    if poll.status != "active":
+        return False
+
+    options = (
+        db.query(models.GroupPollOption)
+        .filter(models.GroupPollOption.poll_id == poll.id)
+        .order_by(models.GroupPollOption.position.asc(), models.GroupPollOption.id.asc())
+        .all()
+    )
+
+    votes = (
+        db.query(models.GroupPollVote.option_id, func.count(models.GroupPollVote.id))
+        .filter(models.GroupPollVote.poll_id == poll.id)
+        .group_by(models.GroupPollVote.option_id)
+        .all()
+    )
+    vote_counts = {option_id: count for option_id, count in votes}
+
+    winner_option_id = None
+    if options and vote_counts:
+        highest = max(vote_counts.values())
+        for option in options:
+            if vote_counts.get(option.id, 0) == highest:
+                winner_option_id = option.id
+                break
+
+    poll.status = "closed"
+    poll.closed_at = closed_at or datetime.utcnow()
+    poll.winner_option_id = winner_option_id
+    return True
+
+
+def _finalize_due_polls_for_groups(group_ids: list[int], db: Session) -> None:
+    if not group_ids:
+        return
+
+    due_polls = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.group_id.in_(group_ids),
+            models.GroupPoll.status == "active",
+        )
+        .all()
+    )
+
+    has_changes = False
+    for poll in due_polls:
+        if _finalize_poll_if_due(poll, db):
+            has_changes = True
+
+    if has_changes:
+        db.commit()
+
+
+def _serialize_poll(
+    poll: models.GroupPoll,
+    current_user_id: int,
+    db: Session,
+    group_name: str | None = None,
+    member_count: int | None = None,
+) -> dict:
+    options = (
+        db.query(models.GroupPollOption)
+        .filter(models.GroupPollOption.poll_id == poll.id)
+        .order_by(models.GroupPollOption.position.asc(), models.GroupPollOption.id.asc())
+        .all()
+    )
+    votes = (
+        db.query(models.GroupPollVote)
+        .filter(models.GroupPollVote.poll_id == poll.id)
+        .all()
+    )
+
+    vote_counts: dict[int, int] = {}
+    user_vote_option_id = None
+    voter_ids: set[int] = set()
+    for vote in votes:
+        vote_counts[vote.option_id] = vote_counts.get(vote.option_id, 0) + 1
+        voter_ids.add(vote.voter_id)
+        if vote.voter_id == current_user_id:
+            user_vote_option_id = vote.option_id
+
+    if member_count is None:
+        member_count = _get_group_member_count(poll.group_id, db)
+
+    creator_name = None
+    creator = db.get(models.User, poll.created_by)
+    if creator:
+        creator_name = creator.name
+
+    return {
+        "id": poll.id,
+        "group_id": poll.group_id,
+        "group_name": group_name,
+        "question": poll.question,
+        "decision_type": poll.decision_type,
+        "status": poll.status,
+        "allow_vote_update": poll.allow_vote_update,
+        "closes_at": poll.closes_at.isoformat() if poll.closes_at else None,
+        "closed_at": poll.closed_at.isoformat() if poll.closed_at else None,
+        "created_by": poll.created_by,
+        "created_by_name": creator_name,
+        "created_at": poll.created_at.isoformat() if poll.created_at else None,
+        "winner_option_id": poll.winner_option_id,
+        "member_count": member_count,
+        "total_votes": len(votes),
+        "voted_by_all": member_count > 0 and len(voter_ids) >= member_count,
+        "user_vote_option_id": user_vote_option_id,
+        "options": [
+            {
+                "id": option.id,
+                "label": option.label,
+                "position": option.position,
+                "vote_count": vote_counts.get(option.id, 0),
+                "is_winner": poll.winner_option_id == option.id,
+            }
+            for option in options
+        ],
+    }
 
 
 # -------------------------
@@ -1628,6 +1793,248 @@ def update_group_trip_state(
             "id": group.id,
             "status": group.status,
         },
+    }
+
+
+@app.post("/groups/{group_id}/polls", response_model=dict)
+def create_group_poll(
+    group_id: int,
+    body: GroupPollCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create a poll in a group. Any current group member can create polls."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    closes_at = _to_naive_utc(body.closes_at)
+    if closes_at <= datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Poll deadline must be in the future")
+
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Poll question is required")
+
+    option_labels = [option.label.strip() for option in body.options if option.label.strip()]
+    if len(option_labels) < 2:
+        raise HTTPException(status_code=400, detail="Poll requires at least two non-empty options")
+
+    poll = models.GroupPoll(
+        group_id=group.id,
+        question=question,
+        decision_type=body.decision_type,
+        allow_vote_update=body.allow_vote_update,
+        closes_at=closes_at,
+        created_by=current_user.id,
+    )
+    db.add(poll)
+    db.flush()
+
+    for index, label in enumerate(option_labels):
+        db.add(models.GroupPollOption(poll_id=poll.id, label=label, position=index))
+
+    db.commit()
+    db.refresh(poll)
+
+    return {
+        "ok": True,
+        "message": "Poll created",
+        "poll": _serialize_poll(
+            poll,
+            current_user.id,
+            db,
+            group_name=group.name,
+            member_count=_get_group_member_count(group.id, db),
+        ),
+    }
+
+
+@app.get("/polls/dashboard", response_model=dict)
+def list_dashboard_polls(request: Request, db: Session = Depends(get_db)):
+    """List upcoming (active) and previous (closed) polls for all groups of the current user."""
+    current_user = get_current_user_info(request, db)
+
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+    if not memberships:
+        return {"upcoming": [], "previous": []}
+
+    group_ids = [membership.group_id for membership in memberships]
+    _finalize_due_polls_for_groups(group_ids, db)
+
+    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    group_name_map = {group.id: group.name for group in groups}
+
+    member_counts = {
+        group_id: _get_group_member_count(group_id, db)
+        for group_id in group_ids
+    }
+
+    upcoming_polls = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.group_id.in_(group_ids),
+            models.GroupPoll.status == "active",
+        )
+        .order_by(models.GroupPoll.closes_at.asc(), models.GroupPoll.created_at.desc())
+        .all()
+    )
+    previous_polls = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.group_id.in_(group_ids),
+            models.GroupPoll.status == "closed",
+        )
+        .order_by(models.GroupPoll.closed_at.desc(), models.GroupPoll.created_at.desc())
+        .all()
+    )
+
+    return {
+        "upcoming": [
+            _serialize_poll(
+                poll,
+                current_user.id,
+                db,
+                group_name=group_name_map.get(poll.group_id),
+                member_count=member_counts.get(poll.group_id, 0),
+            )
+            for poll in upcoming_polls
+        ],
+        "previous": [
+            _serialize_poll(
+                poll,
+                current_user.id,
+                db,
+                group_name=group_name_map.get(poll.group_id),
+                member_count=member_counts.get(poll.group_id, 0),
+            )
+            for poll in previous_polls
+        ],
+    }
+
+
+@app.post("/groups/{group_id}/polls/{poll_id}/vote", response_model=dict)
+def submit_group_poll_vote(
+    group_id: int,
+    poll_id: int,
+    body: GroupPollVoteIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Submit or update the caller's vote for an active group poll."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    poll = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.id == poll_id,
+            models.GroupPoll.group_id == group_id,
+        )
+        .first()
+    )
+    if not poll:
+        raise HTTPException(status_code=404, detail="Poll not found")
+
+    if _finalize_poll_if_due(poll, db):
+        db.commit()
+        db.refresh(poll)
+
+    if poll.status != "active":
+        raise HTTPException(status_code=400, detail="This poll is closed")
+
+    option = (
+        db.query(models.GroupPollOption)
+        .filter(
+            models.GroupPollOption.id == body.option_id,
+            models.GroupPollOption.poll_id == poll.id,
+        )
+        .first()
+    )
+    if not option:
+        raise HTTPException(status_code=400, detail="Selected option is not part of this poll")
+
+    existing_vote = (
+        db.query(models.GroupPollVote)
+        .filter(
+            models.GroupPollVote.poll_id == poll.id,
+            models.GroupPollVote.voter_id == current_user.id,
+        )
+        .first()
+    )
+
+    if existing_vote:
+        if not poll.allow_vote_update and existing_vote.option_id != body.option_id:
+            raise HTTPException(status_code=400, detail="You have already voted and this poll does not allow vote changes")
+        existing_vote.option_id = body.option_id
+    else:
+        db.add(models.GroupPollVote(
+            poll_id=poll.id,
+            option_id=body.option_id,
+            voter_id=current_user.id,
+        ))
+
+    db.commit()
+    db.refresh(poll)
+
+    return {
+        "ok": True,
+        "message": "Vote recorded",
+        "poll": _serialize_poll(
+            poll,
+            current_user.id,
+            db,
+            group_name=group.name,
+            member_count=_get_group_member_count(group.id, db),
+        ),
+    }
+
+
+@app.patch("/groups/{group_id}/polls/{poll_id}/end", response_model=dict)
+def end_group_poll_early(
+    group_id: int,
+    poll_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Allow the poll host to end an active poll early and publish the winning option."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    poll = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.id == poll_id,
+            models.GroupPoll.group_id == group_id,
+        )
+        .first()
+    )
+    if not poll:
+        raise HTTPException(status_code=404, detail="Poll not found")
+
+    if poll.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the poll host can end this poll early")
+
+    if poll.status != "active":
+        raise HTTPException(status_code=400, detail="This poll is already closed")
+
+    _close_poll_and_compute_winner(poll, db)
+    db.commit()
+    db.refresh(poll)
+
+    return {
+        "ok": True,
+        "message": "Poll ended early",
+        "poll": _serialize_poll(
+            poll,
+            current_user.id,
+            db,
+            group_name=group.name,
+            member_count=_get_group_member_count(group.id, db),
+        ),
     }
 
 
