@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import CreateGroupModal from "./CreateGroupModal";
 import { useAuth } from "@/app/AuthContext";
@@ -13,7 +13,25 @@ type Group = {
     created_at: string | null;
     member_count: number;
     role: string | null;
+    trip_item_count: number;
+    trip_start_at: string | null;
+    trip_end_at: string | null;
 };
+
+type TripSection = "upcoming" | "active" | "previous";
+
+function normalizeGroupStatus(status: string): "planning" | "upcoming" | "active" | "archived" {
+    if (status === "active") return "active";
+    if (status === "archived") return "archived";
+    if (status === "upcoming" || status === "confirmed" || status === "finalized") return "upcoming";
+    return "planning";
+}
+
+function parseIsoDate(value: string | null): Date | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 type Destination = {
     place_id: string;
@@ -72,6 +90,7 @@ export default function Dashboard() {
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loadingBookings, setLoadingBookings] = useState(true);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [selectedTripSection, setSelectedTripSection] = useState<TripSection>("upcoming");
 
     const handleDestinationClick = (destination: Destination | null) => {
         if (!destination) return;
@@ -165,6 +184,44 @@ export default function Dashboard() {
     ]
         .filter((item): item is { destination: Destination; matchScore: string } => Boolean(item.destination));
 
+    const now = useMemo(() => new Date(), []);
+
+    const upcomingTrips = useMemo(() => {
+        return groups.filter((group) => {
+            const status = normalizeGroupStatus(group.status);
+            if (status !== "upcoming") return false;
+            const endAt = parseIsoDate(group.trip_end_at);
+            if (!endAt) return true;
+            return endAt >= now;
+        });
+    }, [groups, now]);
+
+    const activeTrips = useMemo(() => {
+        return groups.filter((group) => {
+            const status = normalizeGroupStatus(group.status);
+            if (status !== "active") return false;
+            const endAt = parseIsoDate(group.trip_end_at);
+            if (!endAt) return true;
+            return endAt >= now;
+        });
+    }, [groups, now]);
+
+    const previousTrips = useMemo(() => {
+        return groups.filter((group) => {
+            const status = normalizeGroupStatus(group.status);
+            if (status === "archived") return true;
+            const endAt = parseIsoDate(group.trip_end_at);
+            if (!endAt) return false;
+            return endAt < now;
+        });
+    }, [groups, now]);
+
+    const visibleTrips = selectedTripSection === "upcoming"
+        ? upcomingTrips
+        : selectedTripSection === "active"
+            ? activeTrips
+            : previousTrips;
+
     const handlePlanTrip = () => {
         if (groups.length === 0) {
             setToastMessage("Create or join a group first to build a trip itinerary.");
@@ -175,7 +232,7 @@ export default function Dashboard() {
     };
 
     const handleViewGroups = () => {
-        const section = document.getElementById("active-groups-section");
+        const section = document.getElementById("all-groups-section");
         if (section) {
             section.scrollIntoView({ behavior: "smooth", block: "start" });
             return;
@@ -249,7 +306,83 @@ export default function Dashboard() {
             <div className="dashboard-grid">
                 {/* Left Column */}
                 <div className="dashboard-main">
-                    <h2 className="active-trips-title">Upcoming Trips</h2>
+                    <h2 className="active-trips-title">Trip Timeline</h2>
+
+                    <div className="trip-section-tabs">
+                        <button
+                            className={`trip-section-tab ${selectedTripSection === "upcoming" ? "active" : ""}`}
+                            onClick={() => setSelectedTripSection("upcoming")}
+                        >
+                            Upcoming Trips ({upcomingTrips.length})
+                        </button>
+                        <button
+                            className={`trip-section-tab ${selectedTripSection === "active" ? "active" : ""}`}
+                            onClick={() => setSelectedTripSection("active")}
+                        >
+                            Active Trips ({activeTrips.length})
+                        </button>
+                        <button
+                            className={`trip-section-tab ${selectedTripSection === "previous" ? "active" : ""}`}
+                            onClick={() => setSelectedTripSection("previous")}
+                        >
+                            Previous Trips ({previousTrips.length})
+                        </button>
+                    </div>
+
+                    {visibleTrips.length === 0 ? (
+                        <div className="trip-section-empty">
+                            {selectedTripSection === "upcoming" && "No upcoming trips yet. Finalize an itinerary to move it here."}
+                            {selectedTripSection === "active" && "No active trips right now."}
+                            {selectedTripSection === "previous" && "No previous trips yet."}
+                        </div>
+                    ) : (
+                        <div className="active-groups-section" id="active-groups-section">
+                            <div className="active-groups-grid">
+                                {visibleTrips.map((g) => (
+                                    <div key={g.id} className="active-group-card" onClick={() => router.push(`/group/${g.id}`)} style={{ cursor: "pointer" }}>
+                                        <div className="active-group-info">
+                                            <h4 className="active-group-name">{g.name}</h4>
+                                            {g.description && (
+                                                <p className="active-group-desc">{g.description}</p>
+                                            )}
+                                        </div>
+                                        <div className="active-group-meta">
+                                            <span className={`active-group-status status-${normalizeGroupStatus(g.status)}`}>
+                                                {normalizeGroupStatus(g.status)}
+                                            </span>
+                                            <span className="active-group-role">{g.role}</span>
+                                            <span className="active-group-members">
+                                                {g.member_count} {g.member_count === 1 ? "member" : "members"}
+                                            </span>
+                                            {g.trip_start_at && g.trip_end_at && (
+                                                <span className="active-group-dates">
+                                                    {new Date(g.trip_start_at).toLocaleDateString()} - {new Date(g.trip_end_at).toLocaleDateString()}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <button
+                                            className="group-open-btn"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                router.push(`/group/${g.id}`);
+                                            }}
+                                        >
+                                            Open Group
+                                        </button>
+                                        <button
+                                            className="group-plan-btn"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                router.push(`/group/${g.id}/itinerary`);
+                                            }}
+                                        >
+                                            Open Itinerary
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Trip Cards */}
                     {destinationData.maldives && (
@@ -317,46 +450,21 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    {/* Active Groups Section */}
+                    {/* All Groups Section */}
                     {groups.length > 0 && (
-                        <div className="active-groups-section" id="active-groups-section">
-                            <h3 className="active-groups-title">Active Groups</h3>
+                        <div className="active-groups-section" id="all-groups-section">
+                            <h3 className="active-groups-title">All Groups</h3>
                             <div className="active-groups-grid">
                                 {groups.map((g) => (
                                     <div key={g.id} className="active-group-card" onClick={() => router.push(`/group/${g.id}`)} style={{ cursor: "pointer" }}>
                                         <div className="active-group-info">
                                             <h4 className="active-group-name">{g.name}</h4>
-                                            {g.description && (
-                                                <p className="active-group-desc">{g.description}</p>
-                                            )}
+                                            {g.description && <p className="active-group-desc">{g.description}</p>}
                                         </div>
                                         <div className="active-group-meta">
-                                            <span className={`active-group-status status-${g.status}`}>
-                                                {g.status}
-                                            </span>
-                                            <span className="active-group-role">{g.role}</span>
-                                            <span className="active-group-members">
-                                                {g.member_count} {g.member_count === 1 ? "member" : "members"}
-                                            </span>
+                                            <span className={`active-group-status status-${normalizeGroupStatus(g.status)}`}>{normalizeGroupStatus(g.status)}</span>
+                                            <span className="active-group-members">{g.member_count} {g.member_count === 1 ? "member" : "members"}</span>
                                         </div>
-                                        <button
-                                            className="group-open-btn"
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                router.push(`/group/${g.id}`);
-                                            }}
-                                        >
-                                            Open Group
-                                        </button>
-                                        <button
-                                            className="group-plan-btn"
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                router.push(`/group/${g.id}/itinerary`);
-                                            }}
-                                        >
-                                            Plan Trip
-                                        </button>
                                     </div>
                                 ))}
                             </div>

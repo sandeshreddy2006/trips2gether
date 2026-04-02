@@ -96,6 +96,9 @@ class GroupOut(BaseModel):
     created_at: datetime | None = None
     member_count: int = 0
     role: str | None = None
+    trip_item_count: int = 0
+    trip_start_at: datetime | None = None
+    trip_end_at: datetime | None = None
 
 
 class GroupListOut(BaseModel):
@@ -105,7 +108,11 @@ class GroupListOut(BaseModel):
 class GroupUpdateIn(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
-    status: Literal["planning", "confirmed", "finalized"] | None = None
+    status: Literal["planning", "confirmed", "finalized", "upcoming", "active", "archived"] | None = None
+
+
+class TripStateUpdateIn(BaseModel):
+    status: Literal["planning", "upcoming", "active", "archived"]
 
 
 class GroupAddMembersIn(BaseModel):
@@ -596,6 +603,9 @@ class ItineraryPlanOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     item_count: int = 0
+    shared_notes: Optional[str] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -631,6 +641,10 @@ class ItineraryItemReorderIn(BaseModel):
     item_ids: list[int] = Field(min_length=1)
 
 
+class ItinerarySharedNotesIn(BaseModel):
+    shared_notes: Optional[str] = None
+
+
 class ItineraryItemOut(BaseModel):
     id: int
     trip_plan_id: int
@@ -661,4 +675,5 @@ class ItineraryTimelineOut(BaseModel):
     items: list[ItineraryItemOut]
     is_empty: bool = False
     group_name: Optional[str] = None
+    group_status: Optional[str] = None
 

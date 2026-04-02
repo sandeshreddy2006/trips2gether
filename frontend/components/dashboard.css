@@ -179,6 +179,37 @@
     gap: 2rem;
 }
 
+.trip-section-tabs {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.trip-section-tab {
+    border: 1px solid rgba(46, 107, 85, 0.22);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #215946;
+    font: inherit;
+    font-weight: 700;
+    padding: 0.48rem 0.85rem;
+    cursor: pointer;
+}
+
+.trip-section-tab.active {
+    background: linear-gradient(135deg, #2e6b55 0%, #186c50 100%);
+    color: #ffffff;
+    border-color: rgba(24, 108, 80, 0.6);
+}
+
+.trip-section-empty {
+    padding: 1rem 1.1rem;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px dashed rgba(46, 107, 85, 0.22);
+    color: #4d6459;
+}
+
 /* Trip Cards */
 .trip-card {
     background: white;
@@ -640,6 +671,21 @@
 .status-finalized {
     background-color: #e3f2fd;
     color: #1565c0;
+}
+
+.status-upcoming {
+    background-color: #e8f5e9;
+    color: #2d7a4a;
+}
+
+.status-active {
+    background-color: #e6f4ff;
+    color: #1f5f9c;
+}
+
+.status-archived {
+    background-color: #fff5de;
+    color: #996f15;
 }
 
 .active-trip-role {
