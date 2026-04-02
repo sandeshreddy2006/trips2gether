@@ -96,6 +96,9 @@ class GroupOut(BaseModel):
     created_at: datetime | None = None
     member_count: int = 0
     role: str | None = None
+    trip_item_count: int = 0
+    trip_start_at: datetime | None = None
+    trip_end_at: datetime | None = None
 
 
 class GroupListOut(BaseModel):
@@ -105,7 +108,43 @@ class GroupListOut(BaseModel):
 class GroupUpdateIn(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
-    status: Literal["planning", "confirmed", "finalized"] | None = None
+    status: Literal["planning", "confirmed", "finalized", "upcoming", "active", "archived"] | None = None
+
+
+class TripStateUpdateIn(BaseModel):
+    status: Literal["planning", "upcoming", "active", "archived"]
+
+
+class PollOptionCreateIn(BaseModel):
+    label: str = Field(min_length=1, max_length=255)
+
+
+class GroupPollCreateIn(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    decision_type: Literal["destination", "flight", "hotel", "activity", "other"] = "other"
+    closes_at: datetime
+    allow_vote_update: bool = True
+    options: list[PollOptionCreateIn] = Field(min_length=2, max_length=12)
+
+
+class GroupPollVoteIn(BaseModel):
+    option_id: int
+
+
+class GroupNotificationOut(BaseModel):
+    id: int
+    user_id: int
+    group_id: int
+    poll_id: int | None = None
+    notification_type: str
+    title: str
+    body: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class GroupNotificationListOut(BaseModel):
+    items: list[GroupNotificationOut]
 
 
 class GroupAddMembersIn(BaseModel):
@@ -646,3 +685,96 @@ class BookingListOut(BaseModel):
     """List of bookings for a user"""
     bookings: list[BookingOut]
     total_count: int
+
+
+# -------------------------
+# Itinerary Schemas
+# -------------------------
+
+class ItineraryPlanCreateIn(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+
+
+class ItineraryPlanOut(BaseModel):
+    id: int
+    group_id: int
+    title: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    item_count: int = 0
+    shared_notes: Optional[str] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ItineraryItemCreateIn(BaseModel):
+    item_type: Literal["flight", "accommodation", "dining", "activity", "transfer", "other"]
+    title: str = Field(min_length=1, max_length=255)
+    start_at: datetime
+    end_at: Optional[datetime] = None
+    location_name: Optional[str] = None
+    location_address: Optional[str] = None
+    notes: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_reference: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ItineraryItemUpdateIn(BaseModel):
+    item_type: Optional[Literal["flight", "accommodation", "dining", "activity", "transfer", "other"]] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+    location_name: Optional[str] = None
+    location_address: Optional[str] = None
+    notes: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_reference: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+
+
+class ItineraryItemReorderIn(BaseModel):
+    item_ids: list[int] = Field(min_length=1)
+
+
+class ItinerarySharedNotesIn(BaseModel):
+    shared_notes: Optional[str] = None
+
+
+class ItineraryItemOut(BaseModel):
+    id: int
+    trip_plan_id: int
+    item_type: str
+    title: str
+    sort_order: int
+    start_at: datetime
+    end_at: Optional[datetime] = None
+    location_name: Optional[str] = None
+    location_address: Optional[str] = None
+    notes: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_reference: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+    created_by: int
+    created_at: datetime
+    updated_at: datetime
+    display_date: str
+    display_time: str
+    display_location: str
+
+    class Config:
+        from_attributes = True
+
+
+class ItineraryTimelineOut(BaseModel):
+    trip_plan: ItineraryPlanOut
+    items: list[ItineraryItemOut]
+    is_empty: bool = False
+    group_name: Optional[str] = None
+    group_status: Optional[str] = None
+

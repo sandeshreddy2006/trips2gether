@@ -1,10 +1,13 @@
-from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, File, UploadFile
+import asyncio
+import threading
+
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, inspect, text
 from sqlalchemy.exc import DataError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from .db import Base, engine, get_db
 from . import models  # Import models to register them with SQLAlchemy
 from .schemas import (
@@ -31,6 +34,19 @@ from .schemas import (
     GroupShortlistFlightCreateIn,
     GroupShortlistFlightItemOut,
     GroupShortlistFlightListOut,
+    ItineraryPlanCreateIn,
+    ItineraryPlanOut,
+    ItineraryItemCreateIn,
+    ItineraryItemOut,
+    ItineraryItemReorderIn,
+    ItinerarySharedNotesIn,
+    ItineraryItemUpdateIn,
+    ItineraryTimelineOut,
+    TripStateUpdateIn,
+    GroupPollCreateIn,
+    GroupPollVoteIn,
+    GroupNotificationOut,
+    GroupNotificationListOut,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -71,6 +87,7 @@ from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
 from .flightbookings import _select_diverse_offers, _serialize_duffel_offer
 from .shortlist import serialize_shortlist_item, serialize_shortlist_flight_item
+from .itinerary import serialize_trip_plan, serialize_itinerary_item
 from jose import JWTError
 import os
 import requests
@@ -88,14 +105,121 @@ Base.metadata.create_all(bind=engine)
 print("[Startup] Finished Base.metadata.create_all.")
 
 
+def _ensure_itinerary_sort_order_column() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("itinerary_items")}
+    except Exception:
+        return
+
+    if "sort_order" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE itinerary_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
+
+
+_ensure_itinerary_sort_order_column()
+
+
+def _ensure_trip_plan_shared_notes_column() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("trip_plans")}
+    except Exception:
+        return
+
+    if "shared_notes" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE trip_plans ADD COLUMN shared_notes TEXT"))
+
+
+_ensure_trip_plan_shared_notes_column()
+
+
+def _ensure_trip_plan_history_table() -> None:
+    inspector = inspect(engine)
+    try:
+        has_table = inspector.has_table("trip_plan_history")
+    except Exception:
+        return
+
+    if not has_table:
+        models.TripPlanHistory.__table__.create(bind=engine, checkfirst=True)
+
+
+_ensure_trip_plan_history_table()
+
+
 app = FastAPI(title="trips2gether API")
+
+
+class PollRealtimeManager:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._connections: dict[int, WebSocket] = {}
+        self._group_connections: dict[int, set[int]] = {}
+
+    async def connect(self, websocket: WebSocket, group_ids: list[int]) -> None:
+        await websocket.accept()
+        connection_id = id(websocket)
+        with self._lock:
+            self._connections[connection_id] = websocket
+            for group_id in group_ids:
+                self._group_connections.setdefault(group_id, set()).add(connection_id)
+
+    async def disconnect(self, websocket: WebSocket) -> None:
+        connection_id = id(websocket)
+        with self._lock:
+            self._connections.pop(connection_id, None)
+            for subscribers in self._group_connections.values():
+                subscribers.discard(connection_id)
+
+    async def broadcast_group(self, group_id: int, payload: dict) -> None:
+        with self._lock:
+            connection_ids = list(self._group_connections.get(group_id, set()))
+
+        dead_connections: list[int] = []
+        for connection_id in connection_ids:
+            websocket = None
+            with self._lock:
+                websocket = self._connections.get(connection_id)
+            if websocket is None:
+                dead_connections.append(connection_id)
+                continue
+
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                dead_connections.append(connection_id)
+
+        if dead_connections:
+            with self._lock:
+                for connection_id in dead_connections:
+                    self._connections.pop(connection_id, None)
+                for subscribers in self._group_connections.values():
+                    for connection_id in dead_connections:
+                        subscribers.discard(connection_id)
+
+
+poll_realtime_manager = PollRealtimeManager()
+
+
+def _publish_poll_event_sync(group_id: int, payload: dict) -> None:
+    loop = getattr(app.state, "loop", None)
+    if not loop or not loop.is_running():
+        return
+    asyncio.run_coroutine_threadsafe(poll_realtime_manager.broadcast_group(group_id, payload), loop)
+
+
+async def _publish_poll_event_async(group_id: int, payload: dict) -> None:
+    await poll_realtime_manager.broadcast_group(group_id, payload)
 
 # Initialize scheduler for cleanup tasks
 scheduler = BackgroundScheduler()
 
 @app.on_event("startup")
-def start_scheduler():
+async def start_scheduler():
     """Start background scheduler for cleanup tasks"""
+    app.state.loop = asyncio.get_running_loop()
     
     def cleanup_job():
         """Background job to clean up expired tokens"""
@@ -105,8 +229,30 @@ def start_scheduler():
             deleted_count = db.query(models.PasswordResetToken).filter(
                 models.PasswordResetToken.expires_at < current_time
             ).delete()
+
+            due_polls = (
+                db.query(models.GroupPoll)
+                .filter(
+                    models.GroupPoll.status == "active",
+                    models.GroupPoll.closes_at <= current_time,
+                )
+                .all()
+            )
+            finalized_count = 0
+            finalized_polls: list[models.GroupPoll] = []
+            finalized_notifications: list[models.GroupNotification] = []
+            for poll in due_polls:
+                if _finalize_poll_if_due(poll, db):
+                    finalized_count += 1
+                    finalized_polls.append(poll)
+                    finalized_notifications.extend(_create_poll_notifications(poll, db, "poll.closed"))
+
             db.commit()
-            print(f"[Cleanup Job] Deleted {deleted_count} expired password reset tokens")
+            for poll in finalized_polls:
+                _publish_poll_event_sync(poll.group_id, _build_poll_event_payload("poll.closed", poll, db))
+            if finalized_notifications:
+                _broadcast_poll_notifications(finalized_notifications)
+            print(f"[Cleanup Job] Deleted {deleted_count} expired password reset tokens; finalized {finalized_count} polls")
         except Exception as e:
             print(f"[Cleanup Job] Error: {e}")
         finally:
@@ -135,6 +281,345 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _get_group_and_membership(group_id: int, user_id: int, db: Session):
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    return group, membership
+
+
+def _get_itinerary_items(plan_id: int, db: Session):
+    return (
+        db.query(models.ItineraryItem)
+        .filter(models.ItineraryItem.trip_plan_id == plan_id)
+        .order_by(
+            models.ItineraryItem.sort_order.asc(),
+            models.ItineraryItem.start_at.asc(),
+            models.ItineraryItem.created_at.asc(),
+        )
+        .all()
+    )
+
+
+def _build_itinerary_payload(group: models.Group, plan: models.TripPlan, db: Session, warnings: list[str] | None = None):
+    items = _get_itinerary_items(plan.id, db)
+    starts_at = items[0].start_at if items else None
+    ends_at = None
+    if items:
+        ends_at = max((item.end_at or item.start_at) for item in items)
+
+    payload = {
+        "ok": True,
+        "trip_plan": serialize_trip_plan(plan, len(items), starts_at, ends_at),
+        "items": [serialize_itinerary_item(item) for item in items],
+        "is_empty": len(items) == 0,
+        "group_name": group.name,
+        "group_status": group.status,
+    }
+    if warnings:
+        payload["warnings"] = warnings
+    return payload
+
+
+def _has_time_conflict(start_at: datetime, end_at: datetime | None, other_start: datetime, other_end: datetime | None) -> bool:
+    candidate_end = end_at or start_at
+    existing_end = other_end or other_start
+    return start_at <= existing_end and other_start <= candidate_end
+
+
+def _build_time_conflict_warnings(plan_id: int, item_id: int | None, start_at: datetime, end_at: datetime | None, db: Session) -> list[str]:
+    query = db.query(models.ItineraryItem).filter(models.ItineraryItem.trip_plan_id == plan_id)
+    if item_id is not None:
+        query = query.filter(models.ItineraryItem.id != item_id)
+
+    conflicts: list[str] = []
+    for item in query.all():
+        if _has_time_conflict(start_at, end_at, item.start_at, item.end_at):
+            conflicts.append(item.title)
+
+    if not conflicts:
+        return []
+
+    preview = ", ".join(conflicts[:3])
+    if len(conflicts) > 3:
+        preview += ", and more"
+    return [f"Time conflict: overlaps with {preview}."]
+
+
+def _resequence_itinerary_items(plan_id: int, db: Session) -> None:
+    items = (
+        db.query(models.ItineraryItem)
+        .filter(models.ItineraryItem.trip_plan_id == plan_id)
+        .order_by(
+            models.ItineraryItem.sort_order.asc(),
+            models.ItineraryItem.start_at.asc(),
+            models.ItineraryItem.created_at.asc(),
+            models.ItineraryItem.id.asc(),
+        )
+        .all()
+    )
+
+    for index, item in enumerate(items):
+        item.sort_order = index
+
+
+def _get_or_create_trip_plan(group: models.Group, db: Session) -> models.TripPlan:
+    plan = group.trip_plan
+    if plan:
+        return plan
+
+    plan = models.TripPlan(
+        group_id=group.id,
+        title=f"{group.name} Itinerary",
+        description=f"Chronological plan for {group.name}",
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+def _assert_itinerary_mutable(group: models.Group) -> None:
+    if group.status in ("active", "archived"):
+        raise HTTPException(
+            status_code=400,
+            detail="Itinerary is finalized for this trip state. Only shared notes can be edited.",
+        )
+
+
+def _snapshot_trip_plan_history(
+    group: models.Group,
+    plan: models.TripPlan,
+    items: list[models.ItineraryItem],
+    db: Session,
+) -> None:
+    starts_at = items[0].start_at if items else None
+    ends_at = max((item.end_at or item.start_at) for item in items) if items else None
+    serialized_items = [serialize_itinerary_item(item).model_dump(mode="json") for item in items]
+
+    history = models.TripPlanHistory(
+        group_id=group.id,
+        title=plan.title,
+        description=plan.description,
+        shared_notes=plan.shared_notes,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        items_json=json.dumps(serialized_items),
+    )
+    db.add(history)
+
+
+def _get_group_member_count(group_id: int, db: Session) -> int:
+    return (
+        db.query(func.count(models.GroupMember.id))
+        .filter(models.GroupMember.group_id == group_id)
+        .scalar()
+        or 0
+    )
+
+
+def _to_naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _finalize_poll_if_due(poll: models.GroupPoll, db: Session) -> bool:
+    if poll.status != "active":
+        return False
+
+    now = datetime.utcnow()
+    closes_at = _to_naive_utc(poll.closes_at)
+    if closes_at > now:
+        return False
+
+    return _close_poll_and_compute_winner(poll, db, now)
+
+
+def _close_poll_and_compute_winner(poll: models.GroupPoll, db: Session, closed_at: datetime | None = None) -> bool:
+    if poll.status != "active":
+        return False
+
+    options = (
+        db.query(models.GroupPollOption)
+        .filter(models.GroupPollOption.poll_id == poll.id)
+        .order_by(models.GroupPollOption.position.asc(), models.GroupPollOption.id.asc())
+        .all()
+    )
+
+    votes = (
+        db.query(models.GroupPollVote.option_id, func.count(models.GroupPollVote.id))
+        .filter(models.GroupPollVote.poll_id == poll.id)
+        .group_by(models.GroupPollVote.option_id)
+        .all()
+    )
+    vote_counts = {option_id: count for option_id, count in votes}
+
+    winner_option_id = None
+    if options and vote_counts:
+        highest = max(vote_counts.values())
+        for option in options:
+            if vote_counts.get(option.id, 0) == highest:
+                winner_option_id = option.id
+                break
+
+    poll.status = "closed"
+    poll.closed_at = closed_at or datetime.utcnow()
+    poll.winner_option_id = winner_option_id
+    return True
+
+
+def _finalize_due_polls_for_groups(group_ids: list[int], db: Session) -> tuple[list[models.GroupPoll], list[models.GroupNotification]]:
+    if not group_ids:
+        return [], []
+
+    due_polls = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.group_id.in_(group_ids),
+            models.GroupPoll.status == "active",
+        )
+        .all()
+    )
+
+    has_changes = False
+    finalized_polls: list[models.GroupPoll] = []
+    for poll in due_polls:
+        if _finalize_poll_if_due(poll, db):
+            has_changes = True
+            finalized_polls.append(poll)
+
+    notifications: list[models.GroupNotification] = []
+    for poll in finalized_polls:
+        notifications.extend(_create_poll_notifications(poll, db, "poll.closed"))
+
+    if has_changes:
+        db.commit()
+
+    return finalized_polls, notifications
+
+
+def _serialize_poll(
+    poll: models.GroupPoll,
+    current_user_id: int,
+    db: Session,
+    group_name: str | None = None,
+    member_count: int | None = None,
+) -> dict:
+    options = (
+        db.query(models.GroupPollOption)
+        .filter(models.GroupPollOption.poll_id == poll.id)
+        .order_by(models.GroupPollOption.position.asc(), models.GroupPollOption.id.asc())
+        .all()
+    )
+    votes = (
+        db.query(models.GroupPollVote)
+        .filter(models.GroupPollVote.poll_id == poll.id)
+        .all()
+    )
+
+    vote_counts: dict[int, int] = {}
+    user_vote_option_id = None
+    voter_ids: set[int] = set()
+    for vote in votes:
+        vote_counts[vote.option_id] = vote_counts.get(vote.option_id, 0) + 1
+        voter_ids.add(vote.voter_id)
+        if vote.voter_id == current_user_id:
+            user_vote_option_id = vote.option_id
+
+    if member_count is None:
+        member_count = _get_group_member_count(poll.group_id, db)
+
+    creator_name = None
+    creator = db.get(models.User, poll.created_by)
+    if creator:
+        creator_name = creator.name
+
+    return {
+        "id": poll.id,
+        "group_id": poll.group_id,
+        "group_name": group_name,
+        "question": poll.question,
+        "decision_type": poll.decision_type,
+        "status": poll.status,
+        "allow_vote_update": poll.allow_vote_update,
+        "closes_at": poll.closes_at.isoformat() if poll.closes_at else None,
+        "closed_at": poll.closed_at.isoformat() if poll.closed_at else None,
+        "created_by": poll.created_by,
+        "created_by_name": creator_name,
+        "created_at": poll.created_at.isoformat() if poll.created_at else None,
+        "winner_option_id": poll.winner_option_id,
+        "member_count": member_count,
+        "total_votes": len(votes),
+        "voted_by_all": member_count > 0 and len(voter_ids) >= member_count,
+        "user_vote_option_id": user_vote_option_id,
+        "options": [
+            {
+                "id": option.id,
+                "label": option.label,
+                "position": option.position,
+                "vote_count": vote_counts.get(option.id, 0),
+                "is_winner": poll.winner_option_id == option.id,
+            }
+            for option in options
+        ],
+    }
+
+
+def _build_poll_event_payload(event_type: str, poll: models.GroupPoll, db: Session) -> dict:
+    group = db.get(models.Group, poll.group_id)
+    return {
+        "type": event_type,
+        "group_id": poll.group_id,
+        "poll": _serialize_poll(
+            poll,
+            current_user_id=0,
+            db=db,
+            group_name=group.name if group else None,
+            member_count=_get_group_member_count(poll.group_id, db),
+        ),
+    }
+
+
+def _get_user_group_ids(user_id: int, db: Session) -> list[int]:
+    memberships = (
+        db.query(models.GroupMember.group_id)
+        .filter(models.GroupMember.user_id == user_id)
+        .all()
+    )
+    return [membership.group_id for membership in memberships]
+
+
+def _get_current_user_from_websocket(websocket: WebSocket, db: Session) -> models.User:
+    token = websocket.cookies.get("authToken")
+    if not token:
+        raise HTTPException(status_code=401, detail="No session")
+
+    try:
+        data = decode_jwt(token)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    user_id = int(data["sub"])
+    user = db.get(models.User, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
 
 
 # -------------------------
@@ -1234,6 +1719,110 @@ def create_group(body: GroupCreateIn, request: Request, db: Session = Depends(ge
     }
 
 
+def _serialize_notification(notification: models.GroupNotification) -> dict:
+    payload = {}
+    try:
+        payload = json.loads(notification.payload_json or "{}")
+        if not isinstance(payload, dict):
+            payload = {}
+    except Exception:
+        payload = {}
+
+    return {
+        "id": notification.id,
+        "user_id": notification.user_id,
+        "group_id": notification.group_id,
+        "poll_id": notification.poll_id,
+        "notification_type": notification.notification_type,
+        "title": notification.title,
+        "body": notification.body,
+        "payload": payload,
+        "created_at": notification.created_at.isoformat() if notification.created_at else None,
+    }
+
+
+def _build_poll_notification_payload(poll: models.GroupPoll, db: Session, notification_type: str) -> tuple[str, str, dict]:
+    group = db.get(models.Group, poll.group_id)
+    creator = db.get(models.User, poll.created_by)
+    poll_snapshot = _serialize_poll(
+        poll,
+        current_user_id=0,
+        db=db,
+        group_name=group.name if group else None,
+        member_count=_get_group_member_count(poll.group_id, db),
+    )
+    option_labels = [option["label"] for option in poll_snapshot.get("options", []) if isinstance(option, dict)]
+    poll_question = poll_snapshot.get("question") or poll.question
+    group_name = group.name if group else "Your group"
+    creator_name = creator.name if creator else "A member"
+
+    if notification_type == "poll.created":
+        title = f"New poll in {group_name}"
+        body = f"{creator_name} created a new poll: {poll_question}. Vote before the deadline."
+    else:
+        winner_label = "No winning option"
+        winner_option = next((option for option in poll_snapshot.get("options", []) if option.get("is_winner")), None)
+        if winner_option:
+            winner_label = winner_option.get("label", winner_label)
+        title = f"Poll finished in {group_name}"
+        body = f"{poll_question} is closed. Winning choice: {winner_label}."
+
+    payload = {
+        "group_id": poll.group_id,
+        "group_name": group_name,
+        "poll_id": poll.id,
+        "poll_question": poll_question,
+        "decision_type": poll.decision_type,
+        "poll_status": poll.status,
+        "created_by": poll.created_by,
+        "created_by_name": creator_name,
+        "option_labels": option_labels,
+    }
+    return title, body, payload
+
+
+def _create_poll_notifications(
+    poll: models.GroupPoll,
+    db: Session,
+    notification_type: str,
+) -> list[models.GroupNotification]:
+    members = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.group_id == poll.group_id)
+        .all()
+    )
+
+    title, body, payload = _build_poll_notification_payload(poll, db, notification_type)
+    notifications: list[models.GroupNotification] = []
+
+    for member in members:
+        notification = models.GroupNotification(
+            user_id=member.user_id,
+            group_id=poll.group_id,
+            poll_id=poll.id,
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            payload_json=json.dumps(payload),
+        )
+        db.add(notification)
+        notifications.append(notification)
+
+    return notifications
+
+
+def _broadcast_poll_notifications(notifications: list[models.GroupNotification]) -> None:
+    for notification in notifications:
+        _publish_poll_event_sync(
+            notification.group_id,
+            {
+                "type": "notification.created",
+                "group_id": notification.group_id,
+                "notification": _serialize_notification(notification),
+            },
+        )
+
+
 @app.get("/groups", response_model=GroupListOut)
 def list_my_groups(request: Request, db: Session = Depends(get_db)):
     """List all groups the current user belongs to."""
@@ -1253,6 +1842,19 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
 
     groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
 
+    items = (
+        db.query(models.ItineraryItem)
+        .join(models.TripPlan, models.ItineraryItem.trip_plan_id == models.TripPlan.id)
+        .filter(models.TripPlan.group_id.in_(group_ids))
+        .all()
+    )
+    items_by_group_id: dict[int, list[models.ItineraryItem]] = {}
+    for item in items:
+        group_id = item.trip_plan.group_id if item.trip_plan else None
+        if group_id is None:
+            continue
+        items_by_group_id.setdefault(group_id, []).append(item)
+
     member_counts = {}
     for gid in group_ids:
         member_counts[gid] = (
@@ -1263,6 +1865,13 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
 
     result = []
     for g in groups:
+        group_items = items_by_group_id.get(g.id, [])
+        trip_start_at = None
+        trip_end_at = None
+        if group_items:
+            trip_start_at = min(item.start_at for item in group_items)
+            trip_end_at = max((item.end_at or item.start_at) for item in group_items)
+
         result.append(
             GroupOut(
                 id=g.id,
@@ -1273,6 +1882,9 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
                 created_at=g.created_at,
                 member_count=member_counts.get(g.id, 0),
                 role=role_map.get(g.id),
+                trip_item_count=len(group_items),
+                trip_start_at=trip_start_at,
+                trip_end_at=trip_end_at,
             )
         )
 
@@ -1368,6 +1980,365 @@ def update_group(group_id: int, body: GroupUpdateIn, request: Request, db: Sessi
             "role": my_membership.role,
         },
     }
+
+
+@app.patch("/groups/{group_id}/trip-state", response_model=dict)
+def update_group_trip_state(
+    group_id: int,
+    body: TripStateUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Update high-level trip lifecycle status for a group."""
+    current_user = get_current_user_info(request, db)
+    group, membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    if membership.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Only group owners or admins can update trip state")
+
+    allowed = {
+        "planning": {"upcoming"},
+        "confirmed": {"upcoming"},
+        "finalized": {"upcoming"},
+        "upcoming": {"active", "planning"},
+        "active": {"archived", "upcoming"},
+        "archived": {"upcoming"},
+    }
+
+    current_state = group.status
+    target_state = body.status
+    if target_state != current_state and target_state not in allowed.get(current_state, set()):
+        raise HTTPException(status_code=400, detail=f"Cannot transition trip from {current_state} to {target_state}")
+
+    if target_state == "archived" and current_state != "archived":
+        plan = _get_or_create_trip_plan(group, db)
+        items = _get_itinerary_items(plan.id, db)
+        _snapshot_trip_plan_history(group, plan, items, db)
+
+    group.status = target_state
+    db.commit()
+    db.refresh(group)
+
+    return {
+        "ok": True,
+        "group": {
+            "id": group.id,
+            "status": group.status,
+        },
+    }
+
+
+@app.post("/groups/{group_id}/polls", response_model=dict)
+async def create_group_poll(
+    group_id: int,
+    body: GroupPollCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create a poll in a group. Any current group member can create polls."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    closes_at = _to_naive_utc(body.closes_at)
+    if closes_at <= datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Poll deadline must be in the future")
+
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Poll question is required")
+
+    option_labels = [option.label.strip() for option in body.options if option.label.strip()]
+    if len(option_labels) < 2:
+        raise HTTPException(status_code=400, detail="Poll requires at least two non-empty options")
+
+    poll = models.GroupPoll(
+        group_id=group.id,
+        question=question,
+        decision_type=body.decision_type,
+        allow_vote_update=body.allow_vote_update,
+        closes_at=closes_at,
+        created_by=current_user.id,
+    )
+    db.add(poll)
+    db.flush()
+
+    for index, label in enumerate(option_labels):
+        db.add(models.GroupPollOption(poll_id=poll.id, label=label, position=index))
+
+    notifications = _create_poll_notifications(poll, db, "poll.created")
+
+    db.commit()
+    db.refresh(poll)
+
+    await _publish_poll_event_async(group.id, _build_poll_event_payload("poll.created", poll, db))
+    if notifications:
+        _broadcast_poll_notifications(notifications)
+
+    return {
+        "ok": True,
+        "message": "Poll created",
+        "poll": _serialize_poll(
+            poll,
+            current_user.id,
+            db,
+            group_name=group.name,
+            member_count=_get_group_member_count(group.id, db),
+        ),
+    }
+
+
+@app.get("/polls/dashboard", response_model=dict)
+def list_dashboard_polls(request: Request, db: Session = Depends(get_db)):
+    """List upcoming (active) and previous (closed) polls for all groups of the current user."""
+    current_user = get_current_user_info(request, db)
+
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+    if not memberships:
+        return {"upcoming": [], "previous": []}
+
+    group_ids = [membership.group_id for membership in memberships]
+    finalized_polls, finalized_notifications = _finalize_due_polls_for_groups(group_ids, db)
+    for poll in finalized_polls:
+        _publish_poll_event_sync(poll.group_id, _build_poll_event_payload("poll.closed", poll, db))
+    if finalized_notifications:
+        _broadcast_poll_notifications(finalized_notifications)
+
+    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    group_name_map = {group.id: group.name for group in groups}
+
+    member_counts = {
+        group_id: _get_group_member_count(group_id, db)
+        for group_id in group_ids
+    }
+
+    upcoming_polls = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.group_id.in_(group_ids),
+            models.GroupPoll.status == "active",
+        )
+        .order_by(models.GroupPoll.closes_at.asc(), models.GroupPoll.created_at.desc())
+        .all()
+    )
+    previous_polls = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.group_id.in_(group_ids),
+            models.GroupPoll.status == "closed",
+        )
+        .order_by(models.GroupPoll.closed_at.desc(), models.GroupPoll.created_at.desc())
+        .all()
+    )
+
+    return {
+        "upcoming": [
+            _serialize_poll(
+                poll,
+                current_user.id,
+                db,
+                group_name=group_name_map.get(poll.group_id),
+                member_count=member_counts.get(poll.group_id, 0),
+            )
+            for poll in upcoming_polls
+        ],
+        "previous": [
+            _serialize_poll(
+                poll,
+                current_user.id,
+                db,
+                group_name=group_name_map.get(poll.group_id),
+                member_count=member_counts.get(poll.group_id, 0),
+            )
+            for poll in previous_polls
+        ],
+    }
+
+
+@app.post("/groups/{group_id}/polls/{poll_id}/vote", response_model=dict)
+async def submit_group_poll_vote(
+    group_id: int,
+    poll_id: int,
+    body: GroupPollVoteIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Submit or update the caller's vote for an active group poll."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    poll = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.id == poll_id,
+            models.GroupPoll.group_id == group_id,
+        )
+        .first()
+    )
+    if not poll:
+        raise HTTPException(status_code=404, detail="Poll not found")
+
+    if _finalize_poll_if_due(poll, db):
+        db.commit()
+        db.refresh(poll)
+
+    if poll.status != "active":
+        raise HTTPException(status_code=400, detail="This poll is closed")
+
+    option = (
+        db.query(models.GroupPollOption)
+        .filter(
+            models.GroupPollOption.id == body.option_id,
+            models.GroupPollOption.poll_id == poll.id,
+        )
+        .first()
+    )
+    if not option:
+        raise HTTPException(status_code=400, detail="Selected option is not part of this poll")
+
+    existing_vote = (
+        db.query(models.GroupPollVote)
+        .filter(
+            models.GroupPollVote.poll_id == poll.id,
+            models.GroupPollVote.voter_id == current_user.id,
+        )
+        .first()
+    )
+
+    if existing_vote:
+        if not poll.allow_vote_update and existing_vote.option_id != body.option_id:
+            raise HTTPException(status_code=400, detail="You have already voted and this poll does not allow vote changes")
+        existing_vote.option_id = body.option_id
+    else:
+        db.add(models.GroupPollVote(
+            poll_id=poll.id,
+            option_id=body.option_id,
+            voter_id=current_user.id,
+        ))
+
+    db.commit()
+    db.refresh(poll)
+
+    await _publish_poll_event_async(group.id, _build_poll_event_payload("poll.updated", poll, db))
+
+    return {
+        "ok": True,
+        "message": "Vote recorded",
+        "poll": _serialize_poll(
+            poll,
+            current_user.id,
+            db,
+            group_name=group.name,
+            member_count=_get_group_member_count(group.id, db),
+        ),
+    }
+
+
+@app.patch("/groups/{group_id}/polls/{poll_id}/end", response_model=dict)
+async def end_group_poll_early(
+    group_id: int,
+    poll_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Allow the poll host to end an active poll early and publish the winning option."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    poll = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.id == poll_id,
+            models.GroupPoll.group_id == group_id,
+        )
+        .first()
+    )
+    if not poll:
+        raise HTTPException(status_code=404, detail="Poll not found")
+
+    if poll.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the poll host can end this poll early")
+
+    if poll.status != "active":
+        raise HTTPException(status_code=400, detail="This poll is already closed")
+
+    _close_poll_and_compute_winner(poll, db)
+    notifications = _create_poll_notifications(poll, db, "poll.closed")
+    db.commit()
+    db.refresh(poll)
+
+    await _publish_poll_event_async(group.id, _build_poll_event_payload("poll.closed", poll, db))
+    if notifications:
+        _broadcast_poll_notifications(notifications)
+
+    return {
+        "ok": True,
+        "message": "Poll ended early",
+        "poll": _serialize_poll(
+            poll,
+            current_user.id,
+            db,
+            group_name=group.name,
+            member_count=_get_group_member_count(group.id, db),
+        ),
+    }
+
+
+@app.websocket("/ws/polls")
+async def poll_updates_socket(websocket: WebSocket):
+    db = next(get_db())
+    try:
+        current_user = _get_current_user_from_websocket(websocket, db)
+        group_ids = _get_user_group_ids(current_user.id, db)
+        await poll_realtime_manager.connect(websocket, group_ids)
+        await websocket.send_json({"type": "poll.connection.ready", "group_ids": group_ids})
+
+        while True:
+            await websocket.receive()
+    except WebSocketDisconnect:
+        pass
+    except HTTPException:
+        await websocket.close(code=4401)
+    finally:
+        try:
+            await poll_realtime_manager.disconnect(websocket)
+        except Exception:
+            pass
+        db.close()
+
+
+@app.get("/poll-notifications", response_model=GroupNotificationListOut)
+def list_poll_notifications(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notifications = (
+        db.query(models.GroupNotification)
+        .filter(models.GroupNotification.user_id == current_user.id)
+        .order_by(models.GroupNotification.created_at.desc())
+        .all()
+    )
+    return {"items": [_serialize_notification(notification) for notification in notifications]}
+
+
+@app.delete("/poll-notifications/{notification_id}", response_model=dict)
+def delete_poll_notification(notification_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notification = (
+        db.query(models.GroupNotification)
+        .filter(
+            models.GroupNotification.id == notification_id,
+            models.GroupNotification.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    db.delete(notification)
+    db.commit()
+    return {"ok": True, "message": "Notification removed"}
 
 
 @app.get("/groups/{group_id}/members", response_model=GroupMemberListOut)
@@ -1904,6 +2875,399 @@ def remove_group_shortlist_flight(
     db.commit()
 
     return {"ok": True, "message": "Flight removed from shortlist"}
+
+
+# Itinerary Endpoints
+
+@app.get("/groups/{group_id}/itinerary", response_model=ItineraryTimelineOut)
+def get_group_itinerary(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Get the compiled itinerary for a group. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    plan = _get_or_create_trip_plan(group, db)
+    return _build_itinerary_payload(group, plan, db)
+
+
+@app.post("/groups/{group_id}/itinerary", response_model=dict)
+def create_or_update_itinerary_plan(
+    group_id: int,
+    body: ItineraryPlanCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create or update the trip plan metadata for a group."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
+
+    plan = _get_or_create_trip_plan(group, db)
+
+    if body.title is not None:
+        trimmed_title = body.title.strip()
+        if not trimmed_title:
+            raise HTTPException(status_code=400, detail="Itinerary title cannot be empty")
+        plan.title = trimmed_title
+    elif not plan.title:
+        plan.title = f"{group.name} Itinerary"
+
+    if body.description is not None:
+        plan.description = body.description.strip() or None
+
+    db.commit()
+    db.refresh(plan)
+
+    item_count = (
+        db.query(func.count(models.ItineraryItem.id))
+        .filter(models.ItineraryItem.trip_plan_id == plan.id)
+        .scalar()
+    )
+
+    return {
+        "ok": True,
+        "trip_plan": serialize_trip_plan(plan, item_count or 0),
+    }
+
+
+@app.post("/groups/{group_id}/itinerary/items", response_model=dict)
+def add_itinerary_item(
+    group_id: int,
+    body: ItineraryItemCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Add a timeline item to a group's itinerary."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
+
+    if body.end_at is not None and body.end_at < body.start_at:
+        raise HTTPException(status_code=400, detail="End time cannot be before start time")
+
+    plan = _get_or_create_trip_plan(group, db)
+    item_title = body.title.strip()
+    if not item_title:
+        raise HTTPException(status_code=400, detail="Itinerary item title cannot be empty")
+
+    max_sort_order = db.query(func.max(models.ItineraryItem.sort_order)).filter(models.ItineraryItem.trip_plan_id == plan.id).scalar() or 0
+
+    item = models.ItineraryItem(
+        trip_plan_id=plan.id,
+        item_type=body.item_type,
+        title=item_title,
+        sort_order=max_sort_order + 1 if max_sort_order > 0 else 0,
+        start_at=body.start_at,
+        end_at=body.end_at,
+        location_name=body.location_name.strip() if body.location_name else None,
+        location_address=body.location_address.strip() if body.location_address else None,
+        notes=body.notes.strip() if body.notes else None,
+        source_kind=body.source_kind.strip() if body.source_kind else None,
+        source_reference=body.source_reference.strip() if body.source_reference else None,
+        details_json=json.dumps(body.details or {}),
+        created_by=current_user.id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    warnings = _build_time_conflict_warnings(plan.id, item.id, item.start_at, item.end_at, db)
+
+    payload = _build_itinerary_payload(group, plan, db, warnings)
+    payload["message"] = "Itinerary item added"
+    return payload
+
+
+@app.patch("/groups/{group_id}/itinerary/notes", response_model=dict)
+def update_itinerary_shared_notes(
+    group_id: int,
+    body: ItinerarySharedNotesIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Save shared itinerary notes visible to all group members."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    plan = _get_or_create_trip_plan(group, db)
+
+    plan.shared_notes = (body.shared_notes or "").strip() or None
+    db.commit()
+    db.refresh(plan)
+
+    payload = _build_itinerary_payload(group, plan, db)
+    payload["message"] = "Shared notes updated"
+    return payload
+
+
+@app.patch("/groups/{group_id}/itinerary/items/{item_id}", response_model=dict)
+def update_itinerary_item(
+    group_id: int,
+    item_id: int,
+    body: ItineraryItemUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Update a single itinerary item."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
+    plan = _get_or_create_trip_plan(group, db)
+
+    item = (
+        db.query(models.ItineraryItem)
+        .filter(
+            models.ItineraryItem.trip_plan_id == plan.id,
+            models.ItineraryItem.id == item_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Itinerary item not found")
+
+    new_start_at = body.start_at if body.start_at is not None else item.start_at
+    new_end_at = body.end_at if body.end_at is not None else item.end_at
+    if new_end_at is not None and new_end_at < new_start_at:
+        raise HTTPException(status_code=400, detail="End time cannot be before start time")
+
+    if body.item_type is not None:
+        item.item_type = body.item_type
+    if body.title is not None:
+        trimmed_title = body.title.strip()
+        if not trimmed_title:
+            raise HTTPException(status_code=400, detail="Itinerary item title cannot be empty")
+        item.title = trimmed_title
+    if body.start_at is not None:
+        item.start_at = body.start_at
+    if body.end_at is not None:
+        item.end_at = body.end_at
+    if body.location_name is not None:
+        item.location_name = body.location_name.strip() or None
+    if body.location_address is not None:
+        item.location_address = body.location_address.strip() or None
+    if body.notes is not None:
+        item.notes = body.notes.strip() or None
+    if body.source_kind is not None:
+        item.source_kind = body.source_kind.strip() or None
+    if body.source_reference is not None:
+        item.source_reference = body.source_reference.strip() or None
+    if body.details is not None:
+        item.details_json = json.dumps(body.details or {})
+
+    db.commit()
+    db.refresh(item)
+
+    warnings = _build_time_conflict_warnings(plan.id, item.id, item.start_at, item.end_at, db)
+    payload = _build_itinerary_payload(group, plan, db, warnings)
+    payload["message"] = "Itinerary item updated"
+    payload["item"] = serialize_itinerary_item(item)
+    return payload
+
+
+@app.delete("/groups/{group_id}/itinerary/items/{item_id}", response_model=dict)
+def delete_itinerary_item(
+    group_id: int,
+    item_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Delete an itinerary item and renumber the remaining sequence."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
+    plan = _get_or_create_trip_plan(group, db)
+
+    item = (
+        db.query(models.ItineraryItem)
+        .filter(
+            models.ItineraryItem.trip_plan_id == plan.id,
+            models.ItineraryItem.id == item_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Itinerary item not found")
+
+    db.delete(item)
+    db.flush()
+    _resequence_itinerary_items(plan.id, db)
+    db.commit()
+
+    payload = _build_itinerary_payload(group, plan, db)
+    payload["message"] = "Itinerary item deleted"
+    return payload
+
+
+@app.patch("/groups/{group_id}/itinerary/reorder", response_model=dict)
+def reorder_itinerary_items(
+    group_id: int,
+    body: ItineraryItemReorderIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Persist a reordered itinerary sequence."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
+    plan = _get_or_create_trip_plan(group, db)
+
+    items = (
+        db.query(models.ItineraryItem)
+        .filter(models.ItineraryItem.trip_plan_id == plan.id)
+        .all()
+    )
+    item_by_id = {item.id: item for item in items}
+    if len(body.item_ids) != len(items) or set(body.item_ids) != set(item_by_id):
+        raise HTTPException(status_code=400, detail="Reorder payload must include every itinerary item exactly once")
+
+    for index, item_id in enumerate(body.item_ids):
+        item_by_id[item_id].sort_order = index
+
+    db.commit()
+
+    payload = _build_itinerary_payload(group, plan, db)
+    payload["message"] = "Itinerary order updated"
+    return payload
+
+
+@app.post("/groups/{group_id}/itinerary/new-trip", response_model=dict)
+def start_new_trip_from_archived_itinerary(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Archive the current trip snapshot and reset itinerary for a fresh planning cycle."""
+    current_user = get_current_user_info(request, db)
+    group, membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    if membership.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Only group owners or admins can start a new trip")
+
+    if group.status != "archived":
+        raise HTTPException(status_code=400, detail="A new trip can only be started from an archived trip")
+
+    plan = _get_or_create_trip_plan(group, db)
+    items = _get_itinerary_items(plan.id, db)
+
+    existing_history_count = (
+        db.query(func.count(models.TripPlanHistory.id))
+        .filter(models.TripPlanHistory.group_id == group.id)
+        .scalar()
+        or 0
+    )
+    if existing_history_count == 0 and items:
+        _snapshot_trip_plan_history(group, plan, items, db)
+
+    for item in items:
+        db.delete(item)
+
+    plan.shared_notes = None
+    plan.description = f"Chronological plan for {group.name}"
+    plan.title = f"{group.name} Itinerary"
+    group.status = "planning"
+
+    db.commit()
+    db.refresh(plan)
+    db.refresh(group)
+
+    payload = _build_itinerary_payload(group, plan, db)
+    payload["message"] = "Started a fresh trip itinerary"
+    return payload
+
+
+@app.get("/itinerary/history", response_model=dict)
+def list_my_archived_itinerary_history(request: Request, db: Session = Depends(get_db)):
+    """List archived itinerary snapshots for all groups the current user belongs to."""
+    current_user = get_current_user_info(request, db)
+
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+    if not memberships:
+        return {"items": []}
+
+    group_ids = [membership.group_id for membership in memberships]
+    group_by_id = {
+        group.id: group
+        for group in db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    }
+
+    history_items = (
+        db.query(models.TripPlanHistory)
+        .filter(models.TripPlanHistory.group_id.in_(group_ids))
+        .order_by(models.TripPlanHistory.archived_at.desc())
+        .all()
+    )
+
+    results = []
+    for item in history_items:
+        group = group_by_id.get(item.group_id)
+        results.append({
+            "id": item.id,
+            "group_id": item.group_id,
+            "group_name": group.name if group else "Trip Group",
+            "title": item.title,
+            "description": item.description,
+            "shared_notes": item.shared_notes,
+            "starts_at": item.starts_at.isoformat() if item.starts_at else None,
+            "ends_at": item.ends_at.isoformat() if item.ends_at else None,
+            "archived_at": item.archived_at.isoformat() if item.archived_at else None,
+        })
+
+    return {"items": results}
+
+
+@app.get("/itinerary/history/{history_id}", response_model=dict)
+def get_archived_itinerary_history(history_id: int, request: Request, db: Session = Depends(get_db)):
+    """Get one archived itinerary snapshot by id for a member of the owning group."""
+    current_user = get_current_user_info(request, db)
+
+    history_item = db.get(models.TripPlanHistory, history_id)
+    if not history_item:
+        raise HTTPException(status_code=404, detail="Archived itinerary not found")
+
+    membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == history_item.group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, history_item.group_id)
+
+    parsed_items = []
+    try:
+        parsed = json.loads(history_item.items_json or "[]")
+        if isinstance(parsed, list):
+            parsed_items = parsed
+    except Exception:
+        parsed_items = []
+
+    return {
+        "ok": True,
+        "history_id": history_item.id,
+        "group_id": history_item.group_id,
+        "group_name": group.name if group else "Trip Group",
+        "group_status": "archived",
+        "trip_plan": {
+            "id": -history_item.id,
+            "group_id": history_item.group_id,
+            "title": history_item.title,
+            "description": history_item.description,
+            "created_at": history_item.archived_at,
+            "updated_at": history_item.archived_at,
+            "item_count": len(parsed_items),
+            "shared_notes": history_item.shared_notes,
+            "starts_at": history_item.starts_at,
+            "ends_at": history_item.ends_at,
+        },
+        "items": parsed_items,
+        "is_empty": len(parsed_items) == 0,
+    }
 
 
 # Profile Endpoints

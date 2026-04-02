@@ -362,6 +362,12 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                 Edit Group
                             </button>
                         )}
+                        <button
+                            className="group-itinerary-btn"
+                            onClick={() => router.push(`/group/${groupId}/itinerary`)}
+                        >
+                            View Itinerary
+                        </button>
                     </>
                 )}
             </div>
