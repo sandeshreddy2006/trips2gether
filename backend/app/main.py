@@ -45,6 +45,8 @@ from .schemas import (
     TripStateUpdateIn,
     GroupPollCreateIn,
     GroupPollVoteIn,
+    GroupNotificationOut,
+    GroupNotificationListOut,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -236,14 +238,18 @@ async def start_scheduler():
             )
             finalized_count = 0
             finalized_polls: list[models.GroupPoll] = []
+            finalized_notifications: list[models.GroupNotification] = []
             for poll in due_polls:
                 if _finalize_poll_if_due(poll, db):
                     finalized_count += 1
                     finalized_polls.append(poll)
+                    finalized_notifications.extend(_create_poll_notifications(poll, db, "poll.closed"))
 
             db.commit()
             for poll in finalized_polls:
                 _publish_poll_event_sync(poll.group_id, _build_poll_event_payload("poll.closed", poll, db))
+            if finalized_notifications:
+                _broadcast_poll_notifications(finalized_notifications)
             print(f"[Cleanup Job] Deleted {deleted_count} expired password reset tokens; finalized {finalized_count} polls")
         except Exception as e:
             print(f"[Cleanup Job] Error: {e}")
@@ -475,9 +481,9 @@ def _close_poll_and_compute_winner(poll: models.GroupPoll, db: Session, closed_a
     return True
 
 
-def _finalize_due_polls_for_groups(group_ids: list[int], db: Session) -> list[models.GroupPoll]:
+def _finalize_due_polls_for_groups(group_ids: list[int], db: Session) -> tuple[list[models.GroupPoll], list[models.GroupNotification]]:
     if not group_ids:
-        return []
+        return [], []
 
     due_polls = (
         db.query(models.GroupPoll)
@@ -495,10 +501,14 @@ def _finalize_due_polls_for_groups(group_ids: list[int], db: Session) -> list[mo
             has_changes = True
             finalized_polls.append(poll)
 
+    notifications: list[models.GroupNotification] = []
+    for poll in finalized_polls:
+        notifications.extend(_create_poll_notifications(poll, db, "poll.closed"))
+
     if has_changes:
         db.commit()
 
-    return finalized_polls
+    return finalized_polls, notifications
 
 
 def _serialize_poll(
@@ -1707,6 +1717,110 @@ def create_group(body: GroupCreateIn, request: Request, db: Session = Depends(ge
     }
 
 
+def _serialize_notification(notification: models.GroupNotification) -> dict:
+    payload = {}
+    try:
+        payload = json.loads(notification.payload_json or "{}")
+        if not isinstance(payload, dict):
+            payload = {}
+    except Exception:
+        payload = {}
+
+    return {
+        "id": notification.id,
+        "user_id": notification.user_id,
+        "group_id": notification.group_id,
+        "poll_id": notification.poll_id,
+        "notification_type": notification.notification_type,
+        "title": notification.title,
+        "body": notification.body,
+        "payload": payload,
+        "created_at": notification.created_at.isoformat() if notification.created_at else None,
+    }
+
+
+def _build_poll_notification_payload(poll: models.GroupPoll, db: Session, notification_type: str) -> tuple[str, str, dict]:
+    group = db.get(models.Group, poll.group_id)
+    creator = db.get(models.User, poll.created_by)
+    poll_snapshot = _serialize_poll(
+        poll,
+        current_user_id=0,
+        db=db,
+        group_name=group.name if group else None,
+        member_count=_get_group_member_count(poll.group_id, db),
+    )
+    option_labels = [option["label"] for option in poll_snapshot.get("options", []) if isinstance(option, dict)]
+    poll_question = poll_snapshot.get("question") or poll.question
+    group_name = group.name if group else "Your group"
+    creator_name = creator.name if creator else "A member"
+
+    if notification_type == "poll.created":
+        title = f"New poll in {group_name}"
+        body = f"{creator_name} created a new poll: {poll_question}. Vote before the deadline."
+    else:
+        winner_label = "No winning option"
+        winner_option = next((option for option in poll_snapshot.get("options", []) if option.get("is_winner")), None)
+        if winner_option:
+            winner_label = winner_option.get("label", winner_label)
+        title = f"Poll finished in {group_name}"
+        body = f"{poll_question} is closed. Winning choice: {winner_label}."
+
+    payload = {
+        "group_id": poll.group_id,
+        "group_name": group_name,
+        "poll_id": poll.id,
+        "poll_question": poll_question,
+        "decision_type": poll.decision_type,
+        "poll_status": poll.status,
+        "created_by": poll.created_by,
+        "created_by_name": creator_name,
+        "option_labels": option_labels,
+    }
+    return title, body, payload
+
+
+def _create_poll_notifications(
+    poll: models.GroupPoll,
+    db: Session,
+    notification_type: str,
+) -> list[models.GroupNotification]:
+    members = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.group_id == poll.group_id)
+        .all()
+    )
+
+    title, body, payload = _build_poll_notification_payload(poll, db, notification_type)
+    notifications: list[models.GroupNotification] = []
+
+    for member in members:
+        notification = models.GroupNotification(
+            user_id=member.user_id,
+            group_id=poll.group_id,
+            poll_id=poll.id,
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            payload_json=json.dumps(payload),
+        )
+        db.add(notification)
+        notifications.append(notification)
+
+    return notifications
+
+
+def _broadcast_poll_notifications(notifications: list[models.GroupNotification]) -> None:
+    for notification in notifications:
+        _publish_poll_event_sync(
+            notification.group_id,
+            {
+                "type": "notification.created",
+                "group_id": notification.group_id,
+                "notification": _serialize_notification(notification),
+            },
+        )
+
+
 @app.get("/groups", response_model=GroupListOut)
 def list_my_groups(request: Request, db: Session = Depends(get_db)):
     """List all groups the current user belongs to."""
@@ -1949,10 +2063,14 @@ async def create_group_poll(
     for index, label in enumerate(option_labels):
         db.add(models.GroupPollOption(poll_id=poll.id, label=label, position=index))
 
+    notifications = _create_poll_notifications(poll, db, "poll.created")
+
     db.commit()
     db.refresh(poll)
 
     await _publish_poll_event_async(group.id, _build_poll_event_payload("poll.created", poll, db))
+    if notifications:
+        _broadcast_poll_notifications(notifications)
 
     return {
         "ok": True,
@@ -1981,9 +2099,11 @@ def list_dashboard_polls(request: Request, db: Session = Depends(get_db)):
         return {"upcoming": [], "previous": []}
 
     group_ids = [membership.group_id for membership in memberships]
-    finalized_polls = _finalize_due_polls_for_groups(group_ids, db)
+    finalized_polls, finalized_notifications = _finalize_due_polls_for_groups(group_ids, db)
     for poll in finalized_polls:
         _publish_poll_event_sync(poll.group_id, _build_poll_event_payload("poll.closed", poll, db))
+    if finalized_notifications:
+        _broadcast_poll_notifications(finalized_notifications)
 
     groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
     group_name_map = {group.id: group.name for group in groups}
@@ -2144,10 +2264,13 @@ async def end_group_poll_early(
         raise HTTPException(status_code=400, detail="This poll is already closed")
 
     _close_poll_and_compute_winner(poll, db)
+    notifications = _create_poll_notifications(poll, db, "poll.closed")
     db.commit()
     db.refresh(poll)
 
     await _publish_poll_event_async(group.id, _build_poll_event_payload("poll.closed", poll, db))
+    if notifications:
+        _broadcast_poll_notifications(notifications)
 
     return {
         "ok": True,
@@ -2183,6 +2306,37 @@ async def poll_updates_socket(websocket: WebSocket):
         except Exception:
             pass
         db.close()
+
+
+@app.get("/poll-notifications", response_model=GroupNotificationListOut)
+def list_poll_notifications(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notifications = (
+        db.query(models.GroupNotification)
+        .filter(models.GroupNotification.user_id == current_user.id)
+        .order_by(models.GroupNotification.created_at.desc())
+        .all()
+    )
+    return {"items": [_serialize_notification(notification) for notification in notifications]}
+
+
+@app.delete("/poll-notifications/{notification_id}", response_model=dict)
+def delete_poll_notification(notification_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notification = (
+        db.query(models.GroupNotification)
+        .filter(
+            models.GroupNotification.id == notification_id,
+            models.GroupNotification.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    db.delete(notification)
+    db.commit()
+    return {"ok": True, "message": "Notification removed"}
 
 
 @app.get("/groups/{group_id}/members", response_model=GroupMemberListOut)

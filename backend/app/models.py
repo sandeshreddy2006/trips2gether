@@ -230,6 +230,24 @@ class GroupPollVote(Base):
     )
 
 
+class GroupNotification(Base):
+    __tablename__ = "group_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    poll_id = Column(Integer, ForeignKey("group_polls.id", ondelete="CASCADE"), nullable=True, index=True)
+    notification_type = Column(String(32), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    payload_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+    group = relationship("Group")
+    poll = relationship("GroupPoll")
+
+
 class GroupShortlistDestination(Base):
     __tablename__ = "group_shortlist_destinations"
 
