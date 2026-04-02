@@ -529,6 +529,35 @@ export default function Dashboard() {
         return () => window.clearTimeout(timeout);
     }, [toastMessage]);
 
+    useEffect(() => {
+        const handlePollRealtime = (event: Event) => {
+            const customEvent = event as CustomEvent<{ type?: string; group_id?: number; poll?: DashboardPoll }>;
+            const payload = customEvent.detail;
+            if (!payload?.type || !payload.group_id) return;
+
+            const poll = payload.poll;
+            const shouldRefresh = groups.some((group) => group.id === payload.group_id);
+            if (shouldRefresh) {
+                void loadDashboardPolls();
+            }
+
+            if (!poll) return;
+
+            if (payload.type === "poll.created") {
+                setToastMessage(`New poll created: ${poll.question}`);
+            } else if (payload.type === "poll.updated") {
+                setToastMessage(`Poll updated: ${poll.question}`);
+            } else if (payload.type === "poll.closed") {
+                setToastMessage(`Poll closed: ${poll.question}`);
+            }
+        };
+
+        window.addEventListener("poll-realtime", handlePollRealtime as EventListener);
+        return () => {
+            window.removeEventListener("poll-realtime", handlePollRealtime as EventListener);
+        };
+    }, [groups]);
+
     return (
         <div className="dashboard-container">
             {toastMessage && (
@@ -766,6 +795,7 @@ export default function Dashboard() {
                                         {(pollSection === "upcoming" ? upcomingPolls : previousPolls).map((poll) => {
                                             const selectedOptionId = selectedOptionByPollId[poll.id] || poll.user_vote_option_id || undefined;
                                             const winner = poll.options.find((option) => option.id === poll.winner_option_id);
+                                            const progressDenominator = Math.max(poll.total_votes || 0, 1);
 
                                             return (
                                                 <div key={poll.id} className="poll-card">
@@ -786,17 +816,25 @@ export default function Dashboard() {
                                                                 key={option.id}
                                                                 className={`poll-option ${option.is_winner ? "winner" : ""}`}
                                                             >
-                                                                <input
-                                                                    type="radio"
-                                                                    name={`poll-${poll.id}`}
-                                                                    checked={selectedOptionId === option.id}
-                                                                    disabled={poll.status !== "active"}
-                                                                    onChange={() => {
-                                                                        setSelectedOptionByPollId((prev) => ({ ...prev, [poll.id]: option.id }));
-                                                                    }}
-                                                                />
-                                                                <span>{option.label}</span>
-                                                                <span className="poll-option-votes">{option.vote_count}</span>
+                                                                <div className="poll-option-topline">
+                                                                    <input
+                                                                        type="radio"
+                                                                        name={`poll-${poll.id}`}
+                                                                        checked={selectedOptionId === option.id}
+                                                                        disabled={poll.status !== "active"}
+                                                                        onChange={() => {
+                                                                            setSelectedOptionByPollId((prev) => ({ ...prev, [poll.id]: option.id }));
+                                                                        }}
+                                                                    />
+                                                                    <span>{option.label}</span>
+                                                                    <span className="poll-option-votes">{option.vote_count}</span>
+                                                                </div>
+                                                                <div className="poll-option-track" aria-hidden="true">
+                                                                    <div
+                                                                        className={`poll-option-fill ${option.is_winner ? "winner" : ""}`}
+                                                                        style={{ width: `${Math.round((option.vote_count / progressDenominator) * 100)}%` }}
+                                                                    />
+                                                                </div>
                                                             </label>
                                                         ))}
                                                     </div>
