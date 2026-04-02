@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import "./HotelSearchPanel.css";
+import HotelLocationMap from "./HotelLocationMap";
 
 type HotelOption = {
     place_id: string;
@@ -10,13 +11,19 @@ type HotelOption = {
     rating?: number;
     user_ratings_total?: number;
     price_level?: string;
+    currency?: string;
+    price_per_night?: number;
+    total_price?: number;
+    nights?: number;
     types: string[];
+    amenities?: string[];
     photo_url?: string;
     photo_reference?: string;
     location?: { lat: number | null; lng: number | null };
     business_status?: string;
     website?: string;
     google_maps_url?: string;
+    booking_url?: string;
 };
 
 type HotelSearchResponse = {
@@ -69,7 +76,7 @@ export default function HotelSearchPanel({
     const [hotels, setHotels] = useState<HotelOption[]>([]);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
-    const [expandedHotelId, setExpandedHotelId] = useState<string | null>(null);
+    const [selectedHotel, setSelectedHotel] = useState<HotelOption | null>(null);
     const [hasSearched, setHasSearched] = useState(false);
 
     useEffect(() => {
@@ -189,6 +196,17 @@ export default function HotelSearchPanel({
         return "https://via.placeholder.com/800x600?text=Hotel";
     };
 
+    const currencyFormatter = (value?: number, currencyCode = "USD") => {
+        if (typeof value !== "number") return "N/A";
+        return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: currencyCode,
+            maximumFractionDigits: 2,
+        }).format(value);
+    };
+
+    const closeModal = () => setSelectedHotel(null);
+
     return (
         <section className="hotel-search-shell">
             <div className="hotel-search-header">
@@ -286,9 +304,20 @@ export default function HotelSearchPanel({
             {hotels.length > 0 && (
                 <div className="hotel-results-grid">
                     {hotels.map((hotel) => {
-                        const isExpanded = expandedHotelId === hotel.place_id;
                         return (
-                            <article className="hotel-card" key={hotel.place_id}>
+                            <article
+                                className="hotel-card"
+                                key={hotel.place_id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setSelectedHotel(hotel)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        setSelectedHotel(hotel);
+                                    }
+                                }}
+                            >
                                 <img src={getCardImage(hotel)} alt={hotel.name} className="hotel-card-image" />
                                 <div className="hotel-card-body">
                                     <h3>{hotel.name}</h3>
@@ -296,42 +325,91 @@ export default function HotelSearchPanel({
                                     <div className="hotel-card-meta">
                                         <span>{hotel.rating ? `⭐ ${hotel.rating.toFixed(1)}` : "No rating"}</span>
                                         <span>{hotel.user_ratings_total ? `${hotel.user_ratings_total.toLocaleString()} reviews` : "No reviews"}</span>
-                                        <span>{hotel.price_level || "Price N/A"}</span>
                                     </div>
-                                    <button
-                                        type="button"
-                                        className="hotel-details-btn"
-                                        onClick={() => setExpandedHotelId(isExpanded ? null : hotel.place_id)}
-                                    >
-                                        {isExpanded ? "Hide Details" : "View Details"}
-                                    </button>
-                                    {isExpanded && (
-                                        <div className="hotel-detail-panel">
-                                            {hotel.types?.length > 0 && (
-                                                <div className="hotel-tags-row">
-                                                    {hotel.types.slice(0, 4).map((type) => (
-                                                        <span key={`${hotel.place_id}_${type}`} className="hotel-type-tag">
-                                                            {type.replaceAll("_", " ")}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            {hotel.website && (
-                                                <a href={hotel.website} target="_blank" rel="noreferrer">
-                                                    Hotel Website
-                                                </a>
-                                            )}
-                                            {hotel.google_maps_url && (
-                                                <a href={hotel.google_maps_url} target="_blank" rel="noreferrer">
-                                                    Open in Google Maps
-                                                </a>
-                                            )}
+                                    <div className="hotel-price-block">
+                                        <div className="hotel-per-night-line">
+                                            <strong>{currencyFormatter(hotel.price_per_night, hotel.currency || "USD")}</strong>
+                                            <span>per night</span>
                                         </div>
-                                    )}
+                                        <div className="hotel-total-line">
+                                            Total for {hotel.nights || 1} night{(hotel.nights || 1) > 1 ? "s" : ""}: {currencyFormatter(hotel.total_price, hotel.currency || "USD")}
+                                        </div>
+                                    </div>
+                                    <button type="button" className="hotel-details-btn">View Details</button>
                                 </div>
                             </article>
                         );
                     })}
+                </div>
+            )}
+
+            {selectedHotel && (
+                <div className="hotel-modal-backdrop" onClick={closeModal}>
+                    <div className="hotel-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+                        <button type="button" className="hotel-modal-close" onClick={closeModal} aria-label="Close hotel details">
+                            x
+                        </button>
+                        <div className="hotel-modal-layout">
+                            <div className="hotel-modal-content">
+                                <h3>{selectedHotel.name}</h3>
+                                {selectedHotel.address && <p className="hotel-modal-address">{selectedHotel.address}</p>}
+                                <div className="hotel-price-block hotel-price-block-modal">
+                                    <div className="hotel-per-night-line">
+                                        <strong>{currencyFormatter(selectedHotel.price_per_night, selectedHotel.currency || "USD")}</strong>
+                                        <span>per night</span>
+                                    </div>
+                                    <div className="hotel-total-line">
+                                        Total for {selectedHotel.nights || 1} night{(selectedHotel.nights || 1) > 1 ? "s" : ""}: {currencyFormatter(selectedHotel.total_price, selectedHotel.currency || "USD")}
+                                    </div>
+                                </div>
+                                <div className="hotel-card-meta">
+                                    <span>{selectedHotel.rating ? `⭐ ${selectedHotel.rating.toFixed(1)}` : "No rating"}</span>
+                                    <span>{selectedHotel.price_level || "Price level N/A"}</span>
+                                </div>
+
+                                <h4>Amenities</h4>
+                                <div className="hotel-tags-row">
+                                    {(selectedHotel.amenities || []).length > 0 ? (
+                                        (selectedHotel.amenities || []).map((amenity) => (
+                                            <span key={`${selectedHotel.place_id}_${amenity}`} className="hotel-type-tag">{amenity}</span>
+                                        ))
+                                    ) : (
+                                        <span className="hotel-type-tag">Amenities unavailable</span>
+                                    )}
+                                </div>
+
+                                <div className="hotel-links-row">
+                                    {selectedHotel.booking_url && (
+                                        <a href={selectedHotel.booking_url} target="_blank" rel="noreferrer">
+                                            Book This Hotel
+                                        </a>
+                                    )}
+                                    {selectedHotel.website && (
+                                        <a href={selectedHotel.website} target="_blank" rel="noreferrer">
+                                            Hotel Website
+                                        </a>
+                                    )}
+                                    {selectedHotel.google_maps_url && (
+                                        <a href={selectedHotel.google_maps_url} target="_blank" rel="noreferrer">
+                                            Open in Google Maps
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="hotel-modal-map-wrap">
+                                {selectedHotel.location?.lat != null && selectedHotel.location?.lng != null ? (
+                                    <HotelLocationMap
+                                        hotelName={selectedHotel.name}
+                                        lat={selectedHotel.location.lat}
+                                        lng={selectedHotel.location.lng}
+                                    />
+                                ) : (
+                                    <div className="hotel-map-fallback">Map unavailable for this hotel.</div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </section>

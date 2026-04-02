@@ -8,7 +8,7 @@ import math
 import requests
 from urllib.parse import quote_plus
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 
 def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -193,8 +193,10 @@ class GooglePlacesService:
                 "message": "Results loaded from cache",
             }
 
+        nights = self._calculate_nights(check_in, check_out)
+
         if not self.api_key:
-            return self._get_dummy_hotels(destination, sort_by)
+            return self._get_dummy_hotels(destination, sort_by, nights, guests, rooms)
 
         try:
             url = f"{self.BASE_URL}/places:searchText"
@@ -227,7 +229,7 @@ class GooglePlacesService:
                 }
 
             places = data.get("places", [])
-            hotels = self._format_hotels(places)
+            hotels = self._format_hotels(places, destination, nights, guests, rooms)
             hotels = self._sort_hotels(hotels, sort_by)
             self._save_to_cache(cache_key, hotels)
 
@@ -260,7 +262,68 @@ class GooglePlacesService:
                 "results": [],
             }
 
-    def _format_hotels(self, places: List[Dict]) -> List[Dict]:
+    @staticmethod
+    def _calculate_nights(check_in: str, check_out: str) -> int:
+        """Safely calculate number of nights for a stay."""
+        try:
+            in_date = date.fromisoformat(check_in)
+            out_date = date.fromisoformat(check_out)
+            return max((out_date - in_date).days, 1)
+        except Exception:
+            return 1
+
+    @staticmethod
+    def _estimate_per_night(price_level: Optional[str], guests: int, rooms: int) -> float:
+        """Estimate a nightly rate in USD using Google price level plus occupancy."""
+        base_by_level = {
+            "$": 95.0,
+            "$$": 165.0,
+            "$$$": 275.0,
+            "$$$$": 420.0,
+            "Free": 70.0,
+            None: 150.0,
+        }
+        base = base_by_level.get(price_level, 150.0)
+        # Slightly scale estimate for larger groups and additional rooms.
+        guest_factor = 1 + max(guests - 2, 0) * 0.07
+        room_factor = 1 + max(rooms - 1, 0) * 0.18
+        return round(base * guest_factor * room_factor, 2)
+
+    @staticmethod
+    def _derive_amenities(types: List[str], rating: Optional[float]) -> List[str]:
+        """Generate a practical amenity list from available place metadata."""
+        amenity_map = {
+            "spa": "Spa",
+            "gym": "Fitness Center",
+            "pool": "Pool",
+            "resort": "Resort Facilities",
+            "bar": "Bar",
+            "restaurant": "On-site Restaurant",
+            "airport_shuttle": "Airport Shuttle",
+        }
+        amenities: List[str] = ["Free Wi-Fi"]
+        for t in types:
+            if t in amenity_map:
+                amenities.append(amenity_map[t])
+        if rating and rating >= 4.4:
+            amenities.append("Breakfast Included")
+        if "lodging" in types:
+            amenities.append("24-hour Front Desk")
+        # De-duplicate while preserving order.
+        seen = set()
+        deduped: List[str] = []
+        for item in amenities:
+            if item not in seen:
+                seen.add(item)
+                deduped.append(item)
+        return deduped[:6]
+
+    @staticmethod
+    def _build_booking_url(hotel_name: str, destination: str) -> str:
+        query = quote_plus(f"{hotel_name} {destination}")
+        return f"https://www.booking.com/searchresults.html?ss={query}"
+
+    def _format_hotels(self, places: List[Dict], destination: str, nights: int, guests: int, rooms: int) -> List[Dict]:
         """Normalize Google Places text search results into hotel options."""
         hotels: List[Dict] = []
         for place in places:
@@ -279,22 +342,32 @@ class GooglePlacesService:
 
             lat = place.get("location", {}).get("latitude")
             lng = place.get("location", {}).get("longitude")
+            mapped_price_level = self._PRICE_LEVEL_MAP.get(place.get("priceLevel"))
+            price_per_night = self._estimate_per_night(mapped_price_level, guests, rooms)
+            amenities = self._derive_amenities(types, place.get("rating"))
+            hotel_name = place.get("displayName", {}).get("text", "")
 
             hotels.append(
                 {
                     "place_id": place.get("id", ""),
-                    "name": place.get("displayName", {}).get("text", ""),
+                    "name": hotel_name,
                     "address": place.get("formattedAddress"),
                     "rating": place.get("rating"),
                     "user_ratings_total": place.get("userRatingCount"),
-                    "price_level": self._PRICE_LEVEL_MAP.get(place.get("priceLevel")),
+                    "price_level": mapped_price_level,
+                    "currency": "USD",
+                    "price_per_night": price_per_night,
+                    "total_price": round(price_per_night * nights, 2),
+                    "nights": nights,
                     "types": types,
+                    "amenities": amenities,
                     "photo_url": photo_url,
                     "photo_reference": photo_reference,
                     "location": {"lat": lat, "lng": lng},
                     "business_status": place.get("businessStatus"),
                     "website": place.get("websiteUri"),
                     "google_maps_url": place.get("googleMapsUri"),
+                    "booking_url": self._build_booking_url(hotel_name or "hotel", destination),
                 }
             )
         return hotels
@@ -307,7 +380,7 @@ class GooglePlacesService:
             return sorted(hotels, key=lambda h: h.get("user_ratings_total") or 0, reverse=True)
         return hotels
 
-    def _get_dummy_hotels(self, destination: str, sort_by: str) -> Dict[str, Any]:
+    def _get_dummy_hotels(self, destination: str, sort_by: str, nights: int, guests: int, rooms: int) -> Dict[str, Any]:
         """Return deterministic dummy hotels for local development."""
         city = destination.strip().title() or "Destination"
         dummy_hotels = [
@@ -318,13 +391,19 @@ class GooglePlacesService:
                 "rating": 4.6,
                 "user_ratings_total": 2140,
                 "price_level": "$$$",
+                "currency": "USD",
+                "price_per_night": self._estimate_per_night("$$$", guests, rooms),
+                "total_price": round(self._estimate_per_night("$$$", guests, rooms) * nights, 2),
+                "nights": nights,
                 "types": ["lodging", "hotel"],
+                "amenities": ["Free Wi-Fi", "Pool", "On-site Restaurant", "24-hour Front Desk"],
                 "photo_url": "https://via.placeholder.com/800x600?text=Hotel+1",
                 "photo_reference": None,
                 "location": {"lat": 40.7128, "lng": -74.0060},
                 "business_status": "OPERATIONAL",
                 "website": None,
                 "google_maps_url": None,
+                "booking_url": self._build_booking_url(f"{city} Grand Hotel", city),
             },
             {
                 "place_id": f"dummy_hotel_{city.lower()}_2",
@@ -333,13 +412,19 @@ class GooglePlacesService:
                 "rating": 4.3,
                 "user_ratings_total": 980,
                 "price_level": "$$",
+                "currency": "USD",
+                "price_per_night": self._estimate_per_night("$$", guests, rooms),
+                "total_price": round(self._estimate_per_night("$$", guests, rooms) * nights, 2),
+                "nights": nights,
                 "types": ["lodging", "inn"],
+                "amenities": ["Free Wi-Fi", "Breakfast Included", "24-hour Front Desk"],
                 "photo_url": "https://via.placeholder.com/800x600?text=Hotel+2",
                 "photo_reference": None,
                 "location": {"lat": 40.7210, "lng": -74.0019},
                 "business_status": "OPERATIONAL",
                 "website": None,
                 "google_maps_url": None,
+                "booking_url": self._build_booking_url(f"{city} Riverside Inn", city),
             },
             {
                 "place_id": f"dummy_hotel_{city.lower()}_3",
@@ -348,13 +433,19 @@ class GooglePlacesService:
                 "rating": 4.0,
                 "user_ratings_total": 420,
                 "price_level": "$",
+                "currency": "USD",
+                "price_per_night": self._estimate_per_night("$", guests, rooms),
+                "total_price": round(self._estimate_per_night("$", guests, rooms) * nights, 2),
+                "nights": nights,
                 "types": ["lodging"],
+                "amenities": ["Free Wi-Fi", "24-hour Front Desk"],
                 "photo_url": "https://via.placeholder.com/800x600?text=Hotel+3",
                 "photo_reference": None,
                 "location": {"lat": 40.7081, "lng": -74.0101},
                 "business_status": "OPERATIONAL",
                 "website": None,
                 "google_maps_url": None,
+                "booking_url": self._build_booking_url(f"{city} Budget Suites", city),
             },
         ]
         sorted_hotels = self._sort_hotels(dummy_hotels, sort_by)
