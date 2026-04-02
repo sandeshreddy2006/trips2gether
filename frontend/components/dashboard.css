@@ -342,6 +342,125 @@
     background-color: #245c3a;
 }
 
+.dashboard-inbox {
+    background: linear-gradient(180deg, rgba(12, 36, 25, 0.96) 0%, rgba(17, 46, 32, 0.96) 100%);
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 18px 40px rgba(7, 20, 14, 0.16);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.inbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.inbox-card {
+    display: flex;
+    gap: 0.9rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(126, 205, 164, 0.15);
+    padding: 0.95rem 1rem;
+    color: #eaf6ee;
+    animation: inbox-fade-in 0.25s ease;
+}
+
+.inbox-card-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.inbox-card-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.inbox-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.inbox-poll-created {
+    background: rgba(45, 122, 74, 0.22);
+    color: #d7f6e5;
+}
+
+.inbox-poll-closed {
+    background: rgba(245, 166, 35, 0.18);
+    color: #ffe1ad;
+}
+
+.inbox-time {
+    font-size: 0.8rem;
+    color: #b8cbc1;
+    white-space: nowrap;
+}
+
+.inbox-title {
+    margin: 0;
+    font-size: 1rem;
+    color: #ffffff;
+}
+
+.inbox-body,
+.inbox-meta {
+    margin: 0;
+    color: #cdd9d3;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.inbox-meta {
+    color: #9ec2b0;
+    font-size: 0.82rem;
+}
+
+.inbox-dismiss-btn {
+    border: 1px solid rgba(244, 241, 216, 0.24);
+    background: transparent;
+    color: #f4f1d8;
+    border-radius: 8px;
+    padding: 0.45rem 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.inbox-dismiss-btn:hover {
+    background: rgba(244, 241, 216, 0.08);
+    border-color: rgba(244, 241, 216, 0.5);
+}
+
+@keyframes inbox-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* Trips Grid */
 .trips-grid {
     display: grid;

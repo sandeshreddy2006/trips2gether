@@ -131,6 +131,22 @@ class GroupPollVoteIn(BaseModel):
     option_id: int
 
 
+class GroupNotificationOut(BaseModel):
+    id: int
+    user_id: int
+    group_id: int
+    poll_id: int | None = None
+    notification_type: str
+    title: str
+    body: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class GroupNotificationListOut(BaseModel):
+    items: list[GroupNotificationOut]
+
+
 class GroupAddMembersIn(BaseModel):
     user_ids: list[int] = Field(min_length=1, description="List of user IDs to invite")
 

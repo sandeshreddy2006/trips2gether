@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import CreateGroupModal from "./CreateGroupModal";
 import { useAuth } from "@/app/AuthContext";
@@ -53,6 +53,18 @@ type Booking = {
     total_amount: string;
     currency: string;
     payment_status: string;
+    created_at: string;
+};
+
+type InboxNotification = {
+    id: number;
+    user_id: number;
+    group_id: number;
+    poll_id: number | null;
+    notification_type: string;
+    title: string;
+    body: string;
+    payload: Record<string, unknown>;
     created_at: string;
 };
 
@@ -174,6 +186,8 @@ export default function Dashboard() {
     const [trendingError, setTrendingError] = useState<string | null>(null);
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loadingBookings, setLoadingBookings] = useState(true);
+    const [inboxItems, setInboxItems] = useState<InboxNotification[]>([]);
+    const [loadingInbox, setLoadingInbox] = useState(true);
     const [archivedHistory, setArchivedHistory] = useState<ArchivedTripHistory[]>([]);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [selectedTripSection, setSelectedTripSection] = useState<TripSection>("upcoming");
@@ -194,7 +208,7 @@ export default function Dashboard() {
         optionsText: "",
     });
 
-    const loadDashboardPolls = async () => {
+    const loadDashboardPolls = useCallback(async () => {
         try {
             setLoadingPolls(true);
             const response = await fetch("/api/polls/dashboard", { credentials: "include" });
@@ -224,7 +238,25 @@ export default function Dashboard() {
         } finally {
             setLoadingPolls(false);
         }
-    };
+    }, []);
+
+    const loadInbox = useCallback(async () => {
+        try {
+            setLoadingInbox(true);
+            const response = await fetch("/api/poll-notifications", { credentials: "include" });
+            const data = await response.json().catch(() => ({ items: [] }));
+
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to load inbox"));
+            }
+
+            setInboxItems(Array.isArray(data.items) ? data.items : []);
+        } catch {
+            setInboxItems([]);
+        } finally {
+            setLoadingInbox(false);
+        }
+    }, []);
 
     const handleDestinationClick = (destination: Destination | null) => {
         if (!destination) return;
@@ -258,7 +290,8 @@ export default function Dashboard() {
             .catch(() => { setArchivedHistory([]); });
 
         void loadDashboardPolls();
-    }, []);
+        void loadInbox();
+    }, [loadDashboardPolls, loadInbox]);
 
     useEffect(() => {
         const loadBookings = async () => {
@@ -531,24 +564,28 @@ export default function Dashboard() {
 
     useEffect(() => {
         const handlePollRealtime = (event: Event) => {
-            const customEvent = event as CustomEvent<{ type?: string; group_id?: number; poll?: DashboardPoll }>;
+            const customEvent = event as CustomEvent<{ type?: string; group_id?: number; poll?: DashboardPoll; notification?: InboxNotification }>;
             const payload = customEvent.detail;
             if (!payload?.type || !payload.group_id) return;
 
-            const poll = payload.poll;
             const shouldRefresh = groups.some((group) => group.id === payload.group_id);
-            if (shouldRefresh) {
+            if (shouldRefresh && payload.type !== "notification.created") {
                 void loadDashboardPolls();
             }
 
+            if (payload.type === "notification.created") {
+                void loadInbox();
+                if (payload.notification) {
+                    setToastMessage(payload.notification.title);
+                }
+                return;
+            }
+
+            const poll = payload.poll;
             if (!poll) return;
 
-            if (payload.type === "poll.created") {
-                setToastMessage(`New poll created: ${poll.question}`);
-            } else if (payload.type === "poll.updated") {
-                setToastMessage(`Poll updated: ${poll.question}`);
-            } else if (payload.type === "poll.closed") {
-                setToastMessage(`Poll closed: ${poll.question}`);
+            if (payload.type === "poll.updated") {
+                void loadInbox();
             }
         };
 
@@ -556,7 +593,24 @@ export default function Dashboard() {
         return () => {
             window.removeEventListener("poll-realtime", handlePollRealtime as EventListener);
         };
-    }, [groups]);
+    }, [groups, loadDashboardPolls, loadInbox]);
+
+    const handleDismissInboxItem = async (notificationId: number) => {
+        try {
+            const response = await fetch(`/api/poll-notifications/${notificationId}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to remove inbox message"));
+            }
+
+            setInboxItems((prev) => prev.filter((item) => item.id !== notificationId));
+        } catch (error) {
+            setToastMessage(error instanceof Error ? error.message : "Failed to remove inbox message");
+        }
+    };
 
     return (
         <div className="dashboard-container">
@@ -754,6 +808,43 @@ export default function Dashboard() {
                     <div className="finalizing-section">
                         <h3 className="finalizing-title">Finalizing Trip...</h3>
                         <button className="view-plan-btn" onClick={handlePlanTrip}>Plan Trip</button>
+                    </div>
+
+
+                    <div className="dashboard-inbox">
+                        <div className="polls-header-row">
+                            <h3 className="polls-title">Inbox</h3>
+                            <button type="button" className="poll-section-tab" onClick={() => void loadInbox()}>
+                                Refresh
+                            </button>
+                        </div>
+
+                        {loadingInbox ? (
+                            <div className="trip-section-empty">Loading inbox...</div>
+                        ) : inboxItems.length === 0 ? (
+                            <div className="trip-section-empty">No group updates yet. Poll creation and completion messages will appear here.</div>
+                        ) : (
+                            <div className="inbox-list">
+                                {inboxItems.map((item) => (
+                                    <div key={item.id} className="inbox-card">
+                                        <div className="inbox-card-main">
+                                            <div className="inbox-card-topline">
+                                                <span className={`inbox-pill inbox-${item.notification_type.replaceAll(".", "-")}`}>{item.notification_type.replace(".", " ")}</span>
+                                                <span className="inbox-time">{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York", timeZoneName: "short" }).format(new Date(item.created_at))}</span>
+                                            </div>
+                                            <h4 className="inbox-title">{item.title}</h4>
+                                            <p className="inbox-body">{item.body}</p>
+                                            {typeof item.payload["poll_question"] === "string" && (
+                                                <p className="inbox-meta">Poll: {String(item.payload["poll_question"])}</p>
+                                            )}
+                                        </div>
+                                        <button type="button" className="inbox-dismiss-btn" onClick={() => void handleDismissInboxItem(item.id)}>
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
 
