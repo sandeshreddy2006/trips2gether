@@ -116,6 +116,7 @@ class TripPlan(Base):
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    shared_notes = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 

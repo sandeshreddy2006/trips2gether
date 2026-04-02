@@ -26,7 +26,12 @@ def _format_time_range(start_at: datetime, end_at: datetime | None) -> str:
     return start_text
 
 
-def serialize_trip_plan(plan: models.TripPlan, item_count: int) -> ItineraryPlanOut:
+def serialize_trip_plan(
+    plan: models.TripPlan,
+    item_count: int,
+    starts_at: datetime | None = None,
+    ends_at: datetime | None = None,
+) -> ItineraryPlanOut:
     return ItineraryPlanOut(
         id=plan.id,
         group_id=plan.group_id,
@@ -35,6 +40,9 @@ def serialize_trip_plan(plan: models.TripPlan, item_count: int) -> ItineraryPlan
         created_at=plan.created_at,
         updated_at=plan.updated_at,
         item_count=item_count,
+        shared_notes=plan.shared_notes,
+        starts_at=starts_at,
+        ends_at=ends_at,
     )
 
 

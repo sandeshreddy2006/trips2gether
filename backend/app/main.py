@@ -36,8 +36,10 @@ from .schemas import (
     ItineraryItemCreateIn,
     ItineraryItemOut,
     ItineraryItemReorderIn,
+    ItinerarySharedNotesIn,
     ItineraryItemUpdateIn,
     ItineraryTimelineOut,
+    TripStateUpdateIn,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -107,6 +109,21 @@ def _ensure_itinerary_sort_order_column() -> None:
 
 
 _ensure_itinerary_sort_order_column()
+
+
+def _ensure_trip_plan_shared_notes_column() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("trip_plans")}
+    except Exception:
+        return
+
+    if "shared_notes" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE trip_plans ADD COLUMN shared_notes TEXT"))
+
+
+_ensure_trip_plan_shared_notes_column()
 
 
 app = FastAPI(title="trips2gether API")
@@ -192,12 +209,18 @@ def _get_itinerary_items(plan_id: int, db: Session):
 
 def _build_itinerary_payload(group: models.Group, plan: models.TripPlan, db: Session, warnings: list[str] | None = None):
     items = _get_itinerary_items(plan.id, db)
+    starts_at = items[0].start_at if items else None
+    ends_at = None
+    if items:
+        ends_at = max((item.end_at or item.start_at) for item in items)
+
     payload = {
         "ok": True,
-        "trip_plan": serialize_trip_plan(plan, len(items)),
+        "trip_plan": serialize_trip_plan(plan, len(items), starts_at, ends_at),
         "items": [serialize_itinerary_item(item) for item in items],
         "is_empty": len(items) == 0,
         "group_name": group.name,
+        "group_status": group.status,
     }
     if warnings:
         payload["warnings"] = warnings
@@ -1378,6 +1401,19 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
 
     groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
 
+    items = (
+        db.query(models.ItineraryItem)
+        .join(models.TripPlan, models.ItineraryItem.trip_plan_id == models.TripPlan.id)
+        .filter(models.TripPlan.group_id.in_(group_ids))
+        .all()
+    )
+    items_by_group_id: dict[int, list[models.ItineraryItem]] = {}
+    for item in items:
+        group_id = item.trip_plan.group_id if item.trip_plan else None
+        if group_id is None:
+            continue
+        items_by_group_id.setdefault(group_id, []).append(item)
+
     member_counts = {}
     for gid in group_ids:
         member_counts[gid] = (
@@ -1388,6 +1424,13 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
 
     result = []
     for g in groups:
+        group_items = items_by_group_id.get(g.id, [])
+        trip_start_at = None
+        trip_end_at = None
+        if group_items:
+            trip_start_at = min(item.start_at for item in group_items)
+            trip_end_at = max((item.end_at or item.start_at) for item in group_items)
+
         result.append(
             GroupOut(
                 id=g.id,
@@ -1398,6 +1441,9 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
                 created_at=g.created_at,
                 member_count=member_counts.get(g.id, 0),
                 role=role_map.get(g.id),
+                trip_item_count=len(group_items),
+                trip_start_at=trip_start_at,
+                trip_end_at=trip_end_at,
             )
         )
 
@@ -1491,6 +1537,47 @@ def update_group(group_id: int, body: GroupUpdateIn, request: Request, db: Sessi
             "created_at": group.created_at.isoformat() if group.created_at else None,
             "member_count": member_count,
             "role": my_membership.role,
+        },
+    }
+
+
+@app.patch("/groups/{group_id}/trip-state", response_model=dict)
+def update_group_trip_state(
+    group_id: int,
+    body: TripStateUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Update high-level trip lifecycle status for a group."""
+    current_user = get_current_user_info(request, db)
+    group, membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    if membership.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Only group owners or admins can update trip state")
+
+    allowed = {
+        "planning": {"upcoming"},
+        "confirmed": {"upcoming"},
+        "finalized": {"upcoming"},
+        "upcoming": {"active", "planning"},
+        "active": {"archived", "upcoming"},
+        "archived": {"upcoming"},
+    }
+
+    current_state = group.status
+    target_state = body.status
+    if target_state != current_state and target_state not in allowed.get(current_state, set()):
+        raise HTTPException(status_code=400, detail=f"Cannot transition trip from {current_state} to {target_state}")
+
+    group.status = target_state
+    db.commit()
+    db.refresh(group)
+
+    return {
+        "ok": True,
+        "group": {
+            "id": group.id,
+            "status": group.status,
         },
     }
 
@@ -2126,6 +2213,27 @@ def add_itinerary_item(
 
     payload = _build_itinerary_payload(group, plan, db, warnings)
     payload["message"] = "Itinerary item added"
+    return payload
+
+
+@app.patch("/groups/{group_id}/itinerary/notes", response_model=dict)
+def update_itinerary_shared_notes(
+    group_id: int,
+    body: ItinerarySharedNotesIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Save shared itinerary notes visible to all group members."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    plan = _get_or_create_trip_plan(group, db)
+
+    plan.shared_notes = (body.shared_notes or "").strip() or None
+    db.commit()
+    db.refresh(plan)
+
+    payload = _build_itinerary_payload(group, plan, db)
+    payload["message"] = "Shared notes updated"
     return payload
 
 

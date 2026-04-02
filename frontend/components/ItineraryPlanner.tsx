@@ -12,6 +12,9 @@ type ItineraryPlan = {
     created_at: string;
     updated_at: string;
     item_count: number;
+    shared_notes: string | null;
+    starts_at: string | null;
+    ends_at: string | null;
 };
 
 type ItineraryItem = {
@@ -41,6 +44,7 @@ type ItineraryResponse = {
     items: ItineraryItem[];
     is_empty: boolean;
     group_name: string | null;
+    group_status: string | null;
     warnings?: string[];
 };
 
@@ -390,11 +394,15 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     const [error, setError] = useState<string | null>(null);
     const [response, setResponse] = useState<ItineraryResponse | null>(null);
     const [editingItemId, setEditingItemId] = useState<number | null>(null);
+    const [savingNotes, setSavingNotes] = useState(false);
+    const [updatingTripState, setUpdatingTripState] = useState(false);
     const [form, setForm] = useState<FormState>(createEmptyFormState());
+    const [sharedNotesDraft, setSharedNotesDraft] = useState("");
     const [warningModal, setWarningModal] = useState<WarningModalState | null>(null);
 
     const items = response?.items || [];
     const groupName = response?.group_name || "Trip";
+    const groupStatus = response?.group_status || "planning";
     const itemCount = response?.trip_plan.item_count ?? items.length;
     const emptyState = !loading && items.length === 0;
     const editingItem = editingItemId === null ? null : items.find((item) => item.id === editingItemId) || null;
@@ -456,10 +464,12 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
         }
 
         setResponse(data as ItineraryResponse);
+        setSharedNotesDraft((data as ItineraryResponse).trip_plan.shared_notes || "");
     };
 
     useEffect(() => {
         let cancelled = false;
+        let intervalId: ReturnType<typeof setInterval> | null = null;
 
         const loadItinerary = async () => {
             setLoading(true);
@@ -480,9 +490,17 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
         };
 
         void loadItinerary();
+        intervalId = setInterval(() => {
+            if (!cancelled) {
+                void refreshItinerary();
+            }
+        }, 20000);
 
         return () => {
             cancelled = true;
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
         };
     }, [groupId]);
 
@@ -508,6 +526,51 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
 
     function closeWarningModal() {
         setWarningModal(null);
+    }
+
+    async function updateTripState(nextState: "upcoming" | "active" | "archived") {
+        setUpdatingTripState(true);
+        setError(null);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/trip-state`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ status: nextState }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(getApiErrorMessage(data, "Failed to update trip state"));
+            }
+            await refreshItinerary();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to update trip state");
+        } finally {
+            setUpdatingTripState(false);
+        }
+    }
+
+    async function saveSharedNotes() {
+        setSavingNotes(true);
+        setError(null);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/itinerary/notes`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ shared_notes: sharedNotesDraft }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(getApiErrorMessage(data, "Failed to save shared notes"));
+            }
+            setResponse(data as ItineraryResponse);
+            setSharedNotesDraft((data as ItineraryResponse).trip_plan.shared_notes || "");
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to save shared notes");
+        } finally {
+            setSavingNotes(false);
+        }
     }
 
     async function performSubmit(allowWarningOverride: boolean) {
@@ -695,6 +758,14 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                     <p className="itinerary-subtitle">
                         Keep flights, hotels, dining, and activities in one chronological view for the whole trip.
                     </p>
+                    <div className="itinerary-state-row">
+                        <span className={`itinerary-state-pill state-${groupStatus}`}>{groupStatus}</span>
+                        {response?.trip_plan.starts_at && response?.trip_plan.ends_at && (
+                            <span className="itinerary-state-dates">
+                                {new Date(response.trip_plan.starts_at).toLocaleDateString()} - {new Date(response.trip_plan.ends_at).toLocaleDateString()}
+                            </span>
+                        )}
+                    </div>
                 </div>
                 <div className="itinerary-hero-card">
                     <span className="itinerary-hero-label">Items</span>
@@ -709,6 +780,57 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                 <div className="itinerary-tip">
                     Members can add dates, times, and locations, then edit, remove, or reorder items without leaving the page.
                 </div>
+            </div>
+
+            <div className="itinerary-state-actions">
+                {(groupStatus === "planning" || groupStatus === "confirmed" || groupStatus === "finalized") && (
+                    <button
+                        className="itinerary-state-btn"
+                        disabled={updatingTripState}
+                        onClick={() => openWarningModal({
+                            title: "Finalize as upcoming",
+                            message: "Mark this itinerary as an upcoming trip? You can still edit itinerary items afterwards.",
+                            confirmLabel: "Mark upcoming",
+                            cancelLabel: "Cancel",
+                            tone: "warning",
+                            onConfirm: () => { void updateTripState("upcoming"); },
+                        })}
+                    >
+                        {updatingTripState ? "Updating..." : "Finalize Itinerary"}
+                    </button>
+                )}
+                {groupStatus === "upcoming" && (
+                    <button
+                        className="itinerary-state-btn"
+                        disabled={updatingTripState}
+                        onClick={() => openWarningModal({
+                            title: "Start trip",
+                            message: "Move this itinerary to active trips now?",
+                            confirmLabel: "Mark active",
+                            cancelLabel: "Cancel",
+                            tone: "warning",
+                            onConfirm: () => { void updateTripState("active"); },
+                        })}
+                    >
+                        {updatingTripState ? "Updating..." : "Mark as Active"}
+                    </button>
+                )}
+                {groupStatus === "active" && (
+                    <button
+                        className="itinerary-state-btn danger"
+                        disabled={updatingTripState}
+                        onClick={() => openWarningModal({
+                            title: "Archive trip",
+                            message: "Archive this active trip into previous trips?",
+                            confirmLabel: "Archive trip",
+                            cancelLabel: "Cancel",
+                            tone: "danger",
+                            onConfirm: () => { void updateTripState("archived"); },
+                        })}
+                    >
+                        {updatingTripState ? "Updating..." : "Archive / Finish Trip"}
+                    </button>
+                )}
             </div>
 
             {error && <div className="itinerary-alert">{error}</div>}
@@ -850,6 +972,52 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             </button>
                         </div>
                     </form>
+
+                    <div className="shared-notes-section">
+                        <div className="panel-heading shared-notes-heading">
+                            <div>
+                                <p className="panel-eyebrow">Group collaboration</p>
+                                <h2>Shared Notes</h2>
+                            </div>
+                        </div>
+                        <textarea
+                            value={sharedNotesDraft}
+                            onChange={(event) => setSharedNotesDraft(event.target.value)}
+                            placeholder="Add key reminders, meeting points, emergency contacts, and team notes here."
+                            rows={5}
+                        />
+                        <div className="shared-notes-actions">
+                            <button
+                                type="button"
+                                className="itinerary-secondary-btn"
+                                disabled={savingNotes}
+                                onClick={() => setSharedNotesDraft(response?.trip_plan.shared_notes || "")}
+                            >
+                                Reset
+                            </button>
+                            <button
+                                type="button"
+                                className="itinerary-submit-btn"
+                                disabled={savingNotes}
+                                onClick={() => {
+                                    if ((response?.trip_plan.shared_notes || "") && !sharedNotesDraft.trim()) {
+                                        openWarningModal({
+                                            title: "Clear shared notes",
+                                            message: "This will remove all shared notes for the group. Continue?",
+                                            confirmLabel: "Delete notes",
+                                            cancelLabel: "Cancel",
+                                            tone: "danger",
+                                            onConfirm: () => { void saveSharedNotes(); },
+                                        });
+                                        return;
+                                    }
+                                    void saveSharedNotes();
+                                }}
+                            >
+                                {savingNotes ? "Saving..." : "Save Shared Notes"}
+                            </button>
+                        </div>
+                    </div>
                 </aside>
 
                 <main className="itinerary-panel itinerary-timeline-panel">
