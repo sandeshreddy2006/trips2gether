@@ -184,7 +184,7 @@ export default function Dashboard() {
                     <button className="action-btn search-flights-btn" onClick={() => router.push("/bookings")}>
                         Search Flights
                     </button>
-                    <button className="action-btn explore-hotels-btn">
+                    <button className="action-btn explore-hotels-btn" onClick={() => router.push("/hotels")}>
                         Explore Hotels
                     </button>
                     <button className="action-btn more-recommend-btn">

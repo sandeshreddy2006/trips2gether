@@ -962,6 +962,9 @@ def get_booking_confirmation_email_template(
             </div>
         """
 
+    empty_passenger_row = '<tr><td colspan="3" style="padding: 10px 12px;">No passenger details available.</td></tr>'
+    empty_slice_row = '<tr><td colspan="2" style="padding: 10px 12px;">No itinerary details available.</td></tr>'
+
     return f"""
     <!DOCTYPE html>
     <html>
@@ -1109,7 +1112,7 @@ def get_booking_confirmation_email_template(
                         </tr>
                     </thead>
                     <tbody>
-                        {passenger_rows or '<tr><td colspan=\"3\" style=\"padding: 10px 12px;\">No passenger details available.</td></tr>'}
+                        {passenger_rows or empty_passenger_row}
                     </tbody>
                 </table>
 
@@ -1122,7 +1125,7 @@ def get_booking_confirmation_email_template(
                         </tr>
                     </thead>
                     <tbody>
-                        {slice_rows or '<tr><td colspan=\"2\" style=\"padding: 10px 12px;\">No itinerary details available.</td></tr>'}
+                        {slice_rows or empty_slice_row}
                     </tbody>
                 </table>
             </div>

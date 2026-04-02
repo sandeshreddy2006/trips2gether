@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import "./GroupDetail.css";
+import HotelSearchPanel from "./HotelSearchPanel";
 
 type Member = {
     id: number;
@@ -407,6 +408,14 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                         </div>
                     ))}
                 </div>
+            </div>
+
+            <div className="group-shortlist-section">
+                <HotelSearchPanel
+                    title="Search Hotels For This Group"
+                    subtitle="Compare hotel options with travel dates, guest count, room count, and sorting."
+                    initialDestination={shortlist[0]?.name || ""}
+                />
             </div>
 
             <div className="group-shortlist-section">
