@@ -577,3 +577,70 @@ class BookingListOut(BaseModel):
     """List of bookings for a user"""
     bookings: list[BookingOut]
     total_count: int
+
+
+# -------------------------
+# Itinerary Schemas
+# -------------------------
+
+class ItineraryPlanCreateIn(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+
+
+class ItineraryPlanOut(BaseModel):
+    id: int
+    group_id: int
+    title: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    item_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class ItineraryItemCreateIn(BaseModel):
+    item_type: Literal["flight", "accommodation", "dining", "activity", "transfer", "other"]
+    title: str = Field(min_length=1, max_length=255)
+    start_at: datetime
+    end_at: Optional[datetime] = None
+    location_name: Optional[str] = None
+    location_address: Optional[str] = None
+    notes: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_reference: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ItineraryItemOut(BaseModel):
+    id: int
+    trip_plan_id: int
+    item_type: str
+    title: str
+    start_at: datetime
+    end_at: Optional[datetime] = None
+    location_name: Optional[str] = None
+    location_address: Optional[str] = None
+    notes: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_reference: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+    created_by: int
+    created_at: datetime
+    updated_at: datetime
+    display_date: str
+    display_time: str
+    display_location: str
+
+    class Config:
+        from_attributes = True
+
+
+class ItineraryTimelineOut(BaseModel):
+    trip_plan: ItineraryPlanOut
+    items: list[ItineraryItemOut]
+    is_empty: bool = False
+    group_name: Optional[str] = None
+
