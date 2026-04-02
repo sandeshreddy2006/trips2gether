@@ -4,9 +4,6 @@
 # Run this to start the backend locally with SQLite database (no MySQL setup required)
 # The data will be different from Railway deployment, but great for development testing
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
 echo "Starting Trips2gether Backend Locally (SQLite)..."
 echo ""
 
@@ -56,9 +53,9 @@ echo ""
 echo "Starting FastAPI server..."
 echo ""
 echo "Server info:"
-echo "  • API: http://localhost:8001"
-echo "  • Docs (Swagger UI): http://localhost:8001/docs"
-echo "  • ReDoc: http://localhost:8001/redoc"
+echo "  • API: http://localhost:8000"
+echo "  • Docs (Swagger UI): http://localhost:8000/docs"
+echo "  • ReDoc: http://localhost:8000/redoc"
 echo "  • Database: trips2gether.db (created automatically)"
 echo ""
 echo "Note: This is for LOCAL DEVELOPMENT only"
@@ -70,7 +67,7 @@ echo "Press Ctrl+C to stop the server"
 echo ""
 
 # Start the FastAPI server with auto-reload and increased timeout
-python3 -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001 --timeout-keep-alive 120
+python3 -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 --timeout-keep-alive 120
 
 echo ""
 echo "Goodbye! FastAPI server stopped"

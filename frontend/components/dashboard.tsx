@@ -71,6 +71,7 @@ export default function Dashboard() {
     const [trendingError, setTrendingError] = useState<string | null>(null);
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loadingBookings, setLoadingBookings] = useState(true);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
 
     const handleDestinationClick = (destination: Destination | null) => {
         if (!destination) return;
@@ -164,8 +165,51 @@ export default function Dashboard() {
     ]
         .filter((item): item is { destination: Destination; matchScore: string } => Boolean(item.destination));
 
+    const handlePlanTrip = () => {
+        if (groups.length === 0) {
+            setToastMessage("Create or join a group first to build a trip itinerary.");
+            return;
+        }
+
+        router.push(`/group/${groups[0].id}/itinerary`);
+    };
+
+    const handleViewGroups = () => {
+        const section = document.getElementById("active-groups-section");
+        if (section) {
+            section.scrollIntoView({ behavior: "smooth", block: "start" });
+            return;
+        }
+
+        setToastMessage("Your groups appear in the Active Groups section on the dashboard.");
+    };
+
+    useEffect(() => {
+        if (!toastMessage) return;
+
+        const timeout = window.setTimeout(() => {
+            setToastMessage(null);
+        }, 3200);
+
+        return () => window.clearTimeout(timeout);
+    }, [toastMessage]);
+
     return (
         <div className="dashboard-container">
+            {toastMessage && (
+                <div className="dashboard-toast" role="status" aria-live="polite">
+                    <span className="dashboard-toast-dot" />
+                    <span>{toastMessage}</span>
+                    <button
+                        className="dashboard-toast-close"
+                        onClick={() => setToastMessage(null)}
+                        aria-label="Dismiss message"
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
+
             {/* Welcome Section */}
             <div className="welcome-section">
                 <h1 className="welcome-title">
@@ -174,6 +218,12 @@ export default function Dashboard() {
                 <div className="action-buttons">
                     <button className="action-btn dashboard-btn">
                         Dashboard
+                    </button>
+                    <button className="action-btn my-groups-btn" onClick={handleViewGroups}>
+                        My Groups
+                    </button>
+                    <button className="action-btn plan-trip-btn" onClick={handlePlanTrip}>
+                        Plan Trip
                     </button>
                     <button className="action-btn create-poll-btn">
                         + Create Poll
@@ -224,7 +274,7 @@ export default function Dashboard() {
                     {/* Finalizing Trip Section */}
                     <div className="finalizing-section">
                         <h3 className="finalizing-title">Finalizing Trip...</h3>
-                        <button className="view-plan-btn">View Plan</button>
+                        <button className="view-plan-btn" onClick={handlePlanTrip}>Plan Trip</button>
                     </div>
 
 
@@ -269,7 +319,7 @@ export default function Dashboard() {
 
                     {/* Active Groups Section */}
                     {groups.length > 0 && (
-                        <div className="active-groups-section">
+                        <div className="active-groups-section" id="active-groups-section">
                             <h3 className="active-groups-title">Active Groups</h3>
                             <div className="active-groups-grid">
                                 {groups.map((g) => (
@@ -289,6 +339,24 @@ export default function Dashboard() {
                                                 {g.member_count} {g.member_count === 1 ? "member" : "members"}
                                             </span>
                                         </div>
+                                        <button
+                                            className="group-open-btn"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                router.push(`/group/${g.id}`);
+                                            }}
+                                        >
+                                            Open Group
+                                        </button>
+                                        <button
+                                            className="group-plan-btn"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                router.push(`/group/${g.id}/itinerary`);
+                                            }}
+                                        >
+                                            Plan Trip
+                                        </button>
                                     </div>
                                 ))}
                             </div>

@@ -6,6 +6,47 @@
     background-color: #f5f5f5;
 }
 
+.dashboard-toast {
+    position: sticky;
+    top: 1rem;
+    z-index: 20;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(46, 107, 85, 0.16);
+    box-shadow: 0 14px 36px rgba(12, 40, 28, 0.12);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #234235;
+    backdrop-filter: blur(10px);
+}
+
+.dashboard-toast-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #2e6b55 0%, #186c50 100%);
+    flex-shrink: 0;
+}
+
+.dashboard-toast-close {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: #6a7d74;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.dashboard-toast-close:hover {
+    color: #234235;
+}
+
 /* Welcome Section */
 .welcome-section {
     display: flex;
@@ -99,6 +140,30 @@
     border-color: rgba(45, 122, 74, 0.6);
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(45, 122, 74, 0.15);
+}
+
+.plan-trip-btn {
+    background: linear-gradient(135deg, #2e6b55 0%, #186c50 100%);
+    color: #ffffff;
+    border-color: rgba(24, 108, 80, 0.6);
+    box-shadow: 0 8px 18px rgba(24, 108, 80, 0.18);
+}
+
+.plan-trip-btn:hover {
+    background: linear-gradient(135deg, #245c3a 0%, #134a36 100%);
+    color: #ffffff;
+}
+
+.my-groups-btn {
+    background: rgba(46, 107, 85, 0.12);
+    color: #215946;
+    border-color: rgba(46, 107, 85, 0.35);
+    font-weight: 700;
+}
+
+.my-groups-btn:hover {
+    background: rgba(46, 107, 85, 0.2);
+    color: #163a2c;
 }
 
 /* Dashboard Grid */
@@ -753,6 +818,40 @@
     color: #555;
     font-weight: 500;
     font-size: 0.7rem;
+}
+
+.group-open-btn {
+    padding: 0.55rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid rgba(45, 122, 74, 0.25);
+    background: #ffffff;
+    color: #2d7a4a;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    align-self: flex-start;
+}
+
+.group-open-btn:hover {
+    background: #2d7a4a;
+    color: #ffffff;
+}
+
+.group-plan-btn {
+    padding: 0.55rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid rgba(46, 107, 85, 0.2);
+    background: rgba(46, 107, 85, 0.08);
+    color: #2e6b55;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    align-self: flex-start;
+}
+
+.group-plan-btn:hover {
+    background: #2e6b55;
+    color: #ffffff;
 }
 
 /* Responsive Design */
