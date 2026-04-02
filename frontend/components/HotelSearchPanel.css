@@ -236,6 +236,90 @@
     cursor: pointer;
 }
 
+.hotel-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+}
+
+.hotel-save-btn {
+    margin-top: 0.65rem;
+    border: 1px solid #c89ba8;
+    border-radius: 8px;
+    background: #fff6f8;
+    color: #7a2141;
+    padding: 0.4rem 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.hotel-save-btn.is-bookmarked {
+    border-color: #9e1f4f;
+    background: #ffe6ee;
+    color: #9e1f4f;
+}
+
+.hotel-save-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.hotel-save-panel {
+    margin-top: 0.6rem;
+    border: 1px solid #d6e6de;
+    border-radius: 10px;
+    background: #f7fcf9;
+    padding: 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.hotel-save-empty {
+    margin: 0;
+    color: #365747;
+    font-size: 0.86rem;
+}
+
+.hotel-save-select {
+    width: 100%;
+    border: 1px solid #bcd7ca;
+    border-radius: 8px;
+    padding: 0.45rem 0.55rem;
+    background: #fff;
+    color: #1f3d30;
+}
+
+.hotel-save-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.hotel-save-confirm-btn,
+.hotel-save-cancel-btn {
+    border: none;
+    border-radius: 8px;
+    padding: 0.42rem 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.hotel-save-confirm-btn {
+    background: #1f7a50;
+    color: #fff;
+}
+
+.hotel-save-confirm-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.hotel-save-cancel-btn {
+    background: #e6f2ec;
+    color: #1f4d39;
+}
+
 .hotel-detail-panel {
     margin-top: 0.6rem;
     display: flex;
