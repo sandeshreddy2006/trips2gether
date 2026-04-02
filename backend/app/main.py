@@ -31,6 +31,11 @@ from .schemas import (
     GroupShortlistFlightCreateIn,
     GroupShortlistFlightItemOut,
     GroupShortlistFlightListOut,
+    ItineraryPlanCreateIn,
+    ItineraryPlanOut,
+    ItineraryItemCreateIn,
+    ItineraryItemOut,
+    ItineraryTimelineOut,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -69,6 +74,7 @@ from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
 from .flightbookings import _select_diverse_offers, _serialize_duffel_offer
 from .shortlist import serialize_shortlist_item, serialize_shortlist_flight_item
+from .itinerary import serialize_trip_plan, serialize_itinerary_item
 from jose import JWTError
 import os
 import requests
@@ -133,6 +139,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _get_group_and_membership(group_id: int, user_id: int, db: Session):
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    return group, membership
+
+
+def _get_or_create_trip_plan(group: models.Group, db: Session) -> models.TripPlan:
+    plan = group.trip_plan
+    if plan:
+        return plan
+
+    plan = models.TripPlan(
+        group_id=group.id,
+        title=f"{group.name} Itinerary",
+        description=f"Chronological plan for {group.name}",
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+    return plan
 
 
 # -------------------------
@@ -1902,6 +1943,120 @@ def remove_group_shortlist_flight(
     db.commit()
 
     return {"ok": True, "message": "Flight removed from shortlist"}
+
+
+# Itinerary Endpoints
+
+@app.get("/groups/{group_id}/itinerary", response_model=ItineraryTimelineOut)
+def get_group_itinerary(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Get the compiled itinerary for a group. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    plan = _get_or_create_trip_plan(group, db)
+    items = (
+        db.query(models.ItineraryItem)
+        .filter(models.ItineraryItem.trip_plan_id == plan.id)
+        .order_by(models.ItineraryItem.start_at.asc(), models.ItineraryItem.created_at.asc())
+        .all()
+    )
+
+    return {
+        "trip_plan": serialize_trip_plan(plan, len(items)),
+        "items": [serialize_itinerary_item(item) for item in items],
+        "is_empty": len(items) == 0,
+        "group_name": group.name,
+    }
+
+
+@app.post("/groups/{group_id}/itinerary", response_model=dict)
+def create_or_update_itinerary_plan(
+    group_id: int,
+    body: ItineraryPlanCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create or update the trip plan metadata for a group."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    plan = _get_or_create_trip_plan(group, db)
+
+    if body.title is not None:
+        trimmed_title = body.title.strip()
+        if not trimmed_title:
+            raise HTTPException(status_code=400, detail="Itinerary title cannot be empty")
+        plan.title = trimmed_title
+    elif not plan.title:
+        plan.title = f"{group.name} Itinerary"
+
+    if body.description is not None:
+        plan.description = body.description.strip() or None
+
+    db.commit()
+    db.refresh(plan)
+
+    item_count = (
+        db.query(func.count(models.ItineraryItem.id))
+        .filter(models.ItineraryItem.trip_plan_id == plan.id)
+        .scalar()
+    )
+
+    return {
+        "ok": True,
+        "trip_plan": serialize_trip_plan(plan, item_count or 0),
+    }
+
+
+@app.post("/groups/{group_id}/itinerary/items", response_model=dict)
+def add_itinerary_item(
+    group_id: int,
+    body: ItineraryItemCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Add a timeline item to a group's itinerary."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    if body.end_at is not None and body.end_at < body.start_at:
+        raise HTTPException(status_code=400, detail="End time cannot be before start time")
+
+    plan = _get_or_create_trip_plan(group, db)
+    item_title = body.title.strip()
+    if not item_title:
+        raise HTTPException(status_code=400, detail="Itinerary item title cannot be empty")
+
+    item = models.ItineraryItem(
+        trip_plan_id=plan.id,
+        item_type=body.item_type,
+        title=item_title,
+        start_at=body.start_at,
+        end_at=body.end_at,
+        location_name=body.location_name.strip() if body.location_name else None,
+        location_address=body.location_address.strip() if body.location_address else None,
+        notes=body.notes.strip() if body.notes else None,
+        source_kind=body.source_kind.strip() if body.source_kind else None,
+        source_reference=body.source_reference.strip() if body.source_reference else None,
+        details_json=json.dumps(body.details or {}),
+        created_by=current_user.id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    item_count = (
+        db.query(func.count(models.ItineraryItem.id))
+        .filter(models.ItineraryItem.trip_plan_id == plan.id)
+        .scalar()
+    )
+
+    return {
+        "ok": True,
+        "message": "Itinerary item added",
+        "item": serialize_itinerary_item(item),
+        "trip_plan": serialize_trip_plan(plan, item_count or 0),
+    }
 
 
 # Profile Endpoints

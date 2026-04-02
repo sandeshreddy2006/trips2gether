@@ -93,6 +93,24 @@
     color: white;
 }
 
+.group-itinerary-btn {
+    margin-top: 0.6rem;
+    padding: 0.4rem 1rem;
+    background: rgba(46, 107, 85, 0.08);
+    border: 1px solid rgba(46, 107, 85, 0.25);
+    border-radius: 6px;
+    color: #2E6B55;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.group-itinerary-btn:hover {
+    background: #2E6B55;
+    color: white;
+}
+
 .group-edit-form {
     display: flex;
     flex-direction: column;

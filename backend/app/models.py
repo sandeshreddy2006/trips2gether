@@ -73,6 +73,12 @@ class Group(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    trip_plan = relationship(
+        "TripPlan",
+        back_populates="group",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     shortlisted_destinations = relationship(
         "GroupShortlistDestination",
         back_populates="group",
@@ -101,6 +107,48 @@ class GroupMember(Base):
     __table_args__ = (
         UniqueConstraint("group_id", "user_id", name="uq_group_members_group_user"),
     )
+
+
+class TripPlan(Base):
+    __tablename__ = "trip_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    group = relationship("Group", back_populates="trip_plan")
+    items = relationship(
+        "ItineraryItem",
+        back_populates="trip_plan",
+        cascade="all, delete-orphan",
+        order_by="ItineraryItem.start_at",
+    )
+
+
+class ItineraryItem(Base):
+    __tablename__ = "itinerary_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_plan_id = Column(Integer, ForeignKey("trip_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_type = Column(String(32), nullable=False)
+    title = Column(String(255), nullable=False)
+    start_at = Column(DateTime, nullable=False, index=True)
+    end_at = Column(DateTime, nullable=True)
+    location_name = Column(String(255), nullable=True)
+    location_address = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    source_kind = Column(String(32), nullable=True)
+    source_reference = Column(String(255), nullable=True)
+    details_json = Column(Text, nullable=False, default="{}")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    trip_plan = relationship("TripPlan", back_populates="items")
+    creator = relationship("User", foreign_keys=[created_by])
 
 
 class GroupShortlistDestination(Base):
