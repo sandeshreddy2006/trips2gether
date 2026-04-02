@@ -115,6 +115,22 @@ class TripStateUpdateIn(BaseModel):
     status: Literal["planning", "upcoming", "active", "archived"]
 
 
+class PollOptionCreateIn(BaseModel):
+    label: str = Field(min_length=1, max_length=255)
+
+
+class GroupPollCreateIn(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    decision_type: Literal["destination", "flight", "hotel", "activity", "other"] = "other"
+    closes_at: datetime
+    allow_vote_update: bool = True
+    options: list[PollOptionCreateIn] = Field(min_length=2, max_length=12)
+
+
+class GroupPollVoteIn(BaseModel):
+    option_id: int
+
+
 class GroupAddMembersIn(BaseModel):
     user_ids: list[int] = Field(min_length=1, description="List of user IDs to invite")
 

@@ -68,6 +68,79 @@ type ArchivedTripHistory = {
     archived_at: string | null;
 };
 
+type PollSection = "upcoming" | "previous";
+type PollDecisionType = "destination" | "flight" | "hotel" | "activity" | "other";
+
+type DashboardPollOption = {
+    id: number;
+    label: string;
+    position: number;
+    vote_count: number;
+    is_winner: boolean;
+};
+
+type DashboardPoll = {
+    id: number;
+    group_id: number;
+    group_name: string | null;
+    question: string;
+    decision_type: PollDecisionType;
+    status: "active" | "closed";
+    allow_vote_update: boolean;
+    closes_at: string | null;
+    closed_at: string | null;
+    winner_option_id: number | null;
+    created_by: number;
+    created_by_name: string | null;
+    member_count: number;
+    total_votes: number;
+    voted_by_all: boolean;
+    user_vote_option_id: number | null;
+    options: DashboardPollOption[];
+};
+
+function formatPollDateLabel(value: string | null): string {
+    if (!value) return "No deadline";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "No deadline";
+
+    return new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+    }).format(date);
+}
+
+function getPollDecisionLabel(type: PollDecisionType): string {
+    if (type === "destination") return "Destination";
+    if (type === "flight") return "Flight";
+    if (type === "hotel") return "Hotel";
+    if (type === "activity") return "Activity";
+    return "Other";
+}
+
+function parseApiError(data: unknown, fallback: string): string {
+    if (typeof data === "string") return data;
+    if (data && typeof data === "object") {
+        const detail = (data as { detail?: unknown }).detail;
+        if (typeof detail === "string") return detail;
+    }
+    return fallback;
+}
+
+function getDefaultPollDeadlineInputValue(): string {
+    const twoDaysLater = new Date(Date.now() + (2 * 24 * 60 * 60 * 1000));
+    const year = twoDaysLater.getFullYear();
+    const month = String(twoDaysLater.getMonth() + 1).padStart(2, "0");
+    const day = String(twoDaysLater.getDate()).padStart(2, "0");
+    const hour = String(twoDaysLater.getHours()).padStart(2, "0");
+    const minute = String(twoDaysLater.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
 // Helper function to get the image URL (using proxy for Safari compatibility)
 const getImageUrl = (destination: Destination | null): string => {
     if (!destination) return '/trip-marseille.jpg';
@@ -104,6 +177,54 @@ export default function Dashboard() {
     const [archivedHistory, setArchivedHistory] = useState<ArchivedTripHistory[]>([]);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [selectedTripSection, setSelectedTripSection] = useState<TripSection>("upcoming");
+    const [showCreatePoll, setShowCreatePoll] = useState(false);
+    const [pollSection, setPollSection] = useState<PollSection>("upcoming");
+    const [loadingPolls, setLoadingPolls] = useState(true);
+    const [creatingPoll, setCreatingPoll] = useState(false);
+    const [upcomingPolls, setUpcomingPolls] = useState<DashboardPoll[]>([]);
+    const [previousPolls, setPreviousPolls] = useState<DashboardPoll[]>([]);
+    const [selectedOptionByPollId, setSelectedOptionByPollId] = useState<Record<number, number>>({});
+    const [submittingPollVotes, setSubmittingPollVotes] = useState<Record<number, boolean>>({});
+    const [pollForm, setPollForm] = useState({
+        groupId: "",
+        question: "",
+        decisionType: "activity" as PollDecisionType,
+        closesAt: getDefaultPollDeadlineInputValue(),
+        allowVoteUpdate: true,
+        optionsText: "",
+    });
+
+    const loadDashboardPolls = async () => {
+        try {
+            setLoadingPolls(true);
+            const response = await fetch("/api/polls/dashboard", { credentials: "include" });
+            const data = await response.json().catch(() => ({ upcoming: [], previous: [] }));
+
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to load polls"));
+            }
+
+            const nextUpcoming = Array.isArray(data.upcoming) ? data.upcoming : [];
+            const nextPrevious = Array.isArray(data.previous) ? data.previous : [];
+
+            setUpcomingPolls(nextUpcoming);
+            setPreviousPolls(nextPrevious);
+            setSelectedOptionByPollId((prev) => {
+                const next = { ...prev };
+                for (const poll of nextUpcoming) {
+                    if (poll.user_vote_option_id && !next[poll.id]) {
+                        next[poll.id] = poll.user_vote_option_id;
+                    }
+                }
+                return next;
+            });
+        } catch {
+            setUpcomingPolls([]);
+            setPreviousPolls([]);
+        } finally {
+            setLoadingPolls(false);
+        }
+    };
 
     const handleDestinationClick = (destination: Destination | null) => {
         if (!destination) return;
@@ -121,13 +242,22 @@ export default function Dashboard() {
     useEffect(() => {
         fetch("/api/groups", { credentials: "include" })
             .then((res) => (res.ok ? res.json() : { groups: [] }))
-            .then((data) => setGroups(data.groups || []))
+            .then((data) => {
+                const fetchedGroups = Array.isArray(data.groups) ? data.groups : [];
+                setGroups(fetchedGroups);
+                setPollForm((prev) => ({
+                    ...prev,
+                    groupId: prev.groupId || (fetchedGroups[0] ? String(fetchedGroups[0].id) : ""),
+                }));
+            })
             .catch(() => { });
 
         fetch("/api/itinerary/history", { credentials: "include" })
             .then((res) => (res.ok ? res.json() : { items: [] }))
             .then((data) => setArchivedHistory(Array.isArray(data.items) ? data.items : []))
             .catch(() => { setArchivedHistory([]); });
+
+        void loadDashboardPolls();
     }, []);
 
     useEffect(() => {
@@ -251,6 +381,134 @@ export default function Dashboard() {
         router.push(`/group/${groups[0].id}/itinerary`);
     };
 
+    const handleCreatePollClick = () => {
+        if (groups.length === 0) {
+            setToastMessage("Create or join a group before creating a poll.");
+            return;
+        }
+
+        setPollForm((prev) => ({
+            ...prev,
+            groupId: prev.groupId || String(groups[0].id),
+        }));
+        setShowCreatePoll(true);
+    };
+
+    const handleSubmitPollVote = async (poll: DashboardPoll) => {
+        const selectedOptionId = selectedOptionByPollId[poll.id] || poll.user_vote_option_id;
+        if (!selectedOptionId) {
+            setToastMessage("Choose an option before voting.");
+            return;
+        }
+
+        setSubmittingPollVotes((prev) => ({ ...prev, [poll.id]: true }));
+        try {
+            const response = await fetch(`/api/groups/${poll.group_id}/polls/${poll.id}/vote`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ option_id: selectedOptionId }),
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to submit vote"));
+            }
+
+            setToastMessage("Vote recorded.");
+            await loadDashboardPolls();
+        } catch (error) {
+            setToastMessage(error instanceof Error ? error.message : "Failed to submit vote");
+        } finally {
+            setSubmittingPollVotes((prev) => ({ ...prev, [poll.id]: false }));
+        }
+    };
+
+    const handleEndPollEarly = async (poll: DashboardPoll) => {
+        if (!user || poll.created_by !== user.id) {
+            setToastMessage("Only the poll host can end this poll early.");
+            return;
+        }
+
+        setSubmittingPollVotes((prev) => ({ ...prev, [poll.id]: true }));
+        try {
+            const response = await fetch(`/api/groups/${poll.group_id}/polls/${poll.id}/end`, {
+                method: "PATCH",
+                credentials: "include",
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to end poll"));
+            }
+
+            setToastMessage("Poll ended early.");
+            await loadDashboardPolls();
+        } catch (error) {
+            setToastMessage(error instanceof Error ? error.message : "Failed to end poll");
+        } finally {
+            setSubmittingPollVotes((prev) => ({ ...prev, [poll.id]: false }));
+        }
+    };
+
+    const handleCreatePollSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!pollForm.groupId) {
+            setToastMessage("Select a group for this poll.");
+            return;
+        }
+
+        const optionLabels = pollForm.optionsText
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+        if (optionLabels.length < 2) {
+            setToastMessage("Add at least two poll options.");
+            return;
+        }
+
+        const closesAtDate = new Date(pollForm.closesAt);
+        if (Number.isNaN(closesAtDate.getTime()) || closesAtDate <= new Date()) {
+            setToastMessage("Set a poll deadline in the future.");
+            return;
+        }
+
+        setCreatingPoll(true);
+        try {
+            const response = await fetch(`/api/groups/${pollForm.groupId}/polls`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    question: pollForm.question,
+                    decision_type: pollForm.decisionType,
+                    closes_at: closesAtDate.toISOString(),
+                    allow_vote_update: pollForm.allowVoteUpdate,
+                    options: optionLabels.map((label) => ({ label })),
+                }),
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to create poll"));
+            }
+
+            setShowCreatePoll(false);
+            setPollSection("upcoming");
+            setPollForm((prev) => ({
+                ...prev,
+                question: "",
+                decisionType: "activity",
+                closesAt: getDefaultPollDeadlineInputValue(),
+                allowVoteUpdate: true,
+                optionsText: "",
+            }));
+            setToastMessage("Poll created.");
+            await loadDashboardPolls();
+        } catch (error) {
+            setToastMessage(error instanceof Error ? error.message : "Failed to create poll");
+        } finally {
+            setCreatingPoll(false);
+        }
+    };
+
     const handleViewGroups = () => {
         const section = document.getElementById("all-groups-section");
         if (section) {
@@ -302,7 +560,7 @@ export default function Dashboard() {
                     <button className="action-btn plan-trip-btn" onClick={handlePlanTrip}>
                         Plan Trip
                     </button>
-                    <button className="action-btn create-poll-btn">
+                    <button className="action-btn create-poll-btn" onClick={handleCreatePollClick}>
                         + Create Poll
                     </button>
                     <button className="action-btn create-poll-btn" onClick={() => setShowCreateGroup(true)}>
@@ -471,42 +729,114 @@ export default function Dashboard() {
 
 
 
-                    {/* Upcoming Polls Section */}
+                    {/* Polls Section */}
                     <div className="upcoming-polls">
-                        <h3 className="polls-title">Upcoming Polls</h3>
-                        <div className="polls-grid">
-                            <div className="poll-card">
-                                <h4 className="poll-question">Vote on Marseille Flights</h4>
-                                <div className="poll-time">4 hours</div>
-                                <div className="poll-options">
-                                    <label className="poll-option">
-                                        <input type="radio" name="marseille" />
-                                        <span>Delta Airlines</span>
-                                    </label>
-                                    <label className="poll-option">
-                                        <input type="radio" name="marseille" />
-                                        <span>Air France</span>
-                                    </label>
-                                </div>
-                                <button className="vote-btn">Vote Now</button>
-                            </div>
-
-                            <div className="poll-card">
-                                <h4 className="poll-question">Vote on Hotel for London Trip</h4>
-                                <div className="poll-time">Tomorrow</div>
-                                <div className="poll-options">
-                                    <label className="poll-option">
-                                        <input type="radio" name="london" />
-                                        <span>Hotel One Hundred Shoreditch</span>
-                                    </label>
-                                    <label className="poll-option">
-                                        <input type="radio" name="london" />
-                                        <span>The Westminster London</span>
-                                    </label>
-                                </div>
-                                <button className="vote-btn">Vote</button>
+                        <div className="polls-header-row">
+                            <h3 className="polls-title">Group Polls</h3>
+                            <div className="poll-section-tabs">
+                                <button
+                                    type="button"
+                                    className={`poll-section-tab ${pollSection === "upcoming" ? "active" : ""}`}
+                                    onClick={() => setPollSection("upcoming")}
+                                >
+                                    Upcoming Polls ({upcomingPolls.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`poll-section-tab ${pollSection === "previous" ? "active" : ""}`}
+                                    onClick={() => setPollSection("previous")}
+                                >
+                                    Previous Polls ({previousPolls.length})
+                                </button>
                             </div>
                         </div>
+
+                        {loadingPolls ? (
+                            <div className="trip-section-empty">Loading polls...</div>
+                        ) : (
+                            <>
+                                {(pollSection === "upcoming" ? upcomingPolls : previousPolls).length === 0 ? (
+                                    <div className="trip-section-empty">
+                                        {pollSection === "upcoming"
+                                            ? "No active polls right now. Create one to collect votes from your group."
+                                            : "No previous polls yet."}
+                                    </div>
+                                ) : (
+                                    <div className="polls-grid">
+                                        {(pollSection === "upcoming" ? upcomingPolls : previousPolls).map((poll) => {
+                                            const selectedOptionId = selectedOptionByPollId[poll.id] || poll.user_vote_option_id || undefined;
+                                            const winner = poll.options.find((option) => option.id === poll.winner_option_id);
+
+                                            return (
+                                                <div key={poll.id} className="poll-card">
+                                                    <h4 className="poll-question">{poll.question}</h4>
+                                                    <div className="poll-group-tag">{poll.group_name || "Trip Group"}</div>
+                                                    <div className="poll-time">
+                                                        {poll.status === "active"
+                                                            ? `Closes ${formatPollDateLabel(poll.closes_at)}`
+                                                            : `Closed ${formatPollDateLabel(poll.closed_at || poll.closes_at)}`}
+                                                    </div>
+                                                    <div className="poll-time">
+                                                        Type: {getPollDecisionLabel(poll.decision_type)} • Votes: {poll.total_votes}/{poll.member_count}
+                                                    </div>
+
+                                                    <div className="poll-options">
+                                                        {poll.options.map((option) => (
+                                                            <label
+                                                                key={option.id}
+                                                                className={`poll-option ${option.is_winner ? "winner" : ""}`}
+                                                            >
+                                                                <input
+                                                                    type="radio"
+                                                                    name={`poll-${poll.id}`}
+                                                                    checked={selectedOptionId === option.id}
+                                                                    disabled={poll.status !== "active"}
+                                                                    onChange={() => {
+                                                                        setSelectedOptionByPollId((prev) => ({ ...prev, [poll.id]: option.id }));
+                                                                    }}
+                                                                />
+                                                                <span>{option.label}</span>
+                                                                <span className="poll-option-votes">{option.vote_count}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+
+                                                    {poll.status === "active" ? (
+                                                        <div className="poll-actions-row">
+                                                            <button
+                                                                className="vote-btn"
+                                                                disabled={Boolean(submittingPollVotes[poll.id])}
+                                                                onClick={() => {
+                                                                    void handleSubmitPollVote(poll);
+                                                                }}
+                                                            >
+                                                                {submittingPollVotes[poll.id] ? "Saving..." : "Vote Now"}
+                                                            </button>
+                                                            {user && poll.created_by === user.id && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="poll-end-btn"
+                                                                    disabled={Boolean(submittingPollVotes[poll.id])}
+                                                                    onClick={() => {
+                                                                        void handleEndPollEarly(poll);
+                                                                    }}
+                                                                >
+                                                                    End Poll Early
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="poll-result-line">
+                                                            Winner: {winner ? winner.label : "No winner"}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
 
                     {/* All Groups Section */}
@@ -599,6 +929,96 @@ export default function Dashboard() {
                         setGroups((prev) => [group, ...prev]);
                     }}
                 />
+            )}
+
+            {showCreatePoll && (
+                <div className="poll-modal-backdrop" role="dialog" aria-modal="true" aria-label="Create poll">
+                    <div className="poll-modal">
+                        <div className="poll-modal-header">
+                            <h3>Create Poll</h3>
+                            <button type="button" className="poll-modal-close" onClick={() => setShowCreatePoll(false)}>×</button>
+                        </div>
+
+                        <form className="poll-modal-form" onSubmit={handleCreatePollSubmit}>
+                            <label>
+                                Group
+                                <select
+                                    value={pollForm.groupId}
+                                    onChange={(event) => setPollForm((prev) => ({ ...prev, groupId: event.target.value }))}
+                                    required
+                                >
+                                    {groups.map((group) => (
+                                        <option key={group.id} value={group.id}>{group.name}</option>
+                                    ))}
+                                </select>
+                            </label>
+
+                            <label>
+                                Question
+                                <input
+                                    type="text"
+                                    value={pollForm.question}
+                                    onChange={(event) => setPollForm((prev) => ({ ...prev, question: event.target.value }))}
+                                    placeholder="What should we vote on?"
+                                    required
+                                />
+                            </label>
+
+                            <label>
+                                Decision Type
+                                <select
+                                    value={pollForm.decisionType}
+                                    onChange={(event) => setPollForm((prev) => ({ ...prev, decisionType: event.target.value as PollDecisionType }))}
+                                >
+                                    <option value="destination">Destination</option>
+                                    <option value="flight">Flight</option>
+                                    <option value="hotel">Hotel</option>
+                                    <option value="activity">Activity</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </label>
+
+                            <label>
+                                Deadline
+                                <input
+                                    type="datetime-local"
+                                    value={pollForm.closesAt}
+                                    onChange={(event) => setPollForm((prev) => ({ ...prev, closesAt: event.target.value }))}
+                                    required
+                                />
+                            </label>
+
+                            <label>
+                                Options (one per line)
+                                <textarea
+                                    rows={5}
+                                    value={pollForm.optionsText}
+                                    onChange={(event) => setPollForm((prev) => ({ ...prev, optionsText: event.target.value }))}
+                                    placeholder={"Option A\nOption B\nOption C"}
+                                    required
+                                />
+                            </label>
+
+                            <label className="poll-checkbox-row">
+                                <input
+                                    type="checkbox"
+                                    checked={pollForm.allowVoteUpdate}
+                                    onChange={(event) => setPollForm((prev) => ({ ...prev, allowVoteUpdate: event.target.checked }))}
+                                />
+                                Allow members to change their vote before the deadline
+                            </label>
+
+                            <div className="poll-modal-actions">
+                                <button type="button" className="itinerary-secondary-btn" onClick={() => setShowCreatePoll(false)}>
+                                    Cancel
+                                </button>
+                                <button type="submit" className="vote-btn" disabled={creatingPoll}>
+                                    {creatingPoll ? "Creating..." : "Create Poll"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             )}
         </div>
     );
