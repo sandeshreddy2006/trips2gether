@@ -19,6 +19,7 @@ type ItineraryItem = {
     trip_plan_id: number;
     item_type: "flight" | "accommodation" | "dining" | "activity" | "transfer" | "other";
     title: string;
+    sort_order: number;
     start_at: string;
     end_at: string | null;
     location_name: string | null;
@@ -40,6 +41,7 @@ type ItineraryResponse = {
     items: ItineraryItem[];
     is_empty: boolean;
     group_name: string | null;
+    warnings?: string[];
 };
 
 type FormState = {
@@ -61,6 +63,7 @@ type TimelineSegment = "single" | "start" | "middle" | "end";
 type TimelineEntry = {
     dayKey: string;
     sortAt: number;
+    sortOrder: number;
     segment: TimelineSegment;
     item: ItineraryItem;
 };
@@ -203,6 +206,7 @@ function expandTimelineEntries(item: ItineraryItem): TimelineEntry[] {
         return [{
             dayKey: parseDateKey(item.start_at),
             sortAt: new Date(item.created_at).getTime() || 0,
+            sortOrder: item.sort_order,
             segment: "single",
             item,
         }];
@@ -212,6 +216,7 @@ function expandTimelineEntries(item: ItineraryItem): TimelineEntry[] {
         return [{
             dayKey: parseDateKey(item.start_at),
             sortAt: start.getTime(),
+            sortOrder: item.sort_order,
             segment: "single",
             item,
         }];
@@ -241,7 +246,7 @@ function expandTimelineEntries(item: ItineraryItem): TimelineEntry[] {
             sortAt = current.getTime() + (12 * 60 * 60 * 1000);
         }
 
-        entries.push({ dayKey, sortAt, segment, item });
+        entries.push({ dayKey, sortAt, sortOrder: item.sort_order, segment, item });
         current = addDays(current, 1);
         index += 1;
     }
@@ -258,13 +263,21 @@ function parseDateKey(value: string): string {
     return `${year}-${month}-${day}`;
 }
 
-export default function ItineraryPlanner({ groupId }: { groupId: number }) {
-    const router = useRouter();
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [response, setResponse] = useState<ItineraryResponse | null>(null);
-    const [form, setForm] = useState<FormState>({
+function formatDateInputValue(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function formatTimeInputValue(date: Date): string {
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${hours}:${minutes}`;
+}
+
+function createEmptyFormState(): FormState {
+    return {
         itemType: "activity",
         title: "",
         date: "",
@@ -276,12 +289,128 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
         notes: "",
         sourceKind: "manual",
         sourceReference: "",
-    });
+    };
+}
+
+function createFormStateFromItem(item: ItineraryItem): FormState {
+    const start = new Date(item.start_at);
+    const end = item.end_at ? new Date(item.end_at) : null;
+
+    return {
+        itemType: item.item_type,
+        title: item.title,
+        date: Number.isNaN(start.getTime()) ? "" : formatDateInputValue(start),
+        startTime: Number.isNaN(start.getTime()) ? "" : formatTimeInputValue(start),
+        endDate: end && !Number.isNaN(end.getTime()) ? formatDateInputValue(end) : "",
+        endTime: end && !Number.isNaN(end.getTime()) ? formatTimeInputValue(end) : "",
+        locationName: item.location_name || "",
+        locationAddress: item.location_address || "",
+        notes: item.notes || "",
+        sourceKind: item.source_kind || "manual",
+        sourceReference: item.source_reference || "",
+    };
+}
+
+function overlaps(candidateStart: Date, candidateEnd: Date | null, existingStart: Date, existingEnd: Date | null): boolean {
+    const normalizedCandidateEnd = candidateEnd ?? candidateStart;
+    const normalizedExistingEnd = existingEnd ?? existingStart;
+    return candidateStart <= normalizedExistingEnd && existingStart <= normalizedCandidateEnd;
+}
+
+function getConflictWarning(
+    items: ItineraryItem[],
+    candidateStart: Date,
+    candidateEnd: Date | null,
+    ignoreItemId: number | null,
+): string | null {
+    const conflictingTitles = items
+        .filter((item) => item.id !== ignoreItemId)
+        .filter((item) => {
+            const itemStart = new Date(item.start_at);
+            const itemEnd = item.end_at ? new Date(item.end_at) : null;
+            if (Number.isNaN(itemStart.getTime())) return false;
+            if (itemEnd && Number.isNaN(itemEnd.getTime())) return false;
+            return overlaps(candidateStart, candidateEnd, itemStart, itemEnd);
+        })
+        .map((item) => item.title);
+
+    if (conflictingTitles.length === 0) return null;
+
+    const sample = conflictingTitles.slice(0, 3).join(", ");
+    const suffix = conflictingTitles.length > 3 ? ", and more" : "";
+    return `Time conflict: overlaps with ${sample}${suffix}.`;
+}
+
+function getApiErrorMessage(data: unknown, fallback: string): string {
+    if (typeof data === "string") {
+        return data;
+    }
+
+    if (data && typeof data === "object") {
+        const detail = (data as { detail?: unknown; message?: unknown }).detail ?? (data as { message?: unknown }).message;
+        if (typeof detail === "string") {
+            return detail;
+        }
+        if (Array.isArray(detail)) {
+            return detail
+                .map((entry) => {
+                    if (typeof entry === "string") return entry;
+                    if (entry && typeof entry === "object" && "msg" in entry) {
+                        return String((entry as { msg?: unknown }).msg ?? "");
+                    }
+                    return JSON.stringify(entry);
+                })
+                .filter(Boolean)
+                .join(" ") || fallback;
+        }
+        if (detail && typeof detail === "object") {
+            return JSON.stringify(detail);
+        }
+        if (typeof (data as { message?: unknown }).message === "string") {
+            return (data as { message?: string }).message as string;
+        }
+    }
+
+    return fallback;
+}
+
+type WarningModalState = {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    cancelLabel: string;
+    tone: "warning" | "danger";
+    onConfirm: () => void;
+};
+
+export default function ItineraryPlanner({ groupId }: { groupId: number }) {
+    const router = useRouter();
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [response, setResponse] = useState<ItineraryResponse | null>(null);
+    const [editingItemId, setEditingItemId] = useState<number | null>(null);
+    const [form, setForm] = useState<FormState>(createEmptyFormState());
+    const [warningModal, setWarningModal] = useState<WarningModalState | null>(null);
 
     const items = response?.items || [];
     const groupName = response?.group_name || "Trip";
-    const itemCount = response?.trip_plan.item_count ?? 0;
+    const itemCount = response?.trip_plan.item_count ?? items.length;
     const emptyState = !loading && items.length === 0;
+    const editingItem = editingItemId === null ? null : items.find((item) => item.id === editingItemId) || null;
+
+    const draftWarning = useMemo(() => {
+        if (!form.date || !form.startTime) return null;
+
+        const startAt = new Date(toDateTimeInputValue(form.date, form.startTime));
+        if (Number.isNaN(startAt.getTime())) return null;
+
+        const endAt = form.endDate && form.endTime ? new Date(toDateTimeInputValue(form.endDate, form.endTime)) : null;
+        if (endAt && Number.isNaN(endAt.getTime())) return null;
+        if (endAt && endAt < startAt) return null;
+
+        return getConflictWarning(items, startAt, endAt, editingItem?.id ?? null);
+    }, [editingItem?.id, form.date, form.endDate, form.endTime, form.startTime, items]);
 
     const groupedItems = useMemo(() => {
         const groups = new Map<string, TimelineEntry[]>();
@@ -295,15 +424,25 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             }
         }
 
-        return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([dayKey, entries]) => {
-            const sorted = entries.sort((first, second) => {
-                if (first.sortAt === second.sortAt) {
-                    return new Date(first.item.created_at).getTime() - new Date(second.item.created_at).getTime();
-                }
-                return first.sortAt - second.sortAt;
+        return Array.from(groups.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([dayKey, entries]) => {
+                const sorted = entries.sort((first, second) => {
+                    if (first.sortOrder !== second.sortOrder) {
+                        return first.sortOrder - second.sortOrder;
+                    }
+                    if (first.sortAt !== second.sortAt) {
+                        return first.sortAt - second.sortAt;
+                    }
+                    const firstCreated = new Date(first.item.created_at).getTime();
+                    const secondCreated = new Date(second.item.created_at).getTime();
+                    if (firstCreated !== secondCreated) {
+                        return firstCreated - secondCreated;
+                    }
+                    return first.item.id - second.item.id;
+                });
+                return [dayKey, sorted] as [string, TimelineEntry[]];
             });
-            return [dayKey, sorted] as [string, TimelineEntry[]];
-        });
     }, [items]);
 
     const refreshItinerary = async () => {
@@ -313,7 +452,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
 
         const data = await res.json().catch(() => null);
         if (!res.ok) {
-            throw new Error(data?.detail || data?.message || "Failed to load itinerary");
+            throw new Error(getApiErrorMessage(data, "Failed to load itinerary"));
         }
 
         setResponse(data as ItineraryResponse);
@@ -347,26 +486,31 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
         };
     }, [groupId]);
 
-    const resetForm = () => {
-        setForm({
-            itemType: "activity",
-            title: "",
-            date: "",
-            startTime: "",
-            endDate: "",
-            endTime: "",
-            locationName: "",
-            locationAddress: "",
-            notes: "",
-            sourceKind: "manual",
-            sourceReference: "",
-        });
-    };
-
-    const handleSubmit = async (event: React.FormEvent) => {
-        event.preventDefault();
+    function updateFormField<K extends keyof FormState>(field: K, value: FormState[K]) {
+        setForm((prev) => ({ ...prev, [field]: value }));
         setError(null);
+    }
 
+    function resetForm() {
+        setEditingItemId(null);
+        setForm(createEmptyFormState());
+    }
+
+    function startEditingItem(item: ItineraryItem) {
+        setEditingItemId(item.id);
+        setForm(createFormStateFromItem(item));
+        setError(null);
+    }
+
+    function openWarningModal(modal: WarningModalState) {
+        setWarningModal(modal);
+    }
+
+    function closeWarningModal() {
+        setWarningModal(null);
+    }
+
+    async function performSubmit(allowWarningOverride: boolean) {
         if (!form.title.trim()) {
             setError("Add a title for the itinerary item.");
             return;
@@ -384,39 +528,163 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             return;
         }
 
+        if (!allowWarningOverride && draftWarning) {
+            openWarningModal({
+                title: "Time conflict detected",
+                message: `${draftWarning} Save anyway?`,
+                confirmLabel: "Save anyway",
+                cancelLabel: "Cancel",
+                tone: "warning",
+                onConfirm: () => {
+                    void performSubmit(true);
+                },
+            });
+            return;
+        }
+
         setSaving(true);
         try {
-            const res = await fetch(`/api/groups/${groupId}/itinerary/items`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+            const isEditing = editingItemId !== null;
+            const res = await fetch(
+                isEditing
+                    ? `/api/groups/${groupId}/itinerary/items/${editingItemId}`
+                    : `/api/groups/${groupId}/itinerary/items`,
+                {
+                    method: isEditing ? "PATCH" : "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        item_type: form.itemType,
+                        title: form.title.trim(),
+                        start_at: startAt,
+                        end_at: endAt,
+                        location_name: form.locationName.trim() || null,
+                        location_address: form.locationAddress.trim() || null,
+                        notes: form.notes.trim() || null,
+                        source_kind: form.sourceKind.trim() || null,
+                        source_reference: form.sourceReference.trim() || null,
+                        details: {},
+                    }),
+                },
+            );
+
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(getApiErrorMessage(data, "Failed to save itinerary item"));
+            }
+
+            setResponse(data as ItineraryResponse);
+            if (isEditing) {
+                resetForm();
+            } else {
+                setForm(createEmptyFormState());
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to save itinerary item");
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    function submitItinerary(event: React.FormEvent) {
+        event.preventDefault();
+        setError(null);
+        void performSubmit(false);
+    }
+
+    async function deleteItem(item: ItineraryItem) {
+        openWarningModal({
+            title: "Delete itinerary item",
+            message: `Delete ${item.title}? This will remove it from the timeline and backend.`,
+            confirmLabel: "Delete item",
+            cancelLabel: "Cancel",
+            tone: "danger",
+            onConfirm: () => {
+                void performDelete(item);
+            },
+        });
+    }
+
+    async function performDelete(item: ItineraryItem) {
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/itinerary/items/${item.id}`, {
+                method: "DELETE",
                 credentials: "include",
-                body: JSON.stringify({
-                    item_type: form.itemType,
-                    title: form.title.trim(),
-                    start_at: startAt,
-                    end_at: endAt,
-                    location_name: form.locationName.trim() || null,
-                    location_address: form.locationAddress.trim() || null,
-                    notes: form.notes.trim() || null,
-                    source_kind: form.sourceKind.trim() || null,
-                    source_reference: form.sourceReference.trim() || null,
-                    details: {},
-                }),
             });
 
             const data = await res.json().catch(() => null);
             if (!res.ok) {
-                throw new Error(data?.detail || data?.message || "Failed to add itinerary item");
+                throw new Error(getApiErrorMessage(data, "Failed to delete itinerary item"));
             }
 
-            await refreshItinerary();
-            resetForm();
+            setResponse(data as ItineraryResponse);
+            if (editingItemId === item.id) {
+                resetForm();
+            }
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to add itinerary item");
+            setError(err instanceof Error ? err.message : "Failed to delete itinerary item");
         } finally {
             setSaving(false);
         }
-    };
+    }
+
+    async function reorderItem(itemId: number, direction: -1 | 1) {
+        const currentIndex = items.findIndex((item) => item.id === itemId);
+        if (currentIndex < 0) return;
+
+        const nextIndex = currentIndex + direction;
+        if (nextIndex < 0 || nextIndex >= items.length) return;
+
+        const movedItem = items[currentIndex];
+        const targetItem = items[nextIndex];
+        openWarningModal({
+            title: "Reorder itinerary item",
+            message: `Move "${movedItem.title}" relative to "${targetItem.title}"? This changes the displayed order and may make the timeline feel less chronological. Continue?`,
+            confirmLabel: "Move item",
+            cancelLabel: "Cancel",
+            tone: "warning",
+            onConfirm: () => {
+                void performReorder(itemId, direction);
+            },
+        });
+    }
+
+    async function performReorder(itemId: number, direction: -1 | 1) {
+        const currentIndex = items.findIndex((item) => item.id === itemId);
+        if (currentIndex < 0) return;
+
+        const nextIndex = currentIndex + direction;
+        if (nextIndex < 0 || nextIndex >= items.length) return;
+
+        const reorderedIds = items.map((item) => item.id);
+        [reorderedIds[currentIndex], reorderedIds[nextIndex]] = [reorderedIds[nextIndex], reorderedIds[currentIndex]];
+
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/itinerary/reorder`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ item_ids: reorderedIds }),
+            });
+
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(getApiErrorMessage(data, "Failed to reorder itinerary items"));
+            }
+
+            setResponse(data as ItineraryResponse);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to reorder itinerary items");
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    const renderedActionItems = new Set<number>();
 
     return (
         <div className="itinerary-page">
@@ -439,7 +707,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                     &larr; Back to Group
                 </button>
                 <div className="itinerary-tip">
-                    Members can add dates, times, and locations so the plan stays easy to scan.
+                    Members can add dates, times, and locations, then edit, remove, or reorder items without leaving the page.
                 </div>
             </div>
 
@@ -449,18 +717,18 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                 <aside className="itinerary-panel itinerary-form-panel">
                     <div className="panel-heading">
                         <div>
-                            <p className="panel-eyebrow">Add to plan</p>
-                            <h2>New timeline item</h2>
+                            <p className="panel-eyebrow">{editingItem ? "Edit itinerary" : "Add to plan"}</p>
+                            <h2>{editingItem ? "Update timeline item" : "New timeline item"}</h2>
                         </div>
-                        <span className="panel-pill">Chronological</span>
+                        <span className="panel-pill">{editingItem ? "Editing" : "Chronological"}</span>
                     </div>
 
-                    <form className="itinerary-form" onSubmit={handleSubmit}>
+                    <form className="itinerary-form" onSubmit={submitItinerary}>
                         <label>
                             Item type
                             <select
                                 value={form.itemType}
-                                onChange={(e) => setForm((prev) => ({ ...prev, itemType: e.target.value as FormState["itemType"] }))}
+                                onChange={(e) => updateFormField("itemType", e.target.value as FormState["itemType"])}
                             >
                                 {Object.entries(ITEM_LABELS).map(([value, label]) => (
                                     <option key={value} value={value}>
@@ -475,7 +743,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             <input
                                 type="text"
                                 value={form.title}
-                                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                                onChange={(e) => updateFormField("title", e.target.value)}
                                 placeholder="e.g. Delta flight to Paris"
                                 maxLength={255}
                             />
@@ -487,7 +755,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                 <input
                                     type="date"
                                     value={form.date}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+                                    onChange={(e) => updateFormField("date", e.target.value)}
                                 />
                             </label>
                             <label>
@@ -495,7 +763,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                 <input
                                     type="time"
                                     value={form.startTime}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, startTime: e.target.value }))}
+                                    onChange={(e) => updateFormField("startTime", e.target.value)}
                                 />
                             </label>
                         </div>
@@ -506,7 +774,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                 <input
                                     type="date"
                                     value={form.endDate}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, endDate: e.target.value }))}
+                                    onChange={(e) => updateFormField("endDate", e.target.value)}
                                 />
                             </label>
                             <label>
@@ -514,7 +782,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                 <input
                                     type="time"
                                     value={form.endTime}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, endTime: e.target.value }))}
+                                    onChange={(e) => updateFormField("endTime", e.target.value)}
                                 />
                             </label>
                         </div>
@@ -524,7 +792,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             <input
                                 type="text"
                                 value={form.locationName}
-                                onChange={(e) => setForm((prev) => ({ ...prev, locationName: e.target.value }))}
+                                onChange={(e) => updateFormField("locationName", e.target.value)}
                                 placeholder="Airport, hotel, restaurant, or activity venue"
                                 maxLength={255}
                             />
@@ -535,7 +803,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             <input
                                 type="text"
                                 value={form.locationAddress}
-                                onChange={(e) => setForm((prev) => ({ ...prev, locationAddress: e.target.value }))}
+                                onChange={(e) => updateFormField("locationAddress", e.target.value)}
                                 placeholder="Address or terminal info"
                             />
                         </label>
@@ -544,7 +812,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             Notes
                             <textarea
                                 value={form.notes}
-                                onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                                onChange={(e) => updateFormField("notes", e.target.value)}
                                 placeholder="Gate info, reservation notes, confirmation codes, and reminders"
                                 rows={4}
                             />
@@ -556,7 +824,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                 <input
                                     type="text"
                                     value={form.sourceKind}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, sourceKind: e.target.value }))}
+                                    onChange={(e) => updateFormField("sourceKind", e.target.value)}
                                     placeholder="manual, flight-shortlist, etc."
                                 />
                             </label>
@@ -565,15 +833,22 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                 <input
                                     type="text"
                                     value={form.sourceReference}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, sourceReference: e.target.value }))}
+                                    onChange={(e) => updateFormField("sourceReference", e.target.value)}
                                     placeholder="Optional booking or shortlist ID"
                                 />
                             </label>
                         </div>
 
-                        <button type="submit" className="itinerary-submit-btn" disabled={saving}>
-                            {saving ? "Saving..." : "Add to itinerary"}
-                        </button>
+                        <div className="itinerary-form-actions">
+                            {editingItem && (
+                                <button type="button" className="itinerary-secondary-btn" onClick={() => resetForm()} disabled={saving}>
+                                    Cancel edit
+                                </button>
+                            )}
+                            <button type="submit" className="itinerary-submit-btn" disabled={saving}>
+                                {saving ? "Saving..." : editingItem ? "Save changes" : "Add to itinerary"}
+                            </button>
+                        </div>
                     </form>
                 </aside>
 
@@ -608,29 +883,63 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                             const normalizedDisplayLocation = (item.display_location || "").toLowerCase();
                                             const normalizedAddress = (item.location_address || "").toLowerCase();
                                             const showAddress = Boolean(item.location_address) && !normalizedDisplayLocation.includes(normalizedAddress);
+                                            const showActions = !renderedActionItems.has(item.id);
+
+                                            if (showActions) {
+                                                renderedActionItems.add(item.id);
+                                            }
 
                                             return (
-                                            <article key={`${item.id}-${dayKey}-${entry.segment}`} className="timeline-card">
-                                                <div className="timeline-marker">
-                                                    <span>{ITEM_ICONS[item.item_type]}</span>
-                                                </div>
-                                                <div className="timeline-card-body">
-                                                    <div className="timeline-card-topline">
-                                                        <span className="timeline-type">{ITEM_LABELS[item.item_type]}</span>
-                                                        <span className="timeline-time">{getSegmentTimeLabel(entry)}</span>
+                                                <article
+                                                    key={`${item.id}-${dayKey}-${entry.segment}`}
+                                                    className={`timeline-card${editingItem?.id === item.id ? " timeline-card-active" : ""}`}
+                                                >
+                                                    <div className="timeline-marker">
+                                                        <span>{ITEM_ICONS[item.item_type]}</span>
                                                     </div>
-                                                    {segmentBadge && <p className="timeline-segment-badge">{segmentBadge}</p>}
-                                                    <h3>{item.title}</h3>
-                                                    <p className="timeline-range-label">{rangeLabel}</p>
-                                                    <p className="timeline-location">{item.display_location}</p>
-                                                    {(showAddress || item.notes) && (
-                                                        <div className="timeline-meta-block">
-                                                            {showAddress && <p>{item.location_address}</p>}
-                                                            {item.notes && <p>{item.notes}</p>}
+                                                    <div className="timeline-card-body">
+                                                        <div className="timeline-card-topline">
+                                                            <span className="timeline-type">{ITEM_LABELS[item.item_type]}</span>
+                                                            <span className="timeline-time">{getSegmentTimeLabel(entry)}</span>
                                                         </div>
-                                                    )}
-                                                </div>
-                                            </article>
+                                                        {segmentBadge && <p className="timeline-segment-badge">{segmentBadge}</p>}
+                                                        <h3>{item.title}</h3>
+                                                        <p className="timeline-range-label">{rangeLabel}</p>
+                                                        <p className="timeline-location">{item.display_location}</p>
+                                                        {(showAddress || item.notes) && (
+                                                            <div className="timeline-meta-block">
+                                                                {showAddress && <p>{item.location_address}</p>}
+                                                                {item.notes && <p>{item.notes}</p>}
+                                                            </div>
+                                                        )}
+                                                        {showActions && (
+                                                            <div className="timeline-card-actions">
+                                                                <button type="button" className="timeline-card-action-btn" onClick={() => startEditingItem(item)} disabled={saving}>
+                                                                    Edit
+                                                                </button>
+                                                                <button type="button" className="timeline-card-action-btn danger" onClick={() => deleteItem(item)} disabled={saving}>
+                                                                    Delete
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="timeline-card-action-btn secondary"
+                                                                    onClick={() => reorderItem(item.id, -1)}
+                                                                    disabled={saving || items.findIndex((current) => current.id === item.id) === 0}
+                                                                >
+                                                                    Move up
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="timeline-card-action-btn secondary"
+                                                                    onClick={() => reorderItem(item.id, 1)}
+                                                                    disabled={saving || items.findIndex((current) => current.id === item.id) === items.length - 1}
+                                                                >
+                                                                    Move down
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </article>
                                             );
                                         })}
                                     </div>
@@ -640,6 +949,40 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                     )}
                 </main>
             </div>
+                {warningModal && (
+                    <div className="itinerary-modal-overlay" role="presentation" onClick={closeWarningModal}>
+                        <div
+                            className={`itinerary-modal ${warningModal.tone === "danger" ? "itinerary-modal-danger" : "itinerary-modal-warning"}`}
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="itinerary-modal-title"
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div className="itinerary-modal-icon">{warningModal.tone === "danger" ? "!" : "?"}</div>
+                            <div className="itinerary-modal-content">
+                                <h2 id="itinerary-modal-title">{warningModal.title}</h2>
+                                <p>{warningModal.message}</p>
+                            </div>
+                            <div className="itinerary-modal-actions">
+                                <button type="button" className="itinerary-modal-cancel" onClick={closeWarningModal} disabled={saving}>
+                                    {warningModal.cancelLabel}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="itinerary-modal-confirm"
+                                    onClick={() => {
+                                        const action = warningModal.onConfirm;
+                                        closeWarningModal();
+                                        action();
+                                    }}
+                                    disabled={saving}
+                                >
+                                    {warningModal.confirmLabel}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
         </div>
     );
 }

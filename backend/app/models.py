@@ -124,7 +124,7 @@ class TripPlan(Base):
         "ItineraryItem",
         back_populates="trip_plan",
         cascade="all, delete-orphan",
-        order_by="ItineraryItem.start_at",
+        order_by="ItineraryItem.sort_order, ItineraryItem.start_at, ItineraryItem.created_at",
     )
 
 
@@ -135,6 +135,7 @@ class ItineraryItem(Base):
     trip_plan_id = Column(Integer, ForeignKey("trip_plans.id", ondelete="CASCADE"), nullable=False, index=True)
     item_type = Column(String(32), nullable=False)
     title = Column(String(255), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0, index=True)
     start_at = Column(DateTime, nullable=False, index=True)
     end_at = Column(DateTime, nullable=True)
     location_name = Column(String(255), nullable=True)
