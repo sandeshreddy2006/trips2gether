@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, File, UploadFile
+import asyncio
+import threading
+
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -144,12 +147,75 @@ _ensure_trip_plan_history_table()
 
 app = FastAPI(title="trips2gether API")
 
+
+class PollRealtimeManager:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._connections: dict[int, WebSocket] = {}
+        self._group_connections: dict[int, set[int]] = {}
+
+    async def connect(self, websocket: WebSocket, group_ids: list[int]) -> None:
+        await websocket.accept()
+        connection_id = id(websocket)
+        with self._lock:
+            self._connections[connection_id] = websocket
+            for group_id in group_ids:
+                self._group_connections.setdefault(group_id, set()).add(connection_id)
+
+    async def disconnect(self, websocket: WebSocket) -> None:
+        connection_id = id(websocket)
+        with self._lock:
+            self._connections.pop(connection_id, None)
+            for subscribers in self._group_connections.values():
+                subscribers.discard(connection_id)
+
+    async def broadcast_group(self, group_id: int, payload: dict) -> None:
+        with self._lock:
+            connection_ids = list(self._group_connections.get(group_id, set()))
+
+        dead_connections: list[int] = []
+        for connection_id in connection_ids:
+            websocket = None
+            with self._lock:
+                websocket = self._connections.get(connection_id)
+            if websocket is None:
+                dead_connections.append(connection_id)
+                continue
+
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                dead_connections.append(connection_id)
+
+        if dead_connections:
+            with self._lock:
+                for connection_id in dead_connections:
+                    self._connections.pop(connection_id, None)
+                for subscribers in self._group_connections.values():
+                    for connection_id in dead_connections:
+                        subscribers.discard(connection_id)
+
+
+poll_realtime_manager = PollRealtimeManager()
+
+
+def _publish_poll_event_sync(group_id: int, payload: dict) -> None:
+    loop = getattr(app.state, "loop", None)
+    if not loop or not loop.is_running():
+        return
+    asyncio.run_coroutine_threadsafe(poll_realtime_manager.broadcast_group(group_id, payload), loop)
+
+
+async def _publish_poll_event_async(group_id: int, payload: dict) -> None:
+    await poll_realtime_manager.broadcast_group(group_id, payload)
+
 # Initialize scheduler for cleanup tasks
 scheduler = BackgroundScheduler()
 
 @app.on_event("startup")
-def start_scheduler():
+async def start_scheduler():
     """Start background scheduler for cleanup tasks"""
+    app.state.loop = asyncio.get_running_loop()
     
     def cleanup_job():
         """Background job to clean up expired tokens"""
@@ -169,11 +235,15 @@ def start_scheduler():
                 .all()
             )
             finalized_count = 0
+            finalized_polls: list[models.GroupPoll] = []
             for poll in due_polls:
                 if _finalize_poll_if_due(poll, db):
                     finalized_count += 1
+                    finalized_polls.append(poll)
 
             db.commit()
+            for poll in finalized_polls:
+                _publish_poll_event_sync(poll.group_id, _build_poll_event_payload("poll.closed", poll, db))
             print(f"[Cleanup Job] Deleted {deleted_count} expired password reset tokens; finalized {finalized_count} polls")
         except Exception as e:
             print(f"[Cleanup Job] Error: {e}")
@@ -405,9 +475,9 @@ def _close_poll_and_compute_winner(poll: models.GroupPoll, db: Session, closed_a
     return True
 
 
-def _finalize_due_polls_for_groups(group_ids: list[int], db: Session) -> None:
+def _finalize_due_polls_for_groups(group_ids: list[int], db: Session) -> list[models.GroupPoll]:
     if not group_ids:
-        return
+        return []
 
     due_polls = (
         db.query(models.GroupPoll)
@@ -419,12 +489,16 @@ def _finalize_due_polls_for_groups(group_ids: list[int], db: Session) -> None:
     )
 
     has_changes = False
+    finalized_polls: list[models.GroupPoll] = []
     for poll in due_polls:
         if _finalize_poll_if_due(poll, db):
             has_changes = True
+            finalized_polls.append(poll)
 
     if has_changes:
         db.commit()
+
+    return finalized_polls
 
 
 def _serialize_poll(
@@ -492,6 +566,48 @@ def _serialize_poll(
             for option in options
         ],
     }
+
+
+def _build_poll_event_payload(event_type: str, poll: models.GroupPoll, db: Session) -> dict:
+    group = db.get(models.Group, poll.group_id)
+    return {
+        "type": event_type,
+        "group_id": poll.group_id,
+        "poll": _serialize_poll(
+            poll,
+            current_user_id=0,
+            db=db,
+            group_name=group.name if group else None,
+            member_count=_get_group_member_count(poll.group_id, db),
+        ),
+    }
+
+
+def _get_user_group_ids(user_id: int, db: Session) -> list[int]:
+    memberships = (
+        db.query(models.GroupMember.group_id)
+        .filter(models.GroupMember.user_id == user_id)
+        .all()
+    )
+    return [membership.group_id for membership in memberships]
+
+
+def _get_current_user_from_websocket(websocket: WebSocket, db: Session) -> models.User:
+    token = websocket.cookies.get("authToken")
+    if not token:
+        raise HTTPException(status_code=401, detail="No session")
+
+    try:
+        data = decode_jwt(token)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    user_id = int(data["sub"])
+    user = db.get(models.User, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
 
 
 # -------------------------
@@ -1797,7 +1913,7 @@ def update_group_trip_state(
 
 
 @app.post("/groups/{group_id}/polls", response_model=dict)
-def create_group_poll(
+async def create_group_poll(
     group_id: int,
     body: GroupPollCreateIn,
     request: Request,
@@ -1836,6 +1952,8 @@ def create_group_poll(
     db.commit()
     db.refresh(poll)
 
+    await _publish_poll_event_async(group.id, _build_poll_event_payload("poll.created", poll, db))
+
     return {
         "ok": True,
         "message": "Poll created",
@@ -1863,7 +1981,9 @@ def list_dashboard_polls(request: Request, db: Session = Depends(get_db)):
         return {"upcoming": [], "previous": []}
 
     group_ids = [membership.group_id for membership in memberships]
-    _finalize_due_polls_for_groups(group_ids, db)
+    finalized_polls = _finalize_due_polls_for_groups(group_ids, db)
+    for poll in finalized_polls:
+        _publish_poll_event_sync(poll.group_id, _build_poll_event_payload("poll.closed", poll, db))
 
     groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
     group_name_map = {group.id: group.name for group in groups}
@@ -1917,7 +2037,7 @@ def list_dashboard_polls(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/groups/{group_id}/polls/{poll_id}/vote", response_model=dict)
-def submit_group_poll_vote(
+async def submit_group_poll_vote(
     group_id: int,
     poll_id: int,
     body: GroupPollVoteIn,
@@ -1980,6 +2100,8 @@ def submit_group_poll_vote(
     db.commit()
     db.refresh(poll)
 
+    await _publish_poll_event_async(group.id, _build_poll_event_payload("poll.updated", poll, db))
+
     return {
         "ok": True,
         "message": "Vote recorded",
@@ -1994,7 +2116,7 @@ def submit_group_poll_vote(
 
 
 @app.patch("/groups/{group_id}/polls/{poll_id}/end", response_model=dict)
-def end_group_poll_early(
+async def end_group_poll_early(
     group_id: int,
     poll_id: int,
     request: Request,
@@ -2025,6 +2147,8 @@ def end_group_poll_early(
     db.commit()
     db.refresh(poll)
 
+    await _publish_poll_event_async(group.id, _build_poll_event_payload("poll.closed", poll, db))
+
     return {
         "ok": True,
         "message": "Poll ended early",
@@ -2036,6 +2160,29 @@ def end_group_poll_early(
             member_count=_get_group_member_count(group.id, db),
         ),
     }
+
+
+@app.websocket("/ws/polls")
+async def poll_updates_socket(websocket: WebSocket):
+    db = next(get_db())
+    try:
+        current_user = _get_current_user_from_websocket(websocket, db)
+        group_ids = _get_user_group_ids(current_user.id, db)
+        await poll_realtime_manager.connect(websocket, group_ids)
+        await websocket.send_json({"type": "poll.connection.ready", "group_ids": group_ids})
+
+        while True:
+            await websocket.receive()
+    except WebSocketDisconnect:
+        pass
+    except HTTPException:
+        await websocket.close(code=4401)
+    finally:
+        try:
+            await poll_realtime_manager.disconnect(websocket)
+        except Exception:
+            pass
+        db.close()
 
 
 @app.get("/groups/{group_id}/members", response_model=GroupMemberListOut)

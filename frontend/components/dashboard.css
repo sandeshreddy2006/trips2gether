@@ -446,11 +446,13 @@
 
 .poll-option {
     display: flex;
-    align-items: center;
-    gap: 0.8rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
     cursor: pointer;
     font-size: 0.95rem;
     color: #e8f5e9;
+    padding: 0.15rem 0;
 }
 
 .poll-option.winner {
@@ -459,11 +461,36 @@
     padding: 0.35rem 0.5rem;
 }
 
+.poll-option-topline {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
 .poll-option-votes {
     margin-left: auto;
     font-size: 0.8rem;
     color: #c9ddd4;
     font-weight: 700;
+}
+
+.poll-option-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+}
+
+.poll-option-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(135deg, #80d1a5 0%, #2d7a4a 100%);
+    transition: width 0.35s ease;
+}
+
+.poll-option-fill.winner {
+    background: linear-gradient(135deg, #ffd76d 0%, #f5a623 100%);
 }
 
 .poll-option input[type="radio"] {
