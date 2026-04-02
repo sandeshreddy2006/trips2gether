@@ -372,13 +372,19 @@ class HotelOptionOut(BaseModel):
     rating: Optional[float] = None
     user_ratings_total: Optional[int] = None
     price_level: Optional[str] = None
+    currency: str = "USD"
+    price_per_night: Optional[float] = None
+    total_price: Optional[float] = None
+    nights: Optional[int] = None
     types: List[str] = []
+    amenities: List[str] = []
     photo_url: Optional[str] = None
     photo_reference: Optional[str] = None
     location: Optional[HotelLocation] = None
     business_status: Optional[str] = None
     website: Optional[str] = None
     google_maps_url: Optional[str] = None
+    booking_url: Optional[str] = None
 
 
 class HotelSearchResponse(BaseModel):
