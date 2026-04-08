@@ -63,6 +63,30 @@ function FlyToSelected({ lat, lng }: { lat: number; lng: number }) {
     return null;
 }
 
+function FitBounds({
+    anchorLat,
+    anchorLng,
+    restaurants,
+}: {
+    anchorLat: number;
+    anchorLng: number;
+    restaurants: Restaurant[];
+}) {
+    const map = useMap();
+    useEffect(() => {
+        const points: L.LatLngExpression[] = [[anchorLat, anchorLng]];
+        restaurants.forEach((r) => {
+            if (r.location?.lat != null && r.location?.lng != null) {
+                points.push([r.location.lat, r.location.lng]);
+            }
+        });
+        if (points.length > 1) {
+            map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16 });
+        }
+    }, [anchorLat, anchorLng, restaurants, map]);
+    return null;
+}
+
 export default function RestaurantMap({
     anchorLat,
     anchorLng,
@@ -89,7 +113,11 @@ export default function RestaurantMap({
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            {selectedId && <FlyToSelected lat={flyLat} lng={flyLng} />}
+            {selectedId ? (
+                <FlyToSelected lat={flyLat} lng={flyLng} />
+            ) : (
+                <FitBounds anchorLat={anchorLat} anchorLng={anchorLng} restaurants={restaurants} />
+            )}
 
             <Marker position={[anchorLat, anchorLng]} icon={anchorIcon}>
                 <Popup>{anchorName} (destination)</Popup>

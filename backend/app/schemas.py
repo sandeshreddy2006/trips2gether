@@ -1,5 +1,5 @@
-from datetime import datetime
-from pydantic import BaseModel, EmailStr, StringConstraints, Field, field_validator
+from datetime import datetime, date
+from pydantic import BaseModel, EmailStr, StringConstraints, Field, field_validator, model_validator
 from typing import Optional, Annotated, List, Literal, Any, Dict
 
 class RegisterIn(BaseModel):
@@ -231,6 +231,48 @@ class GroupShortlistFlightListOut(BaseModel):
     items: list[GroupShortlistFlightItemOut]
 
 
+class GroupShortlistHotelCreateIn(BaseModel):
+    place_id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    address: str | None = None
+    photo_url: str | None = None
+    photo_reference: str | None = None
+    rating: float | None = None
+    price_level: str | None = None
+    currency: str = "USD"
+    price_per_night: float | None = None
+    total_price: float | None = None
+    nights: int | None = Field(default=None, ge=1)
+    types: list[str] = Field(default_factory=list)
+    amenities: list[str] = Field(default_factory=list)
+    booking_url: str | None = None
+
+
+class GroupShortlistHotelItemOut(BaseModel):
+    id: int
+    group_id: int
+    place_id: str
+    name: str
+    address: str | None = None
+    photo_url: str | None = None
+    photo_reference: str | None = None
+    rating: float | None = None
+    price_level: str | None = None
+    currency: str
+    price_per_night: float | None = None
+    total_price: float | None = None
+    nights: int | None = None
+    types: list[str] = []
+    amenities: list[str] = []
+    booking_url: str | None = None
+    added_by: int
+    created_at: datetime
+
+
+class GroupShortlistHotelListOut(BaseModel):
+    items: list[GroupShortlistHotelItemOut]
+
+
 class ProfileOut(BaseModel):
     id: int
     user_id: int
@@ -363,6 +405,75 @@ class DestinationDetailOut(BaseModel):
     phone: Optional[str] = None
     editorial_summary: Optional[str] = None
     weekday_descriptions: List[str] = []
+
+
+# -------------------------
+# Hotel Search Schemas
+# -------------------------
+
+class HotelSearchIn(BaseModel):
+    destination: str = Field(min_length=1, max_length=200)
+    check_in: date
+    check_out: date
+    guests: int = Field(ge=1, le=20)
+    rooms: int = Field(ge=1, le=10)
+    sort_by: Literal["relevance", "rating_desc", "reviews_desc"] = "relevance"
+
+    # make sure they provide necessary info
+
+    @field_validator("destination")
+    @classmethod
+    def validate_destination(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Destination is required")
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_dates_and_counts(self):
+        today = date.today()
+        if self.check_in < today:
+            raise ValueError("Check-in date must be today or later")
+        if self.check_out <= self.check_in:
+            raise ValueError("Check-out date must be after check-in date")
+        if self.rooms > self.guests:
+            raise ValueError("Rooms cannot exceed number of guests")
+        return self
+
+
+class HotelLocation(BaseModel):
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class HotelOptionOut(BaseModel):
+    place_id: str
+    name: str
+    address: Optional[str] = None
+    rating: Optional[float] = None
+    user_ratings_total: Optional[int] = None
+    price_level: Optional[str] = None
+    currency: str = "USD"
+    price_per_night: Optional[float] = None
+    total_price: Optional[float] = None
+    nights: Optional[int] = None
+    types: List[str] = []
+    amenities: List[str] = []
+    photo_url: Optional[str] = None
+    photo_reference: Optional[str] = None
+    location: Optional[HotelLocation] = None
+    business_status: Optional[str] = None
+    website: Optional[str] = None
+    google_maps_url: Optional[str] = None
+    booking_url: Optional[str] = None
+
+
+class HotelSearchResponse(BaseModel):
+    status: str
+    results: List[HotelOptionOut]
+    message: Optional[str] = None
+    cached: Optional[bool] = False
+    dummy: Optional[bool] = False
 
 
 # -------------------------

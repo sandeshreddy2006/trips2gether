@@ -34,6 +34,9 @@ from .schemas import (
     GroupShortlistFlightCreateIn,
     GroupShortlistFlightItemOut,
     GroupShortlistFlightListOut,
+    GroupShortlistHotelCreateIn,
+    GroupShortlistHotelItemOut,
+    GroupShortlistHotelListOut,
     ItineraryPlanCreateIn,
     ItineraryPlanOut,
     ItineraryItemCreateIn,
@@ -58,6 +61,8 @@ from .schemas import (
     FlightSearchResponse,
     DestinationSearchResponse,
     DestinationDetailOut,
+    HotelSearchIn,
+    HotelSearchResponse,
     NearbyRestaurantsResponse,
     RestaurantDetailOut,
     FaceEncodingIn,
@@ -84,7 +89,7 @@ from .email_utils import send_email, get_welcome_email_template, get_login_email
 from .cloudflare import delete_image_from_cloudflare, upload_image_to_cloudflare
 from .google_places import get_places_service
 from .flightbookings import _select_diverse_offers, _serialize_duffel_offer
-from .shortlist import serialize_shortlist_item, serialize_shortlist_flight_item
+from .shortlist import serialize_shortlist_item, serialize_shortlist_flight_item, serialize_shortlist_hotel_item
 from .itinerary import serialize_trip_plan, serialize_itinerary_item
 from jose import JWTError
 import os
@@ -2875,6 +2880,136 @@ def remove_group_shortlist_flight(
     return {"ok": True, "message": "Flight removed from shortlist"}
 
 
+@app.get("/groups/{group_id}/hotel-shortlist", response_model=GroupShortlistHotelListOut)
+def list_group_hotel_shortlist(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """List shortlisted hotels for a group. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    items = (
+        db.query(models.GroupShortlistHotel)
+        .filter(models.GroupShortlistHotel.group_id == group_id)
+        .order_by(models.GroupShortlistHotel.created_at.desc())
+        .all()
+    )
+
+    return {"items": [serialize_shortlist_hotel_item(item) for item in items]}
+
+
+@app.post("/groups/{group_id}/hotel-shortlist", response_model=dict)
+def add_group_shortlist_hotel(
+    group_id: int,
+    body: GroupShortlistHotelCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Add a hotel to group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    group = db.get(models.Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    place_id = body.place_id.strip()
+    existing = (
+        db.query(models.GroupShortlistHotel)
+        .filter(
+            models.GroupShortlistHotel.group_id == group_id,
+            models.GroupShortlistHotel.place_id == place_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Hotel already shortlisted for this group")
+
+    item = models.GroupShortlistHotel(
+        group_id=group_id,
+        place_id=place_id,
+        name=body.name.strip(),
+        address=(body.address.strip() if body.address else None),
+        photo_url=(body.photo_url.strip() if body.photo_url else None),
+        photo_reference=(body.photo_reference.strip() if body.photo_reference else None),
+        rating=body.rating,
+        price_level=(body.price_level.strip() if body.price_level else None),
+        currency=body.currency.strip() if body.currency else "USD",
+        price_per_night=body.price_per_night,
+        total_price=body.total_price,
+        nights=body.nights,
+        hotel_types_json=json.dumps(body.types or []),
+        amenities_json=json.dumps(body.amenities or []),
+        booking_url=(body.booking_url.strip() if body.booking_url else None),
+        added_by=current_user.id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "message": "Hotel added to shortlist",
+        "item": serialize_shortlist_hotel_item(item),
+    }
+
+
+@app.delete("/groups/{group_id}/hotel-shortlist/{place_id}", response_model=dict)
+def remove_group_shortlist_hotel(
+    group_id: int,
+    place_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Remove a hotel from group shortlist. Caller must be a member."""
+    current_user = get_current_user_info(request, db)
+
+    my_membership = (
+        db.query(models.GroupMember)
+        .filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not my_membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this group")
+
+    item = (
+        db.query(models.GroupShortlistHotel)
+        .filter(
+            models.GroupShortlistHotel.group_id == group_id,
+            models.GroupShortlistHotel.place_id == place_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Shortlisted hotel not found")
+
+    db.delete(item)
+    db.commit()
+
+    return {"ok": True, "message": "Hotel removed from shortlist"}
+
+
 # Itinerary Endpoints
 
 @app.get("/groups/{group_id}/itinerary", response_model=ItineraryTimelineOut)
@@ -3557,6 +3692,38 @@ async def upload_avatar(file: UploadFile = File(...), request: Request = None, d
         "avatar_url": image_url,
         "profile": profile
     }
+
+
+# -------------------------
+# Hotel Search Endpoints
+# -------------------------
+
+@app.post("/hotels/search", response_model=HotelSearchResponse)
+def search_hotels(body: HotelSearchIn):
+    """Search for hotel options by destination, dates, guests, and rooms."""
+    try:
+        places_service = get_places_service()
+        result = places_service.search_hotels(
+            destination=body.destination,
+            check_in=body.check_in.isoformat(),
+            check_out=body.check_out.isoformat(),
+            guests=body.guests,
+            rooms=body.rooms,
+            sort_by=body.sort_by,
+        )
+
+        if result["status"] == "unavailable":
+            raise HTTPException(status_code=503, detail="Service unavailable")
+
+        if result["status"] == "error":
+            raise HTTPException(status_code=502, detail=result.get("message", "Hotel search failed"))
+
+        return HotelSearchResponse(**result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected hotel search error: {str(e)}")
 
 
 # -------------------------
