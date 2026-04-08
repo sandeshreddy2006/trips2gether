@@ -352,6 +352,10 @@
     gap: 1rem;
 }
 
+.dashboard-inbox .polls-title {
+    color: #f3c969;
+}
+
 .inbox-list {
     display: flex;
     flex-direction: column;
@@ -418,7 +422,7 @@
 .inbox-title {
     margin: 0;
     font-size: 1rem;
-    color: #ffffff;
+    color: #f3c969;
 }
 
 .inbox-body,
@@ -455,6 +459,7 @@
         opacity: 0;
         transform: translateY(6px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -692,8 +697,8 @@
 .poll-modal {
     width: min(560px, 96vw);
     border-radius: 14px;
-    background: #f8fbf9;
-    border: 1px solid rgba(31, 88, 62, 0.25);
+    background: #ffffff;
+    border: 1px solid rgba(46, 107, 85, 0.35);
     box-shadow: 0 24px 55px rgba(5, 27, 17, 0.3);
     padding: 1rem;
     display: flex;
@@ -739,12 +744,20 @@
 .poll-modal-form input,
 .poll-modal-form select,
 .poll-modal-form textarea {
-    border: 1px solid rgba(46, 107, 85, 0.3);
+    border: 1px solid rgba(46, 107, 85, 0.45);
     border-radius: 8px;
     padding: 0.58rem 0.64rem;
     background: #ffffff;
     color: #173728;
     font: inherit;
+}
+
+.poll-modal-form input:focus,
+.poll-modal-form select:focus,
+.poll-modal-form textarea:focus {
+    outline: none;
+    border-color: #2e6b55;
+    box-shadow: 0 0 0 2px rgba(46, 107, 85, 0.16);
 }
 
 .poll-checkbox-row {
@@ -758,6 +771,21 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.6rem;
+}
+
+.poll-modal-actions .itinerary-secondary-btn {
+    border: 1px solid rgba(46, 107, 85, 0.45);
+    background: rgba(46, 107, 85, 0.08);
+    color: #215946;
+}
+
+.poll-modal-actions .itinerary-secondary-btn:hover {
+    background: rgba(46, 107, 85, 0.16);
+    border-color: rgba(46, 107, 85, 0.62);
+}
+
+.poll-modal-actions .vote-btn {
+    align-self: auto;
 }
 
 /* Dashboard Sidebar */
