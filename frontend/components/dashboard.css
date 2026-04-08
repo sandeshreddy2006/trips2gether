@@ -156,14 +156,14 @@
 
 .my-groups-btn {
     background: rgba(46, 107, 85, 0.12);
-    color: #215946;
+    color: #1a1a1a;
     border-color: rgba(46, 107, 85, 0.35);
     font-weight: 700;
 }
 
 .my-groups-btn:hover {
     background: rgba(46, 107, 85, 0.2);
-    color: #163a2c;
+    color: #1a1a1a;
 }
 
 /* Dashboard Grid */
@@ -748,7 +748,7 @@
     border-radius: 8px;
     padding: 0.58rem 0.64rem;
     background: #ffffff;
-    color: #173728;
+    color: #1a1a1a;
     font: inherit;
 }
 
@@ -774,14 +774,23 @@
 }
 
 .poll-modal-actions .itinerary-secondary-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 46px;
+    padding: 0.7rem 1.1rem;
+    border-radius: 8px;
     border: 1px solid rgba(46, 107, 85, 0.45);
     background: rgba(46, 107, 85, 0.08);
-    color: #215946;
+    color: #1a1a1a;
+    font-weight: 600;
+    line-height: 1;
 }
 
 .poll-modal-actions .itinerary-secondary-btn:hover {
     background: rgba(46, 107, 85, 0.16);
     border-color: rgba(46, 107, 85, 0.62);
+    color: #1a1a1a;
 }
 
 .poll-modal-actions .vote-btn {
