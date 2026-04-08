@@ -174,14 +174,7 @@ export default function Dashboard() {
     const { user } = useAuth();
     const [showCreateGroup, setShowCreateGroup] = useState(false);
     const [groups, setGroups] = useState<Group[]>([]);
-    const [destinationData, setDestinationData] = useState<{ [key: string]: Destination | null }>({
-        panama: null,
-        maldives: null,
-        santorini: null,
-        kyoto: null,
-        prague: null,
-        barcelona: null,
-    });
+    const [popularDestinations, setPopularDestinations] = useState<Destination[]>([]);
     const [loadingDestinations, setLoadingDestinations] = useState(true);
     const [trendingError, setTrendingError] = useState<string | null>(null);
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -314,41 +307,28 @@ export default function Dashboard() {
         loadBookings();
     }, []);
 
-    // Fetch destination data for Panama, Maldives, Suggested Trips, and Barcelona
+    // Fetch popular destination data for dashboard cards.
     useEffect(() => {
         const fetchDestinations = async () => {
             try {
-                const destinations = ["Panama", "Maldives", "Santorini", "Kyoto", "Prague", "Barcelona"];
-                const results: { [key: string]: Destination | null } = {
-                    panama: null,
-                    maldives: null,
-                    santorini: null,
-                    kyoto: null,
-                    prague: null,
-                    barcelona: null,
-                };
+                const response = await fetch("/api/destinations/filter");
+                const data = await response.json().catch(() => ({ results: [] }));
 
-                for (const destination of destinations) {
-                    const response = await fetch(
-                        `/api/destinations/search?query=${encodeURIComponent(destination)}`
-                    );
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.results && data.results.length > 0) {
-                            results[destination.toLowerCase()] = data.results[0];
-                        }
-                    }
+                if (!response.ok) {
+                    throw new Error(parseApiError(data, "Failed to load trending destinations"));
                 }
 
-                const hasAnyResults = Object.values(results).some((value) => value !== null);
-                if (!hasAnyResults) {
+                const results = Array.isArray(data.results) ? data.results : [];
+                setPopularDestinations(results);
+
+                if (results.length === 0) {
                     setTrendingError("No trending destinations available right now. Check back soon.");
                 } else {
                     setTrendingError(null);
                 }
-                setDestinationData(results);
             } catch (err) {
                 console.error("Error loading destinations:", err);
+                setPopularDestinations([]);
                 setTrendingError("We couldn't load trending destinations right now.");
             } finally {
                 setLoadingDestinations(false);
@@ -358,12 +338,8 @@ export default function Dashboard() {
         fetchDestinations();
     }, []);
 
-    const trendingCards: Array<{ destination: Destination; matchScore: string }> = [
-        { destination: destinationData.santorini, matchScore: "85%" },
-        { destination: destinationData.kyoto, matchScore: "81%" },
-        { destination: destinationData.prague, matchScore: "79%" },
-    ]
-        .filter((item): item is { destination: Destination; matchScore: string } => Boolean(item.destination));
+    const featuredDestination = popularDestinations[0] ?? null;
+    const trendingCards = popularDestinations.slice(1, 4);
 
     const now = useMemo(() => new Date(), []);
 
@@ -785,20 +761,20 @@ export default function Dashboard() {
                     )}
 
                     {/* Trip Cards */}
-                    {destinationData.maldives && (
+                    {featuredDestination && (
                         <div
                             className="trip-card large-card"
-                            onClick={() => handleDestinationClick(destinationData.maldives)}
+                            onClick={() => handleDestinationClick(featuredDestination)}
                             style={{ cursor: "pointer" }}
                         >
-                            <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destinationData.maldives)}')` }}>
+                            <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(featuredDestination)}')` }}>
                                 <div className="trip-overlay" />
                             </div>
                             <div className="trip-content">
-                                <h3 className="trip-title">{destinationData.maldives.name} Adventure</h3>
-                                <p className="trip-dates">May 15, 2024 - May 21, 2024 | 5 days left</p>
-                                {destinationData.maldives.rating && (
-                                    <p className="trip-rating" style={{ marginTop: '0.5rem' }}>⭐ {destinationData.maldives.rating.toFixed(1)}</p>
+                                <h3 className="trip-title">{featuredDestination.name}</h3>
+                                <p className="trip-dates">{featuredDestination.address || "Trending destination for your next group trip"}</p>
+                                {featuredDestination.rating != null && (
+                                    <p className="trip-rating" style={{ marginTop: "0.5rem" }}>⭐ {featuredDestination.rating.toFixed(1)}</p>
                                 )}
                             </div>
                         </div>
@@ -1003,7 +979,7 @@ export default function Dashboard() {
                             </p>
                         ) : (
                             <div className="suggested-trips">
-                                {trendingCards.map(({ destination, matchScore }) => (
+                                {trendingCards.map((destination, index) => (
                                     <div
                                         key={destination.place_id}
                                         className="suggested-trip"
@@ -1012,7 +988,7 @@ export default function Dashboard() {
                                     >
                                         <div className="trip-image" style={{ backgroundImage: `url('${getImageUrl(destination)}')` }}>
                                             <div className="trip-overlay" />
-                                            <span className="trip-percentage">{matchScore}</span>
+                                            <span className="trip-percentage">#{index + 1}</span>
                                         </div>
                                         <h4 className="trip-name">{destination.name}</h4>
                                         <p className="trip-rating-inline">
