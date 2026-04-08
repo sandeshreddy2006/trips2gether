@@ -131,7 +131,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         let cancelled = false;
         let socket: WebSocket | null = null;
-        let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null;
+        let reconnectTimer: number | null = null;
 
         const connect = () => {
             if (cancelled) return;
