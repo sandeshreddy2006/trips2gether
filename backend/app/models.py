@@ -73,6 +73,12 @@ class Group(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    trip_plan = relationship(
+        "TripPlan",
+        back_populates="group",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     shortlisted_destinations = relationship(
         "GroupShortlistDestination",
         back_populates="group",
@@ -106,6 +112,145 @@ class GroupMember(Base):
     __table_args__ = (
         UniqueConstraint("group_id", "user_id", name="uq_group_members_group_user"),
     )
+
+
+class TripPlan(Base):
+    __tablename__ = "trip_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    shared_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    group = relationship("Group", back_populates="trip_plan")
+    items = relationship(
+        "ItineraryItem",
+        back_populates="trip_plan",
+        cascade="all, delete-orphan",
+        order_by="ItineraryItem.sort_order, ItineraryItem.start_at, ItineraryItem.created_at",
+    )
+
+
+class ItineraryItem(Base):
+    __tablename__ = "itinerary_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_plan_id = Column(Integer, ForeignKey("trip_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_type = Column(String(32), nullable=False)
+    title = Column(String(255), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0, index=True)
+    start_at = Column(DateTime, nullable=False, index=True)
+    end_at = Column(DateTime, nullable=True)
+    location_name = Column(String(255), nullable=True)
+    location_address = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    source_kind = Column(String(32), nullable=True)
+    source_reference = Column(String(255), nullable=True)
+    details_json = Column(Text, nullable=False, default="{}")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    trip_plan = relationship("TripPlan", back_populates="items")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class TripPlanHistory(Base):
+    __tablename__ = "trip_plan_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    shared_notes = Column(Text, nullable=True)
+    starts_at = Column(DateTime, nullable=True)
+    ends_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, server_default=func.now(), nullable=False)
+    items_json = Column(Text, nullable=False, default="[]")
+
+    group = relationship("Group")
+
+
+class GroupPoll(Base):
+    __tablename__ = "group_polls"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    question = Column(Text, nullable=False)
+    decision_type = Column(String(32), nullable=False, default="other", index=True)
+    status = Column(String(20), nullable=False, default="active", index=True)
+    allow_vote_update = Column(Boolean, nullable=False, default=True)
+    closes_at = Column(DateTime, nullable=False, index=True)
+    closed_at = Column(DateTime, nullable=True)
+    winner_option_id = Column(Integer, ForeignKey("group_poll_options.id", ondelete="SET NULL"), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    group = relationship("Group")
+    creator = relationship("User", foreign_keys=[created_by])
+    options = relationship(
+        "GroupPollOption",
+        back_populates="poll",
+        cascade="all, delete-orphan",
+        order_by="GroupPollOption.position, GroupPollOption.id",
+        foreign_keys="GroupPollOption.poll_id",
+    )
+    votes = relationship("GroupPollVote", back_populates="poll", cascade="all, delete-orphan")
+    winner_option = relationship("GroupPollOption", foreign_keys=[winner_option_id], post_update=True)
+
+
+class GroupPollOption(Base):
+    __tablename__ = "group_poll_options"
+
+    id = Column(Integer, primary_key=True, index=True)
+    poll_id = Column(Integer, ForeignKey("group_polls.id", ondelete="CASCADE"), nullable=False, index=True)
+    label = Column(String(255), nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    poll = relationship("GroupPoll", back_populates="options", foreign_keys=[poll_id])
+
+
+class GroupPollVote(Base):
+    __tablename__ = "group_poll_votes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    poll_id = Column(Integer, ForeignKey("group_polls.id", ondelete="CASCADE"), nullable=False, index=True)
+    option_id = Column(Integer, ForeignKey("group_poll_options.id", ondelete="CASCADE"), nullable=False, index=True)
+    voter_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    poll = relationship("GroupPoll", back_populates="votes")
+    option = relationship("GroupPollOption")
+    voter = relationship("User", foreign_keys=[voter_id])
+
+    __table_args__ = (
+        UniqueConstraint("poll_id", "voter_id", name="uq_group_poll_votes_poll_voter"),
+        Index("ix_group_poll_votes_poll_option", "poll_id", "option_id"),
+    )
+
+
+class GroupNotification(Base):
+    __tablename__ = "group_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    poll_id = Column(Integer, ForeignKey("group_polls.id", ondelete="CASCADE"), nullable=True, index=True)
+    notification_type = Column(String(32), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    payload_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+    group = relationship("Group")
+    poll = relationship("GroupPoll")
 
 
 class GroupShortlistDestination(Base):

@@ -6,6 +6,47 @@
     background-color: #f5f5f5;
 }
 
+.dashboard-toast {
+    position: sticky;
+    top: 1rem;
+    z-index: 20;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(46, 107, 85, 0.16);
+    box-shadow: 0 14px 36px rgba(12, 40, 28, 0.12);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #234235;
+    backdrop-filter: blur(10px);
+}
+
+.dashboard-toast-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #2e6b55 0%, #186c50 100%);
+    flex-shrink: 0;
+}
+
+.dashboard-toast-close {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: #6a7d74;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.dashboard-toast-close:hover {
+    color: #234235;
+}
+
 /* Welcome Section */
 .welcome-section {
     display: flex;
@@ -101,6 +142,30 @@
     box-shadow: 0 8px 20px rgba(45, 122, 74, 0.15);
 }
 
+.plan-trip-btn {
+    background: linear-gradient(135deg, #2e6b55 0%, #186c50 100%);
+    color: #ffffff;
+    border-color: rgba(24, 108, 80, 0.6);
+    box-shadow: 0 8px 18px rgba(24, 108, 80, 0.18);
+}
+
+.plan-trip-btn:hover {
+    background: linear-gradient(135deg, #245c3a 0%, #134a36 100%);
+    color: #ffffff;
+}
+
+.my-groups-btn {
+    background: rgba(46, 107, 85, 0.12);
+    color: #215946;
+    border-color: rgba(46, 107, 85, 0.35);
+    font-weight: 700;
+}
+
+.my-groups-btn:hover {
+    background: rgba(46, 107, 85, 0.2);
+    color: #163a2c;
+}
+
 /* Dashboard Grid */
 .dashboard-grid {
     display: grid;
@@ -112,6 +177,37 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
+}
+
+.trip-section-tabs {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.trip-section-tab {
+    border: 1px solid rgba(46, 107, 85, 0.22);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #215946;
+    font: inherit;
+    font-weight: 700;
+    padding: 0.48rem 0.85rem;
+    cursor: pointer;
+}
+
+.trip-section-tab.active {
+    background: linear-gradient(135deg, #2e6b55 0%, #186c50 100%);
+    color: #ffffff;
+    border-color: rgba(24, 108, 80, 0.6);
+}
+
+.trip-section-empty {
+    padding: 1rem 1.1rem;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px dashed rgba(46, 107, 85, 0.22);
+    color: #4d6459;
 }
 
 /* Trip Cards */
@@ -246,6 +342,125 @@
     background-color: #245c3a;
 }
 
+.dashboard-inbox {
+    background: linear-gradient(180deg, rgba(12, 36, 25, 0.96) 0%, rgba(17, 46, 32, 0.96) 100%);
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 18px 40px rgba(7, 20, 14, 0.16);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.inbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.inbox-card {
+    display: flex;
+    gap: 0.9rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(126, 205, 164, 0.15);
+    padding: 0.95rem 1rem;
+    color: #eaf6ee;
+    animation: inbox-fade-in 0.25s ease;
+}
+
+.inbox-card-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.inbox-card-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.inbox-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.inbox-poll-created {
+    background: rgba(45, 122, 74, 0.22);
+    color: #d7f6e5;
+}
+
+.inbox-poll-closed {
+    background: rgba(245, 166, 35, 0.18);
+    color: #ffe1ad;
+}
+
+.inbox-time {
+    font-size: 0.8rem;
+    color: #b8cbc1;
+    white-space: nowrap;
+}
+
+.inbox-title {
+    margin: 0;
+    font-size: 1rem;
+    color: #ffffff;
+}
+
+.inbox-body,
+.inbox-meta {
+    margin: 0;
+    color: #cdd9d3;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.inbox-meta {
+    color: #9ec2b0;
+    font-size: 0.82rem;
+}
+
+.inbox-dismiss-btn {
+    border: 1px solid rgba(244, 241, 216, 0.24);
+    background: transparent;
+    color: #f4f1d8;
+    border-radius: 8px;
+    padding: 0.45rem 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.inbox-dismiss-btn:hover {
+    background: rgba(244, 241, 216, 0.08);
+    border-color: rgba(244, 241, 216, 0.5);
+}
+
+@keyframes inbox-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* Trips Grid */
 .trips-grid {
     display: grid;
@@ -262,6 +477,37 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+}
+
+.polls-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.poll-section-tabs {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.poll-section-tab {
+    border: 1px solid rgba(232, 245, 233, 0.35);
+    background: rgba(19, 42, 30, 0.6);
+    color: #d8ede0;
+    border-radius: 999px;
+    padding: 0.36rem 0.76rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.poll-section-tab.active {
+    background: linear-gradient(135deg, #2e6b55 0%, #186c50 100%);
+    color: #ffffff;
+    border-color: rgba(45, 122, 74, 0.8);
 }
 
 .polls-title {
@@ -294,6 +540,17 @@
     color: #ffffff;
 }
 
+.poll-group-tag {
+    align-self: flex-start;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #dcf5e9;
+    background: rgba(45, 122, 74, 0.35);
+    border: 1px solid rgba(126, 205, 164, 0.3);
+    border-radius: 999px;
+    padding: 0.22rem 0.55rem;
+}
+
 .poll-time {
     font-size: 0.85rem;
     color: #b0b8b5;
@@ -308,11 +565,51 @@
 
 .poll-option {
     display: flex;
-    align-items: center;
-    gap: 0.8rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
     cursor: pointer;
     font-size: 0.95rem;
     color: #e8f5e9;
+    padding: 0.15rem 0;
+}
+
+.poll-option.winner {
+    background: rgba(45, 122, 74, 0.25);
+    border-radius: 8px;
+    padding: 0.35rem 0.5rem;
+}
+
+.poll-option-topline {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.poll-option-votes {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: #c9ddd4;
+    font-weight: 700;
+}
+
+.poll-option-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+}
+
+.poll-option-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(135deg, #80d1a5 0%, #2d7a4a 100%);
+    transition: width 0.35s ease;
+}
+
+.poll-option-fill.winner {
+    background: linear-gradient(135deg, #ffd76d 0%, #f5a623 100%);
 }
 
 .poll-option input[type="radio"] {
@@ -333,6 +630,134 @@
 
 .vote-btn:hover {
     background-color: #245c3a;
+}
+
+.vote-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.poll-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.poll-end-btn {
+    padding: 0.7rem 1.1rem;
+    background: transparent;
+    color: #f4f1d8;
+    border: 1px solid rgba(244, 241, 216, 0.35);
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.poll-end-btn:hover {
+    background: rgba(244, 241, 216, 0.08);
+    border-color: rgba(244, 241, 216, 0.6);
+    color: #ffffff;
+}
+
+.poll-end-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.poll-result-line {
+    padding: 0.55rem 0.75rem;
+    border-radius: 8px;
+    background: rgba(18, 79, 56, 0.45);
+    border: 1px solid rgba(97, 183, 142, 0.3);
+    color: #d7f2e6;
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.poll-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 17, 12, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1200;
+    padding: 1rem;
+}
+
+.poll-modal {
+    width: min(560px, 96vw);
+    border-radius: 14px;
+    background: #f8fbf9;
+    border: 1px solid rgba(31, 88, 62, 0.25);
+    box-shadow: 0 24px 55px rgba(5, 27, 17, 0.3);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.poll-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.poll-modal-header h3 {
+    margin: 0;
+    color: #163e2f;
+}
+
+.poll-modal-close {
+    border: none;
+    background: transparent;
+    color: #335f4d;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.poll-modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.poll-modal-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: #173b2d;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.poll-modal-form input,
+.poll-modal-form select,
+.poll-modal-form textarea {
+    border: 1px solid rgba(46, 107, 85, 0.3);
+    border-radius: 8px;
+    padding: 0.58rem 0.64rem;
+    background: #ffffff;
+    color: #173728;
+    font: inherit;
+}
+
+.poll-checkbox-row {
+    flex-direction: row !important;
+    align-items: center;
+    gap: 0.6rem;
+    font-weight: 500 !important;
+}
+
+.poll-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
 }
 
 /* Dashboard Sidebar */
@@ -577,6 +1002,21 @@
     color: #1565c0;
 }
 
+.status-upcoming {
+    background-color: #e8f5e9;
+    color: #2d7a4a;
+}
+
+.status-active {
+    background-color: #e6f4ff;
+    color: #1f5f9c;
+}
+
+.status-archived {
+    background-color: #fff5de;
+    color: #996f15;
+}
+
 .active-trip-role {
     padding: 0.2rem 0.5rem;
     border-radius: 12px;
@@ -753,6 +1193,40 @@
     color: #555;
     font-weight: 500;
     font-size: 0.7rem;
+}
+
+.group-open-btn {
+    padding: 0.55rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid rgba(45, 122, 74, 0.25);
+    background: #ffffff;
+    color: #2d7a4a;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    align-self: flex-start;
+}
+
+.group-open-btn:hover {
+    background: #2d7a4a;
+    color: #ffffff;
+}
+
+.group-plan-btn {
+    padding: 0.55rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid rgba(46, 107, 85, 0.2);
+    background: rgba(46, 107, 85, 0.08);
+    color: #2e6b55;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    align-self: flex-start;
+}
+
+.group-plan-btn:hover {
+    background: #2e6b55;
+    color: #ffffff;
 }
 
 /* Responsive Design */

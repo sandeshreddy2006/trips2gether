@@ -124,6 +124,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         checkAuthStatus();
     }, []);
 
+    useEffect(() => {
+        if (!isAuthenticated || !user || typeof window === "undefined") {
+            return;
+        }
+
+        let cancelled = false;
+        let socket: WebSocket | null = null;
+        let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null;
+
+        const connect = () => {
+            if (cancelled) return;
+
+            const wsBaseUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL
+                || `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.hostname}:8000`;
+            socket = new WebSocket(`${wsBaseUrl}/ws/polls`);
+
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data as string);
+                    window.dispatchEvent(new CustomEvent("poll-realtime", { detail: data }));
+                } catch {
+                    // Ignore malformed websocket payloads.
+                }
+            };
+
+            socket.onclose = () => {
+                if (cancelled) return;
+                reconnectTimer = window.setTimeout(() => {
+                    connect();
+                }, 3000);
+            };
+
+            socket.onerror = () => {
+                try {
+                    socket?.close();
+                } catch {
+                    // Ignore close errors.
+                }
+            };
+        };
+
+        connect();
+
+        return () => {
+            cancelled = true;
+            if (reconnectTimer) {
+                window.clearTimeout(reconnectTimer);
+            }
+            try {
+                socket?.close();
+            } catch {
+                // Ignore close errors.
+            }
+        };
+    }, [isAuthenticated, user]);
+
     const login = () => {
         setIsAuthenticated(true);
         checkAuthStatus();
