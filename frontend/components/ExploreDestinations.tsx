@@ -99,28 +99,29 @@ export default function ExploreDestinations() {
 
     const loadDefaultDestinations = useCallback(async () => {
         setLoading(true);
+        setError(null);
         try {
-            const popularPlaces = ["Paris", "Tokyo", "Bali", "London", "Goa", "Barcelona"];
-            const allResults: Destination[] = [];
+            // Empty filter query triggers backend popular destination feed.
+            const response = await fetch("/api/destinations/filter", {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+            });
 
-            // Fetch results for each popular place
-            for (const place of popularPlaces) {
-                const response = await fetch(
-                    `/api/destinations/search?query=${encodeURIComponent(place)}`,
-                    { method: "GET", headers: { "Content-Type": "application/json" } }
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(
+                    errorData.detail || `Default load failed with status ${response.status}`
                 );
-                if (response.ok) {
-                    const data: SearchResponse = await response.json();
-                    if (data.results && data.results.length > 0) {
-                        allResults.push(data.results[0]);
-                    }
-                }
             }
 
-            setDestinations(allResults);
+            const data: SearchResponse = await response.json();
+            setDestinations(data.results || []);
             setHasSearched(true);
-        } catch (err) {
-            console.error("Error loading default destinations:", err);
+        } catch (err: any) {
+            console.error("Error loading popular destinations:", err);
+            setError(err.message || "Failed to load popular destinations.");
+            setDestinations([]);
+            setHasSearched(true);
         } finally {
             setLoading(false);
         }
@@ -136,9 +137,7 @@ export default function ExploreDestinations() {
 
     const performSearch = useCallback(async (query: string) => {
         if (!query.trim()) {
-            setDestinations([]);
-            setError(null);
-            setHasSearched(false);
+            await loadDefaultDestinations();
             return;
         }
 
@@ -182,7 +181,7 @@ export default function ExploreDestinations() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [loadDefaultDestinations]);
 
     // Auto-search when debounced query changes
     useEffect(() => {
