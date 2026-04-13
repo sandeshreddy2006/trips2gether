@@ -33,6 +33,13 @@
     margin-bottom: 2rem;
 }
 
+.group-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+}
+
 .group-detail-name {
     font-size: 1.8rem;
     font-weight: 600;
@@ -76,7 +83,7 @@
 }
 
 .group-edit-btn {
-    margin-top: 0.75rem;
+    margin-top: 0;
     padding: 0.4rem 1rem;
     background: none;
     border: 1px solid #2E6B55;
@@ -94,7 +101,7 @@
 }
 
 .group-itinerary-btn {
-    margin-top: 0.6rem;
+    margin-top: 0;
     padding: 0.4rem 1rem;
     background: rgba(46, 107, 85, 0.08);
     border: 1px solid rgba(46, 107, 85, 0.25);
@@ -549,4 +556,170 @@
     .group-shortlist-card>button {
         align-self: flex-start;
     }
+}
+
+/* ─── AI Trip Success Score Card ─────────────────────── */
+
+.group-score-section {
+    margin: 2rem 0;
+    border: 1px solid rgba(46, 107, 85, 0.2);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.group-score-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    background: linear-gradient(90deg, #0E3F2E 0%, #186C50 100%);
+}
+
+.group-score-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0;
+}
+
+.group-score-refresh-btn {
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.group-score-refresh-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.group-score-refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.group-score-loading {
+    padding: 1rem 1.25rem;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.group-score-card {
+    padding: 1.25rem;
+    background: #fafaf8;
+}
+
+.group-score-unavailable {
+    color: #888;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.group-score-gauge-row {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.group-score-gauge {
+    flex-shrink: 0;
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.group-score-gauge-inner {
+    width: 66px;
+    height: 66px;
+    border-radius: 50%;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.15;
+}
+
+.group-score-gauge-inner strong {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1a1a1a;
+}
+
+.group-score-gauge-inner span {
+    font-size: 0.65rem;
+    color: #555;
+    font-weight: 500;
+}
+
+.group-score-meta-heading {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0 0 0.25rem;
+}
+
+.group-score-meta-time {
+    font-size: 0.78rem;
+    color: #888;
+    margin: 0;
+}
+
+.group-score-reasons,
+.group-score-conflicts {
+    margin-top: 0.75rem;
+}
+
+.group-score-reasons h4,
+.group-score-conflicts h4 {
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin: 0 0 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.group-score-reasons h4 {
+    color: #2e6b55;
+}
+
+.group-score-conflicts h4 {
+    color: #b45309;
+}
+
+.group-score-reasons ul,
+.group-score-conflicts ul {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.group-score-reason-item {
+    font-size: 0.87rem;
+    color: #2e6b55;
+    padding: 0.4rem 0.7rem;
+    background: rgba(46, 107, 85, 0.07);
+    border-left: 3px solid #2e6b55;
+    border-radius: 0 6px 6px 0;
+}
+
+.group-score-conflict-item {
+    font-size: 0.87rem;
+    color: #92400e;
+    padding: 0.4rem 0.7rem;
+    background: rgba(245, 158, 11, 0.08);
+    border-left: 3px solid #d97706;
+    border-radius: 0 6px 6px 0;
 }

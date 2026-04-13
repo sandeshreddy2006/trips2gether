@@ -730,6 +730,19 @@ class BookingListOut(BaseModel):
 
 
 # -------------------------
+# AI Trip Success Score Schema
+# -------------------------
+
+class TripSuccessScoreResponse(BaseModel):
+    score: Optional[int] = None
+    label: str
+    reasons: List[str] = []
+    conflicts: List[str] = []
+    evaluated_at: str
+    fallback: bool = False
+
+
+# -------------------------
 # Itinerary Schemas
 # -------------------------
 

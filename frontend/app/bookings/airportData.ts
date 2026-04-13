@@ -181,6 +181,8 @@ export const AIRPORTS: Airport[] = [
     { iata: "HYD", name: "Rajiv Gandhi International (Hyderabad)", city: "Hyderabad", country: "IN" },
     { iata: "CCU", name: "Netaji Subhas Chandra Bose International (Kolkata)", city: "Kolkata", country: "IN" },
     { iata: "COK", name: "Cochin International", city: "Kochi", country: "IN" },
+    { iata: "GOI", name: "Dabolim Airport (Goa International)", city: "Goa", country: "IN" },
+    { iata: "GOX", name: "Manohar International Airport (Mopa)", city: "Goa", country: "IN" },
     { iata: "CMB", name: "Bandaranaike International (Colombo)", city: "Colombo", country: "LK" },
     { iata: "DAC", name: "Hazrat Shahjalal International (Dhaka)", city: "Dhaka", country: "BD" },
     { iata: "KTM", name: "Tribhuvan International (Kathmandu)", city: "Kathmandu", country: "NP" },

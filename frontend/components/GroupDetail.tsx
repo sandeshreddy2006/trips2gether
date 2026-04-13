@@ -84,6 +84,21 @@ type HotelShortlistItem = {
     created_at: string;
 };
 
+type TripSuccessScore = {
+    score: number | null;
+    label: string;
+    reasons: string[];
+    conflicts: string[];
+    evaluated_at: string;
+    fallback: boolean;
+};
+
+function getScoreColor(score: number): string {
+    if (score >= 80) return "#2e6b55";
+    if (score >= 60) return "#d2ab3f";
+    return "#c96a61";
+}
+
 function formatStops(stops: number): string {
     if (stops === 0) return "Nonstop";
     if (stops === 1) return "1 stop";
@@ -106,10 +121,35 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [editName, setEditName] = useState("");
     const [editStatus, setEditStatus] = useState("");
     const [saving, setSaving] = useState(false);
+    const [tripScore, setTripScore] = useState<TripSuccessScore | null>(null);
+    const [scoreLoading, setScoreLoading] = useState(false);
     const isOwner = group?.role === "owner";
 
     const memberUserIds = new Set(members.map((m) => m.user_id));
     const invitableFriends = friends.filter((f) => !memberUserIds.has(f.id));
+
+    async function fetchTripScore() {
+        setScoreLoading(true);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/trip-success-score`, {
+                credentials: "include",
+            });
+            if (!res.ok) throw new Error("Failed to fetch score");
+            const data: TripSuccessScore = await res.json();
+            setTripScore(data);
+        } catch {
+            setTripScore({
+                score: null,
+                label: "Unavailable",
+                reasons: [],
+                conflicts: [],
+                evaluated_at: new Date().toISOString(),
+                fallback: true,
+            });
+        } finally {
+            setScoreLoading(false);
+        }
+    }
 
     async function handleRemoveMember(userId: number) {
         try {
@@ -357,6 +397,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 setError(err instanceof Error ? err.message : "Something went wrong");
             } finally {
                 setLoading(false);
+                fetchTripScore();
             }
         }
         fetchData();
@@ -413,17 +454,19 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                         {group.description && (
                             <p className="group-detail-desc">{group.description}</p>
                         )}
-                        {isOwner && (
-                            <button className="group-edit-btn" onClick={startEditing}>
-                                Edit Group
+                        <div className="group-header-actions">
+                            {isOwner && (
+                                <button className="group-edit-btn" onClick={startEditing}>
+                                    Edit Group
+                                </button>
+                            )}
+                            <button
+                                className="group-itinerary-btn"
+                                onClick={() => router.push(`/group/${groupId}/itinerary`)}
+                            >
+                                View Itinerary
                             </button>
-                        )}
-                        <button
-                            className="group-itinerary-btn"
-                            onClick={() => router.push(`/group/${groupId}/itinerary`)}
-                        >
-                            View Itinerary
-                        </button>
+                        </div>
                     </>
                 )}
             </div>
@@ -624,6 +667,78 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                     </button>
                 </div>
             )}
+
+            <div className="group-score-section">
+                <div className="group-score-header-row">
+                    <h2 className="group-score-title">AI Trip Success Score</h2>
+                    <button
+                        className="group-score-refresh-btn"
+                        onClick={fetchTripScore}
+                        disabled={scoreLoading}
+                    >
+                        {scoreLoading ? "Analysing…" : "Refresh Score"}
+                    </button>
+                </div>
+
+                {scoreLoading && !tripScore && (
+                    <p className="group-score-loading">Getting AI analysis…</p>
+                )}
+
+                {tripScore && (
+                    <div className="group-score-card">
+                        {tripScore.fallback ? (
+                            <p className="group-score-unavailable">
+                                Score temporarily unavailable — try again shortly.
+                            </p>
+                        ) : (
+                            <>
+                                <div className="group-score-gauge-row">
+                                    <div
+                                        className="group-score-gauge"
+                                        style={{
+                                            background: `conic-gradient(${getScoreColor(tripScore.score!)} 0 ${tripScore.score}%, #e8e8e8 ${tripScore.score}% 100%)`,
+                                        }}
+                                        aria-label={`Trip success score ${tripScore.score} percent`}
+                                    >
+                                        <div className="group-score-gauge-inner">
+                                            <strong>{tripScore.score}%</strong>
+                                            <span>{tripScore.label}</span>
+                                        </div>
+                                    </div>
+                                    <div className="group-score-meta">
+                                        <p className="group-score-meta-heading">Chance of a Successful Trip</p>
+                                        <p className="group-score-meta-time">
+                                            Evaluated at {new Date(tripScore.evaluated_at).toLocaleTimeString()}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {tripScore.reasons.length > 0 && (
+                                    <div className="group-score-reasons">
+                                        <h4>Positive Factors</h4>
+                                        <ul>
+                                            {tripScore.reasons.map((r, i) => (
+                                                <li key={i} className="group-score-reason-item">{r}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {tripScore.conflicts.length > 0 && (
+                                    <div className="group-score-conflicts">
+                                        <h4>Conflicts &amp; Risks</h4>
+                                        <ul>
+                                            {tripScore.conflicts.map((c, i) => (
+                                                <li key={i} className="group-score-conflict-item">{c}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
 
             <div className="group-danger-zone">
                 {isOwner ? (

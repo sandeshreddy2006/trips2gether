@@ -45,6 +45,20 @@
     border-radius: 9px;
     padding: 0.55rem 0.6rem;
     font-size: 0.94rem;
+    color: #0e3f2e;
+    background: #ffffff;
+}
+
+.hotel-field input::placeholder {
+    color: #5a8f7a;
+}
+
+.hotel-field input[type="date"]::-webkit-datetime-edit,
+.hotel-field input[type="date"]::-webkit-datetime-edit-text,
+.hotel-field input[type="date"]::-webkit-datetime-edit-month-field,
+.hotel-field input[type="date"]::-webkit-datetime-edit-day-field,
+.hotel-field input[type="date"]::-webkit-datetime-edit-year-field {
+    color: #0e3f2e;
 }
 
 .hotel-field-error {

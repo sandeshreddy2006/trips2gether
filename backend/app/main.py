@@ -46,6 +46,7 @@ from .schemas import (
     ItineraryItemUpdateIn,
     ItineraryTimelineOut,
     TripStateUpdateIn,
+    TripSuccessScoreResponse,
     GroupPollCreateIn,
     GroupPollVoteIn,
     GroupNotificationOut,
@@ -3304,6 +3305,24 @@ def start_new_trip_from_archived_itinerary(
     payload = _build_itinerary_payload(group, plan, db)
     payload["message"] = "Started a fresh trip itinerary"
     return payload
+
+
+# -------------------------
+# AI Trip Success Score
+# -------------------------
+
+@app.get("/groups/{group_id}/trip-success-score", response_model=TripSuccessScoreResponse)
+def group_trip_success_score(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Return an AI-generated trip success score for the group."""
+    from .ai import get_trip_success_score as _get_score
+    current_user = get_current_user_info(request, db)
+    _get_group_and_membership(group_id, current_user.id, db)  # verifies membership
+    result = _get_score(group_id, db)
+    return result
 
 
 @app.get("/itinerary/history", response_model=dict)

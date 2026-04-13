@@ -240,7 +240,7 @@ export default function AppLayout({
                             />
                             <span>Saved Locations</span>
                         </a>
-                        <a href="#" className="nav-item">
+                        <a href="/ai-assistant" className="nav-item">
                             <img
                                 src="/ai.png"
                                 alt="AI Travel Assistant"

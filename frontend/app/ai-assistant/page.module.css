@@ -1,0 +1,417 @@
+.pageShell {
+    --assistant-green-900: #0e3f2e;
+    --assistant-green-800: #145841;
+    --assistant-green-700: #186c50;
+    --assistant-green-500: #2e8a68;
+    --assistant-gold-500: #d2af52;
+    --assistant-gold-300: #f1da9d;
+    --assistant-surface-strong: rgba(12, 35, 26, 0.84);
+    --assistant-surface: rgba(255, 255, 255, 0.7);
+    --assistant-border: rgba(28, 94, 70, 0.25);
+
+    min-height: 100%;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 1rem;
+    padding: 1.2rem;
+    position: relative;
+    background:
+        radial-gradient(130% 120% at 0% 0%, rgba(209, 178, 92, 0.22), transparent 55%),
+        radial-gradient(140% 120% at 100% 0%, rgba(35, 112, 83, 0.2), transparent 58%),
+        linear-gradient(135deg, #f1f3ef 0%, #f8f7f1 45%, #eef3ef 100%);
+    overflow: hidden;
+}
+
+.noiseOverlay {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    opacity: 0.32;
+    background-image:
+        radial-gradient(circle at 1px 1px, rgba(12, 35, 26, 0.1) 1px, transparent 0);
+    background-size: 20px 20px;
+}
+
+.leftPanel {
+    position: relative;
+    z-index: 1;
+    border-radius: 24px;
+    padding: 1rem 0.8rem;
+    background:
+        linear-gradient(90deg, #0e3f2e 0%, #186c50 100%),
+        linear-gradient(165deg, var(--assistant-surface-strong) 0%, rgba(14, 63, 46, 0.95) 100%);
+    border: 1px solid rgba(241, 218, 157, 0.25);
+    box-shadow: 0 20px 45px rgba(13, 47, 34, 0.22);
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    animation: panel-in 420ms ease-out;
+}
+
+.brand {
+    padding: 0.85rem 0.85rem 1.1rem;
+    font-size: 1rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--assistant-gold-300);
+    font-family: "Sora", "Trebuchet MS", sans-serif;
+    font-weight: 700;
+}
+
+.primaryRailButton,
+.railButton,
+.historyItem {
+    border: 1px solid transparent;
+    border-radius: 12px;
+    text-align: left;
+    padding: 0.68rem 0.75rem;
+    font-size: 0.88rem;
+    color: rgba(245, 255, 250, 0.92);
+    background: transparent;
+    cursor: pointer;
+    transition: all 180ms ease;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.primaryRailButton {
+    margin-bottom: 0.45rem;
+    border-color: rgba(241, 218, 157, 0.45);
+    background: linear-gradient(135deg, rgba(210, 175, 82, 0.2), rgba(210, 175, 82, 0.08));
+    color: #fff3cb;
+    font-weight: 600;
+}
+
+.primaryRailButton:hover,
+.railButton:hover,
+.historyItem:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(241, 218, 157, 0.28);
+    transform: translateX(3px);
+}
+
+.historyTitle {
+    margin-top: 0.85rem;
+    padding: 0.5rem 0.78rem 0.18rem;
+    font-size: 0.74rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: rgba(241, 218, 157, 0.82);
+}
+
+.historyList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.mainPanel {
+    position: relative;
+    z-index: 1;
+    border-radius: 24px;
+    border: 1px solid rgba(28, 94, 70, 0.18);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(253, 252, 245, 0.88) 100%);
+    box-shadow: 0 14px 42px rgba(12, 40, 28, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 1.35rem;
+    padding: clamp(1rem, 1.4vw + 0.7rem, 1.8rem);
+    animation: panel-in 460ms ease-out;
+}
+
+.hero h1 {
+    margin: 0.1rem 0 0.55rem;
+    font-size: clamp(1.45rem, 2.1vw, 2.4rem);
+    line-height: 1.14;
+    color: #133f30;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.hero p {
+    margin: 0;
+    color: #2c5e4b;
+    max-width: 780px;
+    font-size: 1.02rem;
+}
+
+.kicker {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #9a7725;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.kicker::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d2af52, #f1da9d);
+    box-shadow: 0 0 0 5px rgba(210, 175, 82, 0.16);
+}
+
+.composerCard {
+    border: 1px solid var(--assistant-border);
+    border-radius: 20px;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.97), rgba(249, 250, 242, 0.96));
+    padding: 0.95rem;
+    box-shadow: 0 12px 28px rgba(10, 40, 28, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.composerInput {
+    width: 100%;
+    min-height: 132px;
+    border: 1px solid rgba(28, 94, 70, 0.24);
+    border-radius: 14px;
+    resize: vertical;
+    padding: 0.82rem 0.9rem;
+    background: #ffffff;
+    color: #173b2d;
+    font-family: "Sora", "Segoe UI", sans-serif;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.composerInput:focus {
+    border-color: rgba(30, 122, 89, 0.68);
+    box-shadow: 0 0 0 4px rgba(30, 122, 89, 0.14);
+}
+
+.composerFooter {
+    display: flex;
+    flex-direction: column;
+    gap: 0.88rem;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.chip {
+    border: 1px solid rgba(154, 119, 37, 0.28);
+    border-radius: 999px;
+    background: rgba(241, 218, 157, 0.25);
+    color: #6f5514;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.38rem 0.75rem;
+    cursor: pointer;
+    transition: transform 160ms ease, background 180ms ease;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.chip:hover {
+    background: rgba(241, 218, 157, 0.42);
+    transform: translateY(-1px);
+}
+
+.controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.modelSelectWrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #1a5640;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.modelSelect {
+    border: 1px solid rgba(30, 98, 74, 0.3);
+    border-radius: 10px;
+    background: #ffffff;
+    color: #144e39;
+    padding: 0.38rem 0.58rem;
+    min-width: 172px;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.sendButton {
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--assistant-green-700), var(--assistant-green-500));
+    color: #ecffef;
+    font-weight: 700;
+    font-size: 0.88rem;
+    padding: 0.58rem 1rem;
+    cursor: pointer;
+    font-family: "Sora", "Segoe UI", sans-serif;
+    transition: transform 180ms ease, box-shadow 180ms ease;
+    box-shadow: 0 10px 18px rgba(15, 77, 57, 0.24);
+}
+
+.sendButton:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 20px rgba(15, 77, 57, 0.3);
+}
+
+.modelsSection {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.sectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sectionHeader h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #153f30;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.seeAllBtn {
+    border: none;
+    background: transparent;
+    color: #2a7458;
+    cursor: pointer;
+    font-weight: 600;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.modelsGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.modelCard {
+    border: 1px solid rgba(21, 77, 57, 0.18);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.42rem;
+    box-shadow: 0 8px 20px rgba(10, 40, 28, 0.08);
+    opacity: 0;
+    transform: translateY(8px);
+    animation: rise-up 420ms ease forwards;
+}
+
+.modelCardActive {
+    border-color: rgba(210, 175, 82, 0.6);
+    box-shadow: 0 10px 26px rgba(140, 106, 31, 0.22);
+}
+
+.modelCaption {
+    margin: 0;
+    font-size: 0.74rem;
+    color: #957126;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+}
+
+.modelCard h3 {
+    margin: 0;
+    color: #134130;
+    font-size: 1rem;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.modelCard p {
+    margin: 0;
+    color: #33614f;
+    font-size: 0.84rem;
+    line-height: 1.34;
+}
+
+.modelChooseButton {
+    margin-top: auto;
+    border: 1px solid rgba(21, 77, 57, 0.3);
+    border-radius: 10px;
+    background: rgba(31, 106, 80, 0.08);
+    color: #1a5f46;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.4rem 0.62rem;
+    cursor: pointer;
+    transition: all 180ms ease;
+    font-family: "Sora", "Segoe UI", sans-serif;
+}
+
+.modelChooseButton:hover {
+    background: rgba(31, 106, 80, 0.15);
+    border-color: rgba(21, 77, 57, 0.5);
+}
+
+@media (max-width: 1200px) {
+    .modelsGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 920px) {
+    .pageShell {
+        grid-template-columns: 1fr;
+        padding: 0.8rem;
+    }
+
+    .leftPanel {
+        order: 2;
+    }
+
+    .mainPanel {
+        order: 1;
+    }
+}
+
+@media (max-width: 640px) {
+    .modelsGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .hero p {
+        font-size: 0.94rem;
+    }
+
+    .composerInput {
+        min-height: 112px;
+    }
+}
+
+@keyframes panel-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes rise-up {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
