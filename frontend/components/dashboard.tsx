@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import CreateGroupModal from "./CreateGroupModal";
+import TripSuccessAdvisorModal from "./TripSuccessAdvisorModal";
 import { useAuth } from "@/app/AuthContext";
 
 type Group = {
@@ -185,6 +186,8 @@ export default function Dashboard() {
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [selectedTripSection, setSelectedTripSection] = useState<TripSection>("upcoming");
     const [showCreatePoll, setShowCreatePoll] = useState(false);
+    const [showTripSuccessAdvisor, setShowTripSuccessAdvisor] = useState(false);
+    const [selectedAdvisorGroupId, setSelectedAdvisorGroupId] = useState("");
     const [pollSection, setPollSection] = useState<PollSection>("upcoming");
     const [loadingPolls, setLoadingPolls] = useState(true);
     const [creatingPoll, setCreatingPoll] = useState(false);
@@ -401,6 +404,13 @@ export default function Dashboard() {
             groupId: prev.groupId || String(groups[0].id),
         }));
         setShowCreatePoll(true);
+    };
+
+    const handleOpenTripSuccessAdvisor = () => {
+        if (!selectedAdvisorGroupId && groups.length > 0) {
+            setSelectedAdvisorGroupId(String(groups[0].id));
+        }
+        setShowTripSuccessAdvisor(true);
     };
 
     const handleSubmitPollVote = async (poll: DashboardPoll) => {
@@ -829,21 +839,26 @@ export default function Dashboard() {
                     <div className="upcoming-polls">
                         <div className="polls-header-row">
                             <h3 className="polls-title">Group Polls</h3>
-                            <div className="poll-section-tabs">
-                                <button
-                                    type="button"
-                                    className={`poll-section-tab ${pollSection === "upcoming" ? "active" : ""}`}
-                                    onClick={() => setPollSection("upcoming")}
-                                >
-                                    Upcoming Polls ({upcomingPolls.length})
+                            <div className="polls-header-actions">
+                                <button type="button" className="advisor-launch-btn" onClick={handleOpenTripSuccessAdvisor}>
+                                    AI Trip Advisor
                                 </button>
-                                <button
-                                    type="button"
-                                    className={`poll-section-tab ${pollSection === "previous" ? "active" : ""}`}
-                                    onClick={() => setPollSection("previous")}
-                                >
-                                    Previous Polls ({previousPolls.length})
-                                </button>
+                                <div className="poll-section-tabs">
+                                    <button
+                                        type="button"
+                                        className={`poll-section-tab ${pollSection === "upcoming" ? "active" : ""}`}
+                                        onClick={() => setPollSection("upcoming")}
+                                    >
+                                        Upcoming Polls ({upcomingPolls.length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`poll-section-tab ${pollSection === "previous" ? "active" : ""}`}
+                                        onClick={() => setPollSection("previous")}
+                                    >
+                                        Previous Polls ({previousPolls.length})
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -1033,6 +1048,15 @@ export default function Dashboard() {
                     onGroupCreated={(group) => {
                         setGroups((prev) => [group, ...prev]);
                     }}
+                />
+            )}
+
+            {showTripSuccessAdvisor && (
+                <TripSuccessAdvisorModal
+                    groups={groups.map((group) => ({ id: group.id, name: group.name }))}
+                    selectedGroupId={selectedAdvisorGroupId}
+                    onSelectedGroupIdChange={setSelectedAdvisorGroupId}
+                    onClose={() => setShowTripSuccessAdvisor(false)}
                 />
             )}
 

@@ -492,10 +492,36 @@
     flex-wrap: wrap;
 }
 
+.polls-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .poll-section-tabs {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
+}
+
+.advisor-launch-btn {
+    border: 1px solid rgba(46, 107, 85, 0.26);
+    background: linear-gradient(135deg, rgba(243, 201, 105, 0.22) 0%, rgba(46, 107, 85, 0.12) 100%);
+    color: #173c2d;
+    border-radius: 999px;
+    padding: 0.48rem 0.92rem;
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(46, 107, 85, 0.08);
+}
+
+.advisor-launch-btn:hover {
+    background: linear-gradient(135deg, rgba(243, 201, 105, 0.34) 0%, rgba(46, 107, 85, 0.18) 100%);
+    border-color: rgba(46, 107, 85, 0.42);
 }
 
 .poll-section-tab {
@@ -795,6 +821,18 @@
 
 .poll-modal-actions .vote-btn {
     align-self: auto;
+}
+
+@media (max-width: 860px) {
+    .polls-header-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .polls-header-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
 }
 
 /* Dashboard Sidebar */
