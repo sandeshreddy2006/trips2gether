@@ -38,52 +38,93 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         location: null,
     });
     const lastSyncedLocationRef = useRef<string | null>(null);
+    const lastGeocodeCoordsRef = useRef<string | null>(null);
 
     // Get user's geolocation on app load
     useEffect(() => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                async (position) => {
-                    const { latitude, longitude } = position.coords;
-                    setLocationData((prev) => ({
-                        ...prev,
-                        latitude,
-                        longitude,
-                    }));
-
-                    // Try to get location name from Google Maps reverse geocoding (optional)
-                    try {
-                        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API;
-                        if (!apiKey) {
-                            console.log("Google Maps API key not configured");
-                        } else {
-                            const response = await fetch(
-                                `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
-                            );
-                            if (!response.ok) {
-                                console.log("Geocoding HTTP error:", response.status, response.statusText);
-                            } else {
-                                const data = await response.json();
-                                if (data.status === "OK" && data.results && data.results.length > 0) {
-                                    const address = data.results[0].formatted_address;
-                                    setLocationData((prev) => ({
-                                        ...prev,
-                                        location: address,
-                                    }));
-                                } else {
-                                    console.log("Geocoding API error:", data.status, data.error_message || "Unknown error");
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        console.log("Could not get location name:", err);
-                    }
-                },
-                (error) => {
-                    console.log("Location permission denied or unavailable:", error.message);
-                }
-            );
+        if (!navigator.geolocation) {
+            return;
         }
+
+        let cancelled = false;
+        let watchId: number | null = null;
+
+        const reverseGeocode = async (latitude: number, longitude: number) => {
+            const coordsKey = `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
+            if (lastGeocodeCoordsRef.current === coordsKey) {
+                return;
+            }
+            lastGeocodeCoordsRef.current = coordsKey;
+
+            try {
+                const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API;
+                if (!apiKey) {
+                    console.log("Google Maps API key not configured");
+                    return;
+                }
+
+                const response = await fetch(
+                    `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
+                );
+                if (!response.ok) {
+                    console.log("Geocoding HTTP error:", response.status, response.statusText);
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.status === "OK" && data.results && data.results.length > 0) {
+                    const address = data.results[0].formatted_address;
+                    if (!cancelled) {
+                        setLocationData((prev) => ({
+                            ...prev,
+                            location: address,
+                        }));
+                    }
+                } else {
+                    console.log("Geocoding API error:", data.status, data.error_message || "Unknown error");
+                }
+            } catch (err) {
+                console.log("Could not get location name:", err);
+            }
+        };
+
+        const onPosition = (position: GeolocationPosition) => {
+            if (cancelled) return;
+            const { latitude, longitude } = position.coords;
+            setLocationData((prev) => ({
+                ...prev,
+                latitude,
+                longitude,
+            }));
+            void reverseGeocode(latitude, longitude);
+        };
+
+        const onLocationError = (error: GeolocationPositionError) => {
+            const codeLabel =
+                error.code === 1 ? "PERMISSION_DENIED" : error.code === 2 ? "POSITION_UNAVAILABLE" : "TIMEOUT";
+            console.log("Location permission denied or unavailable:", codeLabel, error.message);
+        };
+
+        // First fast attempt.
+        navigator.geolocation.getCurrentPosition(onPosition, onLocationError, {
+            enableHighAccuracy: false,
+            timeout: 12000,
+            maximumAge: 300000,
+        });
+
+        // Fallback watcher helps on macOS where first lookup can return kCLErrorLocationUnknown.
+        watchId = navigator.geolocation.watchPosition(onPosition, onLocationError, {
+            enableHighAccuracy: false,
+            timeout: 20000,
+            maximumAge: 300000,
+        });
+
+        return () => {
+            cancelled = true;
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+        };
     }, []);
 
     // Check if user is authenticated on app load
