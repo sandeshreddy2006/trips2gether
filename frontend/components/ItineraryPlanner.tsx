@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import "./ItineraryPlanner.css";
+import CostSummaryCard from "./CostSummaryCard";
+import CostBreakdownTable from "./CostBreakdownTable";
 
 type ItineraryPlan = {
     id: number;
@@ -70,6 +72,34 @@ type TimelineEntry = {
     sortOrder: number;
     segment: TimelineSegment;
     item: ItineraryItem;
+};
+
+type CostBreakdownItem = {
+    item_id: number;
+    item_type: string;
+    title: string;
+    estimated_cost: number | null;
+    currency: string;
+    is_missing: boolean;
+};
+
+type MemberCostBreakdown = {
+    member_id: number;
+    member_name: string;
+    member_email: string;
+    individual_share: number;
+};
+
+type CostSummary = {
+    total_cost: number;
+    currency: string;
+    per_person_cost: number;
+    member_count: number;
+    items_with_cost: number;
+    items_missing_cost: number;
+    has_missing_costs: boolean;
+    breakdown: CostBreakdownItem[];
+    members_breakdown: MemberCostBreakdown[];
 };
 
 const ITEM_LABELS: Record<ItineraryItem["item_type"], string> = {
@@ -398,6 +428,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [response, setResponse] = useState<ItineraryResponse | null>(null);
+    const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
     const [editingItemId, setEditingItemId] = useState<number | null>(null);
     const [savingNotes, setSavingNotes] = useState(false);
     const [updatingTripState, setUpdatingTripState] = useState(false);
@@ -476,6 +507,21 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
 
         setResponse(data as ItineraryResponse);
         setSharedNotesDraft((data as ItineraryResponse).trip_plan.shared_notes || "");
+
+        // Fetch cost summary after itinerary is loaded
+        if (!isArchivedSnapshotView && groupId) {
+            try {
+                const costRes = await fetch(`/api/groups/${groupId}/cost-summary`, {
+                    credentials: "include",
+                });
+                if (costRes.ok) {
+                    const costData = await costRes.json();
+                    setCostSummary(costData as CostSummary);
+                }
+            } catch (err) {
+                console.error("Error fetching cost summary:", err);
+            }
+        }
     };
 
     useEffect(() => {
@@ -820,8 +866,8 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                     {isArchivedSnapshotView
                         ? "Viewing an archived snapshot. Timeline items and shared notes are read-only."
                         : isTimelineLocked
-                        ? "This itinerary is finalized. Timeline edits are locked, but shared notes can still be updated."
-                        : "Members can add dates, times, and locations, then edit, remove, or reorder items without leaving the page."}
+                            ? "This itinerary is finalized. Timeline edits are locked, but shared notes can still be updated."
+                            : "Members can add dates, times, and locations, then edit, remove, or reorder items without leaving the page."}
                 </div>
             </div>
 
@@ -830,72 +876,72 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             )}
 
             {!isArchivedSnapshotView && (
-            <div className="itinerary-state-actions">
-                {(groupStatus === "planning" || groupStatus === "confirmed" || groupStatus === "finalized") && (
-                    <button
-                        className="itinerary-state-btn"
-                        disabled={updatingTripState}
-                        onClick={() => openWarningModal({
-                            title: "Finalize as upcoming",
-                            message: "Mark this itinerary as an upcoming trip? You can still edit itinerary items afterwards.",
-                            confirmLabel: "Mark upcoming",
-                            cancelLabel: "Cancel",
-                            tone: "warning",
-                            onConfirm: () => { void updateTripState("upcoming"); },
-                        })}
-                    >
-                        {updatingTripState ? "Updating..." : "Finalize Itinerary"}
-                    </button>
-                )}
-                {groupStatus === "upcoming" && (
-                    <button
-                        className="itinerary-state-btn"
-                        disabled={updatingTripState}
-                        onClick={() => openWarningModal({
-                            title: "Start trip",
-                            message: "Move this itinerary to active trips now?",
-                            confirmLabel: "Mark active",
-                            cancelLabel: "Cancel",
-                            tone: "warning",
-                            onConfirm: () => { void updateTripState("active"); },
-                        })}
-                    >
-                        {updatingTripState ? "Updating..." : "Mark as Active"}
-                    </button>
-                )}
-                {groupStatus === "active" && (
-                    <button
-                        className="itinerary-state-btn danger"
-                        disabled={updatingTripState}
-                        onClick={() => openWarningModal({
-                            title: "Archive trip",
-                            message: "Archive this active trip into previous trips?",
-                            confirmLabel: "Archive trip",
-                            cancelLabel: "Cancel",
-                            tone: "danger",
-                            onConfirm: () => { void updateTripState("archived"); },
-                        })}
-                    >
-                        {updatingTripState ? "Updating..." : "Archive / Finish Trip"}
-                    </button>
-                )}
-                {groupStatus === "archived" && (
-                    <button
-                        className="itinerary-state-btn"
-                        disabled={updatingTripState}
-                        onClick={() => openWarningModal({
-                            title: "Start a fresh trip",
-                            message: "Start a new itinerary cycle? The archived trip remains finalized and a fresh planning itinerary will be created.",
-                            confirmLabel: "Start new trip",
-                            cancelLabel: "Cancel",
-                            tone: "warning",
-                            onConfirm: () => { void startNewTrip(); },
-                        })}
-                    >
-                        {updatingTripState ? "Updating..." : "Start New Trip"}
-                    </button>
-                )}
-            </div>
+                <div className="itinerary-state-actions">
+                    {(groupStatus === "planning" || groupStatus === "confirmed" || groupStatus === "finalized") && (
+                        <button
+                            className="itinerary-state-btn"
+                            disabled={updatingTripState}
+                            onClick={() => openWarningModal({
+                                title: "Finalize as upcoming",
+                                message: "Mark this itinerary as an upcoming trip? You can still edit itinerary items afterwards.",
+                                confirmLabel: "Mark upcoming",
+                                cancelLabel: "Cancel",
+                                tone: "warning",
+                                onConfirm: () => { void updateTripState("upcoming"); },
+                            })}
+                        >
+                            {updatingTripState ? "Updating..." : "Finalize Itinerary"}
+                        </button>
+                    )}
+                    {groupStatus === "upcoming" && (
+                        <button
+                            className="itinerary-state-btn"
+                            disabled={updatingTripState}
+                            onClick={() => openWarningModal({
+                                title: "Start trip",
+                                message: "Move this itinerary to active trips now?",
+                                confirmLabel: "Mark active",
+                                cancelLabel: "Cancel",
+                                tone: "warning",
+                                onConfirm: () => { void updateTripState("active"); },
+                            })}
+                        >
+                            {updatingTripState ? "Updating..." : "Mark as Active"}
+                        </button>
+                    )}
+                    {groupStatus === "active" && (
+                        <button
+                            className="itinerary-state-btn danger"
+                            disabled={updatingTripState}
+                            onClick={() => openWarningModal({
+                                title: "Archive trip",
+                                message: "Archive this active trip into previous trips?",
+                                confirmLabel: "Archive trip",
+                                cancelLabel: "Cancel",
+                                tone: "danger",
+                                onConfirm: () => { void updateTripState("archived"); },
+                            })}
+                        >
+                            {updatingTripState ? "Updating..." : "Archive / Finish Trip"}
+                        </button>
+                    )}
+                    {groupStatus === "archived" && (
+                        <button
+                            className="itinerary-state-btn"
+                            disabled={updatingTripState}
+                            onClick={() => openWarningModal({
+                                title: "Start a fresh trip",
+                                message: "Start a new itinerary cycle? The archived trip remains finalized and a fresh planning itinerary will be created.",
+                                confirmLabel: "Start new trip",
+                                cancelLabel: "Cancel",
+                                tone: "warning",
+                                onConfirm: () => { void startNewTrip(); },
+                            })}
+                        >
+                            {updatingTripState ? "Updating..." : "Start New Trip"}
+                        </button>
+                    )}
+                </div>
             )}
 
             {error && <div className="itinerary-alert">{error}</div>}
@@ -913,120 +959,120 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                             </div>
 
                             <form className="itinerary-form" onSubmit={submitItinerary}>
-                        <label>
-                            Item type
-                            <select
-                                value={form.itemType}
-                                onChange={(e) => updateFormField("itemType", e.target.value as FormState["itemType"])}
-                            >
-                                {Object.entries(ITEM_LABELS).map(([value, label]) => (
-                                    <option key={value} value={value}>
-                                        {label}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
+                                <label>
+                                    Item type
+                                    <select
+                                        value={form.itemType}
+                                        onChange={(e) => updateFormField("itemType", e.target.value as FormState["itemType"])}
+                                    >
+                                        {Object.entries(ITEM_LABELS).map(([value, label]) => (
+                                            <option key={value} value={value}>
+                                                {label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
 
-                        <label>
-                            Title
-                            <input
-                                type="text"
-                                value={form.title}
-                                onChange={(e) => updateFormField("title", e.target.value)}
-                                placeholder="e.g. Delta flight to Paris"
-                                maxLength={255}
-                            />
-                        </label>
+                                <label>
+                                    Title
+                                    <input
+                                        type="text"
+                                        value={form.title}
+                                        onChange={(e) => updateFormField("title", e.target.value)}
+                                        placeholder="e.g. Delta flight to Paris"
+                                        maxLength={255}
+                                    />
+                                </label>
 
-                        <div className="two-column-grid">
-                            <label>
-                                Date
-                                <input
-                                    type="date"
-                                    value={form.date}
-                                    onChange={(e) => updateFormField("date", e.target.value)}
-                                />
-                            </label>
-                            <label>
-                                Start time
-                                <input
-                                    type="time"
-                                    value={form.startTime}
-                                    onChange={(e) => updateFormField("startTime", e.target.value)}
-                                />
-                            </label>
-                        </div>
+                                <div className="two-column-grid">
+                                    <label>
+                                        Date
+                                        <input
+                                            type="date"
+                                            value={form.date}
+                                            onChange={(e) => updateFormField("date", e.target.value)}
+                                        />
+                                    </label>
+                                    <label>
+                                        Start time
+                                        <input
+                                            type="time"
+                                            value={form.startTime}
+                                            onChange={(e) => updateFormField("startTime", e.target.value)}
+                                        />
+                                    </label>
+                                </div>
 
-                        <div className="two-column-grid">
-                            <label>
-                                End date
-                                <input
-                                    type="date"
-                                    value={form.endDate}
-                                    onChange={(e) => updateFormField("endDate", e.target.value)}
-                                />
-                            </label>
-                            <label>
-                                End time
-                                <input
-                                    type="time"
-                                    value={form.endTime}
-                                    onChange={(e) => updateFormField("endTime", e.target.value)}
-                                />
-                            </label>
-                        </div>
+                                <div className="two-column-grid">
+                                    <label>
+                                        End date
+                                        <input
+                                            type="date"
+                                            value={form.endDate}
+                                            onChange={(e) => updateFormField("endDate", e.target.value)}
+                                        />
+                                    </label>
+                                    <label>
+                                        End time
+                                        <input
+                                            type="time"
+                                            value={form.endTime}
+                                            onChange={(e) => updateFormField("endTime", e.target.value)}
+                                        />
+                                    </label>
+                                </div>
 
-                        <label>
-                            Location name
-                            <input
-                                type="text"
-                                value={form.locationName}
-                                onChange={(e) => updateFormField("locationName", e.target.value)}
-                                placeholder="Airport, hotel, restaurant, or activity venue"
-                                maxLength={255}
-                            />
-                        </label>
+                                <label>
+                                    Location name
+                                    <input
+                                        type="text"
+                                        value={form.locationName}
+                                        onChange={(e) => updateFormField("locationName", e.target.value)}
+                                        placeholder="Airport, hotel, restaurant, or activity venue"
+                                        maxLength={255}
+                                    />
+                                </label>
 
-                        <label>
-                            Location details
-                            <input
-                                type="text"
-                                value={form.locationAddress}
-                                onChange={(e) => updateFormField("locationAddress", e.target.value)}
-                                placeholder="Address or terminal info"
-                            />
-                        </label>
+                                <label>
+                                    Location details
+                                    <input
+                                        type="text"
+                                        value={form.locationAddress}
+                                        onChange={(e) => updateFormField("locationAddress", e.target.value)}
+                                        placeholder="Address or terminal info"
+                                    />
+                                </label>
 
-                        <label>
-                            Notes
-                            <textarea
-                                value={form.notes}
-                                onChange={(e) => updateFormField("notes", e.target.value)}
-                                placeholder="Gate info, reservation notes, confirmation codes, and reminders"
-                                rows={4}
-                            />
-                        </label>
+                                <label>
+                                    Notes
+                                    <textarea
+                                        value={form.notes}
+                                        onChange={(e) => updateFormField("notes", e.target.value)}
+                                        placeholder="Gate info, reservation notes, confirmation codes, and reminders"
+                                        rows={4}
+                                    />
+                                </label>
 
-                        <div className="two-column-grid">
-                            <label>
-                                Source
-                                <input
-                                    type="text"
-                                    value={form.sourceKind}
-                                    onChange={(e) => updateFormField("sourceKind", e.target.value)}
-                                    placeholder="manual, flight-shortlist, etc."
-                                />
-                            </label>
-                            <label>
-                                Reference
-                                <input
-                                    type="text"
-                                    value={form.sourceReference}
-                                    onChange={(e) => updateFormField("sourceReference", e.target.value)}
-                                    placeholder="Optional booking or shortlist ID"
-                                />
-                            </label>
-                        </div>
+                                <div className="two-column-grid">
+                                    <label>
+                                        Source
+                                        <input
+                                            type="text"
+                                            value={form.sourceKind}
+                                            onChange={(e) => updateFormField("sourceKind", e.target.value)}
+                                            placeholder="manual, flight-shortlist, etc."
+                                        />
+                                    </label>
+                                    <label>
+                                        Reference
+                                        <input
+                                            type="text"
+                                            value={form.sourceReference}
+                                            onChange={(e) => updateFormField("sourceReference", e.target.value)}
+                                            placeholder="Optional booking or shortlist ID"
+                                        />
+                                    </label>
+                                </div>
 
                                 <div className="itinerary-form-actions">
                                     {editingItem && (
@@ -1098,6 +1144,27 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                         </div>
                         <span className="panel-pill">{itemCount} items</span>
                     </div>
+
+                    {/* Cost Summary Section */}
+                    {costSummary && !isArchivedSnapshotView && (
+                        <div className="itinerary-cost-section">
+                            <CostSummaryCard
+                                totalCost={costSummary.total_cost}
+                                perPersonCost={costSummary.per_person_cost}
+                                currency={costSummary.currency}
+                                memberCount={costSummary.member_count}
+                                itemsWithCost={costSummary.items_with_cost}
+                                itemsMissingCost={costSummary.items_missing_cost}
+                                hasMissingCosts={costSummary.has_missing_costs}
+                            />
+                            {costSummary.breakdown.length > 0 && (
+                                <CostBreakdownTable
+                                    items={costSummary.breakdown}
+                                    currency={costSummary.currency}
+                                />
+                            )}
+                        </div>
+                    )}
 
                     {loading ? (
                         <div className="itinerary-loading">Loading itinerary...</div>
@@ -1187,40 +1254,40 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                     )}
                 </main>
             </div>
-                {warningModal && (
-                    <div className="itinerary-modal-overlay" role="presentation" onClick={closeWarningModal}>
-                        <div
-                            className={`itinerary-modal ${warningModal.tone === "danger" ? "itinerary-modal-danger" : "itinerary-modal-warning"}`}
-                            role="dialog"
-                            aria-modal="true"
-                            aria-labelledby="itinerary-modal-title"
-                            onClick={(event) => event.stopPropagation()}
-                        >
-                            <div className="itinerary-modal-icon">{warningModal.tone === "danger" ? "!" : "?"}</div>
-                            <div className="itinerary-modal-content">
-                                <h2 id="itinerary-modal-title">{warningModal.title}</h2>
-                                <p>{warningModal.message}</p>
-                            </div>
-                            <div className="itinerary-modal-actions">
-                                <button type="button" className="itinerary-modal-cancel" onClick={closeWarningModal} disabled={saving}>
-                                    {warningModal.cancelLabel}
-                                </button>
-                                <button
-                                    type="button"
-                                    className="itinerary-modal-confirm"
-                                    onClick={() => {
-                                        const action = warningModal.onConfirm;
-                                        closeWarningModal();
-                                        action();
-                                    }}
-                                    disabled={saving}
-                                >
-                                    {warningModal.confirmLabel}
-                                </button>
-                            </div>
+            {warningModal && (
+                <div className="itinerary-modal-overlay" role="presentation" onClick={closeWarningModal}>
+                    <div
+                        className={`itinerary-modal ${warningModal.tone === "danger" ? "itinerary-modal-danger" : "itinerary-modal-warning"}`}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="itinerary-modal-title"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="itinerary-modal-icon">{warningModal.tone === "danger" ? "!" : "?"}</div>
+                        <div className="itinerary-modal-content">
+                            <h2 id="itinerary-modal-title">{warningModal.title}</h2>
+                            <p>{warningModal.message}</p>
+                        </div>
+                        <div className="itinerary-modal-actions">
+                            <button type="button" className="itinerary-modal-cancel" onClick={closeWarningModal} disabled={saving}>
+                                {warningModal.cancelLabel}
+                            </button>
+                            <button
+                                type="button"
+                                className="itinerary-modal-confirm"
+                                onClick={() => {
+                                    const action = warningModal.onConfirm;
+                                    closeWarningModal();
+                                    action();
+                                }}
+                                disabled={saving}
+                            >
+                                {warningModal.confirmLabel}
+                            </button>
                         </div>
                     </div>
-                )}
+                </div>
+            )}
         </div>
     );
 }

@@ -1,0 +1,278 @@
+/* Cost Breakdown Table Styles */
+.cost-breakdown-wrapper {
+    margin: 20px 0;
+    background: #ffffff;
+    border: 1px solid #e0e6ed;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.cost-breakdown-toggle {
+    width: 100%;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border: none;
+    border-bottom: 1px solid #e0e6ed;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #2c3e50;
+    transition: background-color 0.2s ease;
+}
+
+.cost-breakdown-toggle:hover {
+    background-color: #ecf0f1;
+}
+
+.toggle-icon {
+    display: inline-block;
+    transition: transform 0.3s ease;
+}
+
+.toggle-icon.expanded {
+    transform: rotate(180deg);
+}
+
+.cost-breakdown-empty {
+    padding: 32px 20px;
+    text-align: center;
+    color: #95a5a6;
+}
+
+.cost-breakdown-empty p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.cost-breakdown-content {
+    padding: 20px;
+}
+
+.breakdown-section {
+    margin-bottom: 24px;
+}
+
+.breakdown-section:last-child {
+    margin-bottom: 0;
+}
+
+.breakdown-section h4 {
+    margin: 0 0 16px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #34495e;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.breakdown-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.breakdown-table thead {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #e0e6ed;
+}
+
+.breakdown-table th {
+    padding: 12px 8px;
+    text-align: left;
+    font-weight: 600;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+}
+
+.breakdown-table td {
+    padding: 12px 8px;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.breakdown-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.type-cell {
+    width: 100px;
+}
+
+.title-cell {
+    flex: 1;
+    color: #2c3e50;
+    font-weight: 500;
+}
+
+.cost-cell {
+    width: 140px;
+    text-align: right;
+}
+
+.cost-column {
+    text-align: right;
+}
+
+.cost-amount {
+    font-weight: 600;
+    color: #27ae60;
+    font-size: 13px;
+}
+
+.item-type-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    background-color: #ecf7ff;
+    color: #0066cc;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.item-type-badge.secondary {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.missing-section {
+    background-color: #fffbf0;
+    border: 1px solid #ffe4cc;
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 0;
+}
+
+.missing-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.missing-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    background-color: #ffffff;
+    border-radius: 4px;
+    border-left: 3px solid #f39c12;
+}
+
+.missing-item .title {
+    flex: 1;
+    color: #34495e;
+    font-size: 13px;
+}
+
+.tbd-label {
+    display: inline-block;
+    padding: 2px 8px;
+    background-color: #e0e6ed;
+    color: #7f8c8d;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.missing-note {
+    margin: 8px 0 0 0;
+    padding: 8px;
+    background-color: #ffffff;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #34495e;
+    line-height: 1.4;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .breakdown-table {
+        font-size: 12px;
+    }
+
+    .breakdown-table th,
+    .breakdown-table td {
+        padding: 10px 6px;
+    }
+
+    .type-cell {
+        width: 80px;
+    }
+
+    .cost-cell {
+        width: 100px;
+    }
+
+    .missing-item {
+        flex-wrap: wrap;
+    }
+
+    .missing-item .title {
+        flex: 1 1 100%;
+        order: 2;
+    }
+}
+
+@media (max-width: 480px) {
+    .cost-breakdown-wrapper {
+        border-radius: 0;
+        margin: 12px 0;
+    }
+
+    .cost-breakdown-toggle {
+        padding: 12px 16px;
+        font-size: 13px;
+    }
+
+    .cost-breakdown-content {
+        padding: 16px;
+    }
+
+    .breakdown-section h4 {
+        font-size: 13px;
+        margin-bottom: 12px;
+    }
+
+    .breakdown-table {
+        font-size: 11px;
+    }
+
+    .breakdown-table th,
+    .breakdown-table td {
+        padding: 8px 4px;
+    }
+
+    .type-cell {
+        display: none;
+    }
+
+    .title-cell {
+        text-align: left;
+    }
+
+    .cost-cell {
+        width: auto;
+    }
+
+    .missing-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .missing-item .title {
+        flex: 1 1 100%;
+    }
+
+    .tbd-label {
+        align-self: flex-start;
+    }
+}

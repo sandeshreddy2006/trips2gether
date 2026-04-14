@@ -343,3 +343,79 @@ def get_trip_success_score(group_id: int, db: Session) -> dict:
     except Exception as e:
         print(f"[AI] get_trip_success_score error for group {group_id}: {e}")
         return fallback
+
+
+def estimate_item_cost(
+    item_type: str,
+    item_name: str,
+    item_location: str = "unknown",
+    item_duration: int = 1,
+    currency: str = "USD",
+) -> float | None:
+    """
+    Use Claude AI to estimate cost for a trip item.
+    
+    Args:
+        item_type: "flight", "hotel", "restaurant", "activity", "transfer", etc.
+        item_name: Name of the item
+        item_location: Location/destination
+        item_duration: Duration in hours/days depending on type
+        currency: Currency code (e.g., "USD", "EUR")
+    
+    Returns:
+        Estimated cost as float, or None if estimation fails
+    """
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        return None
+    
+    prompt = f"""Estimate the cost of this trip item in {currency}. Return ONLY a number (integer or decimal), no text.
+
+Item Type: {item_type}
+Item: {item_name}
+Location: {item_location}
+Duration: {item_duration}
+
+Return format: just the number, e.g., "150" or "89.99"
+If you cannot estimate, return "0"."""
+    
+    try:
+        requested_model = (CLAUDE_MODEL or "").strip()
+        candidate_models = []
+        if requested_model:
+            candidate_models.append(requested_model)
+        for model_name in CLAUDE_MODEL_FALLBACKS:
+            if model_name not in candidate_models:
+                candidate_models.append(model_name)
+        
+        client = anthropic.Anthropic(api_key=api_key, timeout=15.0)
+        
+        for model_name in candidate_models:
+            try:
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=50,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                
+                if response.content and len(response.content) > 0:
+                    text = response.content[0].text.strip()
+                    try:
+                        cost = float(text)
+                        if cost < 0:
+                            return None
+                        return cost if cost > 0 else None
+                    except ValueError:
+                        return None
+                
+            except anthropic.NotFoundError:
+                continue
+            except Exception as e:
+                print(f"[AI] Cost estimation error with {model_name}: {e}")
+                continue
+        
+        return None
+    
+    except Exception as e:
+        print(f"[AI] estimate_item_cost error: {e}")
+        return None

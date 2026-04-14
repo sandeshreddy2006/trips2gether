@@ -150,6 +150,8 @@ class ItineraryItem(Base):
     source_kind = Column(String(32), nullable=True)
     source_reference = Column(String(255), nullable=True)
     details_json = Column(Text, nullable=False, default="{}")
+    estimated_cost = Column(Float, nullable=True)
+    currency = Column(String(12), nullable=False, default="USD")
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -265,6 +267,8 @@ class GroupShortlistDestination(Base):
     photo_reference = Column(Text, nullable=True)
     rating = Column(Float, nullable=True)
     destination_types_json = Column(Text, nullable=False, default="[]")
+    estimated_cost = Column(Float, nullable=True)
+    currency = Column(String(12), nullable=False, default="USD")
     added_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 

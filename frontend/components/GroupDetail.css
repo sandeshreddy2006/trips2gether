@@ -751,3 +751,12 @@
     border-left: 3px solid #d97706;
     border-radius: 0 6px 6px 0;
 }
+
+/* Cost Summary Section */
+.group-cost-section {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 24px 0;
+    border: 1px solid #e0e6ed;
+}

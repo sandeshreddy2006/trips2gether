@@ -2725,6 +2725,28 @@ def add_group_shortlist_destination(
     if photo_reference and len(photo_reference) > 255:
         photo_reference = None
 
+    # Estimate cost if not provided
+    estimated_cost = body.estimated_cost
+    if estimated_cost is None or estimated_cost == 0:
+        from .ai import estimate_item_cost
+        # Determine item type from types array
+        item_type = "activity"
+        if body.types and len(body.types) > 0:
+            type_str = body.types[0].lower()
+            if "restaurant" in type_str or "food" in type_str:
+                item_type = "restaurant"
+            elif "bar" in type_str or "cafe" in type_str:
+                item_type = "activity"
+        
+        location = body.address or "unknown"
+        estimated_cost = estimate_item_cost(
+            item_type=item_type,
+            item_name=body.name,
+            item_location=location,
+            item_duration=1,
+            currency=body.currency,
+        )
+
     item = models.GroupShortlistDestination(
         group_id=group_id,
         place_id=body.place_id.strip(),
@@ -2734,6 +2756,8 @@ def add_group_shortlist_destination(
         photo_reference=photo_reference,
         rating=body.rating,
         destination_types_json=json.dumps(body.types or []),
+        estimated_cost=estimated_cost,
+        currency=body.currency,
         added_by=current_user.id,
     )
     db.add(item)
@@ -3130,6 +3154,20 @@ def add_itinerary_item(
 
     max_sort_order = db.query(func.max(models.ItineraryItem.sort_order)).filter(models.ItineraryItem.trip_plan_id == plan.id).scalar() or 0
 
+    # Estimate cost if not provided
+    estimated_cost = body.estimated_cost
+    if estimated_cost is None or estimated_cost == 0:
+        from .ai import estimate_item_cost
+        location = body.location_name or "unknown"
+        duration = 1
+        estimated_cost = estimate_item_cost(
+            item_type=body.item_type,
+            item_name=body.title,
+            item_location=location,
+            item_duration=duration,
+            currency=body.currency,
+        )
+
     item = models.ItineraryItem(
         trip_plan_id=plan.id,
         item_type=body.item_type,
@@ -3143,6 +3181,8 @@ def add_itinerary_item(
         source_kind=body.source_kind.strip() if body.source_kind else None,
         source_reference=body.source_reference.strip() if body.source_reference else None,
         details_json=json.dumps(body.details or {}),
+        estimated_cost=estimated_cost,
+        currency=body.currency,
         created_by=current_user.id,
     )
     db.add(item)
@@ -3391,6 +3431,10 @@ def update_itinerary_item(
         item.source_reference = body.source_reference.strip() or None
     if body.details is not None:
         item.details_json = json.dumps(body.details or {})
+    if body.estimated_cost is not None:
+        item.estimated_cost = body.estimated_cost
+    if body.currency is not None:
+        item.currency = body.currency
 
     db.commit()
     db.refresh(item)
@@ -3529,6 +3573,34 @@ def group_trip_success_score(
     _get_group_and_membership(group_id, current_user.id, db)  # verifies membership
     result = _get_score(group_id, db)
     return result
+
+
+@app.get("/groups/{group_id}/cost-summary", response_model=dict)
+def get_group_cost_summary(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Get total estimated trip cost and breakdown by member."""
+    from .cost_calculator import calculate_trip_total_cost, calculate_cost_per_member
+    
+    current_user = get_current_user_info(request, db)
+    _get_group_and_membership(group_id, current_user.id, db)  # verifies membership
+    
+    cost_data = calculate_trip_total_cost(group_id, db)
+    members_breakdown = calculate_cost_per_member(group_id, db)
+    
+    return {
+        "total_cost": cost_data["total_cost"],
+        "currency": cost_data["currency"],
+        "per_person_cost": cost_data["per_person_cost"],
+        "member_count": cost_data["member_count"],
+        "items_with_cost": cost_data["items_with_cost"],
+        "items_missing_cost": cost_data["items_missing_cost"],
+        "has_missing_costs": cost_data["has_missing_costs"],
+        "breakdown": cost_data["items_breakdown"],
+        "members_breakdown": members_breakdown,
+    }
 
 
 @app.get("/itinerary/history", response_model=dict)

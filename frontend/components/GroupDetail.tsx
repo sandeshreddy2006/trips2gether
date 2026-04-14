@@ -3,6 +3,8 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import "./GroupDetail.css";
 import HotelSearchPanel from "./HotelSearchPanel";
+import CostSummaryCard from "./CostSummaryCard";
+import CostBreakdownTable from "./CostBreakdownTable";
 
 type Member = {
     id: number;
@@ -93,6 +95,34 @@ type TripSuccessScore = {
     fallback: boolean;
 };
 
+type CostBreakdownItem = {
+    item_id: number;
+    item_type: string;
+    title: string;
+    estimated_cost: number | null;
+    currency: string;
+    is_missing: boolean;
+};
+
+type MemberCostBreakdown = {
+    member_id: number;
+    member_name: string;
+    member_email: string;
+    individual_share: number;
+};
+
+type CostSummary = {
+    total_cost: number;
+    currency: string;
+    per_person_cost: number;
+    member_count: number;
+    items_with_cost: number;
+    items_missing_cost: number;
+    has_missing_costs: boolean;
+    breakdown: CostBreakdownItem[];
+    members_breakdown: MemberCostBreakdown[];
+};
+
 function getScoreColor(score: number): string {
     if (score >= 80) return "#2e6b55";
     if (score >= 60) return "#d2ab3f";
@@ -123,6 +153,8 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [saving, setSaving] = useState(false);
     const [tripScore, setTripScore] = useState<TripSuccessScore | null>(null);
     const [scoreLoading, setScoreLoading] = useState(false);
+    const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
+    const [costLoading, setCostLoading] = useState(false);
     const isOwner = group?.role === "owner";
 
     const memberUserIds = new Set(members.map((m) => m.user_id));
@@ -157,6 +189,23 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             });
         } finally {
             setScoreLoading(false);
+        }
+    }
+
+    async function fetchCostSummary() {
+        setCostLoading(true);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/cost-summary`, {
+                credentials: "include",
+            });
+            if (!res.ok) throw new Error("Failed to fetch cost summary");
+            const data: CostSummary = await res.json();
+            setCostSummary(data);
+        } catch (err) {
+            console.error("Error fetching cost summary:", err);
+            setCostSummary(null);
+        } finally {
+            setCostLoading(false);
         }
     }
 
@@ -407,6 +456,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             } finally {
                 setLoading(false);
                 fetchTripScore();
+                fetchCostSummary();
             }
         }
         fetchData();
@@ -723,6 +773,27 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                     >
                         {inviting ? "Inviting..." : `Invite (${selectedIds.size})`}
                     </button>
+                </div>
+            )}
+
+            {/* Cost Summary Section */}
+            {costSummary && (
+                <div className="group-cost-section">
+                    <CostSummaryCard
+                        totalCost={costSummary.total_cost}
+                        perPersonCost={costSummary.per_person_cost}
+                        currency={costSummary.currency}
+                        memberCount={costSummary.member_count}
+                        itemsWithCost={costSummary.items_with_cost}
+                        itemsMissingCost={costSummary.items_missing_cost}
+                        hasMissingCosts={costSummary.has_missing_costs}
+                    />
+                    {costSummary.breakdown.length > 0 && (
+                        <CostBreakdownTable
+                            items={costSummary.breakdown}
+                            currency={costSummary.currency}
+                        />
+                    )}
                 </div>
             )}
 

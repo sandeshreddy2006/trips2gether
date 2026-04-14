@@ -665,6 +665,7 @@
 }
 
 @media (max-width: 1024px) {
+
     .itinerary-layout,
     .timeline-day-section {
         grid-template-columns: 1fr;
@@ -697,7 +698,7 @@
         flex-direction: column;
     }
 
-    .itinerary-state-actions > button {
+    .itinerary-state-actions>button {
         width: 100%;
     }
 
@@ -719,7 +720,7 @@
         align-items: stretch;
     }
 
-    .itinerary-form-actions > button {
+    .itinerary-form-actions>button {
         width: 100%;
     }
 
@@ -727,7 +728,7 @@
         flex-direction: column;
     }
 
-    .shared-notes-actions > button {
+    .shared-notes-actions>button {
         width: 100%;
     }
 
@@ -744,11 +745,18 @@
         flex-direction: column-reverse;
     }
 
-    .itinerary-modal-actions > button {
+    .itinerary-modal-actions>button {
         width: 100%;
     }
 
     .timeline-card-actions {
         flex-direction: column;
     }
+}
+
+/* Itinerary Cost Section */
+.itinerary-cost-section {
+    padding: 20px 0;
+    border-bottom: 1px solid #e0e6ed;
+    margin-bottom: 20px;
 }

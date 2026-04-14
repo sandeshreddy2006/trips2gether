@@ -167,6 +167,8 @@ class GroupShortlistCreateIn(BaseModel):
     photo_reference: str | None = None
     rating: float | None = None
     types: list[str] = Field(default_factory=list)
+    estimated_cost: float | None = None
+    currency: str = "USD"
 
 
 class GroupShortlistItemOut(BaseModel):
@@ -179,6 +181,8 @@ class GroupShortlistItemOut(BaseModel):
     photo_reference: str | None = None
     rating: float | None = None
     types: list[str] = []
+    estimated_cost: float | None = None
+    currency: str = "USD"
     added_by: int
     created_at: datetime
 
@@ -778,6 +782,8 @@ class ItineraryItemCreateIn(BaseModel):
     source_kind: Optional[str] = None
     source_reference: Optional[str] = None
     details: Dict[str, Any] = Field(default_factory=dict)
+    estimated_cost: Optional[float] = None
+    currency: str = "USD"
 
 
 class ItineraryItemUpdateIn(BaseModel):
@@ -791,6 +797,8 @@ class ItineraryItemUpdateIn(BaseModel):
     source_kind: Optional[str] = None
     source_reference: Optional[str] = None
     details: Optional[Dict[str, Any]] = None
+    estimated_cost: Optional[float] = None
+    currency: Optional[str] = None
 
 
 class ItineraryItemReorderIn(BaseModel):
@@ -823,6 +831,8 @@ class ItineraryItemOut(BaseModel):
     source_kind: Optional[str] = None
     source_reference: Optional[str] = None
     details: Dict[str, Any] = Field(default_factory=dict)
+    estimated_cost: Optional[float] = None
+    currency: str = "USD"
     created_by: int
     created_at: datetime
     updated_at: datetime
@@ -844,4 +854,41 @@ class ItineraryTimelineOut(BaseModel):
 
 class BookingShortlistToGroupIn(BaseModel):
     group_id: int
+
+
+# -------------------------
+# Trip Cost Tracking Schemas
+# -------------------------
+
+class CostBreakdownItem(BaseModel):
+    """Individual cost item in the trip breakdown"""
+    item_id: int
+    item_type: str  # "flight", "hotel", "destination", "itinerary"
+    title: str
+    estimated_cost: Optional[float] = None
+    currency: str = "USD"
+    is_missing: bool = False  # True if cost is NULL/TBD
+
+
+class CostPerMember(BaseModel):
+    """Cost breakdown per group member"""
+    member_id: int
+    member_name: str
+    member_email: str
+    individual_share: float
+
+
+class TripCostSummary(BaseModel):
+    """Complete trip cost summary with breakdown"""
+    total_cost: float
+    currency: str = "USD"
+    items_count: int
+    items_with_cost: int
+    items_missing_cost: int
+    per_person_cost: float
+    member_count: int
+    breakdown: list[CostBreakdownItem]
+    members_breakdown: list[CostPerMember]
+    has_missing_costs: bool = False
+    breakdown_details: str = ""  # Summary like "5 flights, 3 hotels, 2 activities"
 
