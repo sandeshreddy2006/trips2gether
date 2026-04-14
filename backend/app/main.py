@@ -126,6 +126,23 @@ def _ensure_itinerary_sort_order_column() -> None:
 _ensure_itinerary_sort_order_column()
 
 
+def _ensure_itinerary_cost_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("itinerary_items")}
+    except Exception:
+        return
+
+    with engine.begin() as connection:
+        if "estimated_cost" not in columns:
+            connection.execute(text("ALTER TABLE itinerary_items ADD COLUMN estimated_cost FLOAT NULL"))
+        if "currency" not in columns:
+            connection.execute(text("ALTER TABLE itinerary_items ADD COLUMN currency VARCHAR(12) NOT NULL DEFAULT 'USD'"))
+
+
+_ensure_itinerary_cost_columns()
+
+
 def _ensure_trip_plan_shared_notes_column() -> None:
     inspector = inspect(engine)
     try:
