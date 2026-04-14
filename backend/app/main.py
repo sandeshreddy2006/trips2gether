@@ -141,6 +141,23 @@ def _ensure_trip_plan_shared_notes_column() -> None:
 _ensure_trip_plan_shared_notes_column()
 
 
+def _ensure_group_shortlist_cost_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("group_shortlist_destinations")}
+    except Exception:
+        return
+
+    with engine.begin() as connection:
+        if "estimated_cost" not in columns:
+            connection.execute(text("ALTER TABLE group_shortlist_destinations ADD COLUMN estimated_cost FLOAT NULL"))
+        if "currency" not in columns:
+            connection.execute(text("ALTER TABLE group_shortlist_destinations ADD COLUMN currency VARCHAR(12) NOT NULL DEFAULT 'USD'"))
+
+
+_ensure_group_shortlist_cost_columns()
+
+
 def _ensure_trip_plan_history_table() -> None:
     inspector = inspect(engine)
     try:
