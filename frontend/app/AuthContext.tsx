@@ -90,23 +90,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             lastGeocodeCoordsRef.current = coordsKey;
 
             try {
-                const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API;
-                if (!apiKey) {
-                    console.log("Google Maps API key not configured");
-                    return;
-                }
-
                 const response = await fetch(
-                    `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
+                    `/api/geo/reverse-geocode?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`
                 );
                 if (!response.ok) {
-                    console.log("Geocoding HTTP error:", response.status, response.statusText);
+                    let detail = "Unknown error";
+                    try {
+                        const errorData = await response.json();
+                        detail = errorData.detail || errorData.message || detail;
+                    } catch {
+                        // ignore
+                    }
+                    console.log("Geocoding HTTP error:", response.status, detail);
                     return;
                 }
 
                 const data = await response.json();
-                if (data.status === "OK" && data.results && data.results.length > 0) {
-                    const address = data.results[0].formatted_address;
+                if (data.ok && data.location) {
+                    const address = data.location;
                     if (!cancelled) {
                         setLocationData((prev) => ({
                             ...prev,
@@ -114,7 +115,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         }));
                     }
                 } else {
-                    console.log("Geocoding API error:", data.status, data.error_message || "Unknown error");
+                    console.log("Geocoding API error:", data.message || "No location returned");
                 }
             } catch (err) {
                 console.log("Could not get location name:", err);

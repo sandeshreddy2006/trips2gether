@@ -1248,6 +1248,41 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/geo/reverse-geocode", response_model=dict)
+def reverse_geocode(lat: float, lng: float):
+    """Reverse geocode coordinates via backend to avoid browser key/referrer restrictions."""
+    api_key = os.getenv("GOOGLE_PLACES_API")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Google API key is not configured")
+
+    try:
+        res = requests.get(
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"latlng": f"{lat},{lng}", "key": api_key},
+            timeout=10,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Failed to reach geocoding provider")
+
+    if not res.ok:
+        raise HTTPException(status_code=502, detail=f"Geocoding request failed ({res.status_code})")
+
+    data = res.json()
+    status = data.get("status")
+    if status != "OK":
+        error_message = data.get("error_message") or status or "Geocoding failed"
+        raise HTTPException(status_code=400, detail=error_message)
+
+    results = data.get("results") or []
+    if not results:
+        return {"ok": True, "location": None}
+
+    return {
+        "ok": True,
+        "location": results[0].get("formatted_address"),
+    }
+
+
 @app.patch("/auth/location", response_model=dict)
 def update_auth_location(body: AuthLocationUpdateIn, request: Request, db: Session = Depends(get_db)):
     """Update authenticated user's location data without blocking login."""
