@@ -123,10 +123,20 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [saving, setSaving] = useState(false);
     const [tripScore, setTripScore] = useState<TripSuccessScore | null>(null);
     const [scoreLoading, setScoreLoading] = useState(false);
+    const [addingToItinerary, setAddingToItinerary] = useState<string | null>(null);
     const isOwner = group?.role === "owner";
 
     const memberUserIds = new Set(members.map((m) => m.user_id));
     const invitableFriends = friends.filter((f) => !memberUserIds.has(f.id));
+    const destinationShortlist = shortlist.filter((item) => !item.types.some((type) => type.toLowerCase() === "restaurant"));
+    const restaurantShortlist = shortlist.filter((item) => item.types.some((type) => type.toLowerCase() === "restaurant"));
+
+    function getShortlistImage(item: { photo_reference: string | null; photo_url: string | null }): string {
+        if (item.photo_reference) {
+            return `/api/destinations/image?photo_reference=${encodeURIComponent(item.photo_reference)}&width=640&height=420`;
+        }
+        return item.photo_url || "/trip-marseille.jpg";
+    }
 
     async function fetchTripScore() {
         setScoreLoading(true);
@@ -254,6 +264,37 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             setHotelShortlist((prev) => prev.filter((item) => item.place_id !== placeId));
         } catch (err) {
             alert(err instanceof Error ? err.message : "Failed to remove hotel from shortlist");
+        }
+    }
+
+    async function handleAddShortlistToItinerary(
+        shortlistType: "destination" | "restaurant" | "hotel" | "flight",
+        shortlistReference: string,
+        label: string,
+    ) {
+        const actionKey = `${shortlistType}:${shortlistReference}`;
+        setAddingToItinerary(actionKey);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/itinerary/from-shortlist`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    shortlist_type: shortlistType,
+                    shortlist_reference: shortlistReference,
+                }),
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.detail || "Failed to add shortlist item to itinerary");
+            }
+
+            alert(`${label} added to itinerary.`);
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "Failed to add shortlist item to itinerary");
+        } finally {
+            setAddingToItinerary(null);
         }
     }
 
@@ -533,6 +574,12 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                     <div className="group-shortlist-list">
                         {hotelShortlist.map((item) => (
                             <div key={item.id} className="group-shortlist-card">
+                                <img
+                                    src={getShortlistImage(item)}
+                                    alt={item.name}
+                                    className="group-shortlist-thumb"
+                                    loading="lazy"
+                                />
                                 <div className="group-shortlist-main">
                                     <h3 className="group-shortlist-name">{item.name}</h3>
                                     {item.address && <p className="group-shortlist-address">{item.address}</p>}
@@ -552,12 +599,21 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                         )}
                                     </div>
                                 </div>
-                                <button
-                                    className="group-shortlist-remove-btn"
-                                    onClick={() => handleRemoveShortlistedHotel(item.place_id)}
-                                >
-                                    Remove
-                                </button>
+                                <div className="group-shortlist-actions">
+                                    <button
+                                        className="group-shortlist-itinerary-btn"
+                                        onClick={() => handleAddShortlistToItinerary("hotel", item.place_id, item.name)}
+                                        disabled={addingToItinerary === `hotel:${item.place_id}`}
+                                    >
+                                        {addingToItinerary === `hotel:${item.place_id}` ? "Adding..." : "Add to Itinerary"}
+                                    </button>
+                                    <button
+                                        className="group-shortlist-remove-btn"
+                                        onClick={() => handleRemoveShortlistedHotel(item.place_id)}
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -565,12 +621,12 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             </div>
 
             <div className="group-shortlist-section">
-                <h2 className="group-shortlist-title">Shortlisted Destinations ({shortlist.length})</h2>
-                {shortlist.length === 0 ? (
+                <h2 className="group-shortlist-title">Shortlisted Destinations ({destinationShortlist.length})</h2>
+                {destinationShortlist.length === 0 ? (
                     <p className="group-shortlist-empty">No destinations shortlisted yet.</p>
                 ) : (
                     <div className="group-shortlist-list">
-                        {shortlist.map((item) => (
+                        {destinationShortlist.map((item) => (
                             <div key={item.id} className="group-shortlist-card">
                                 <div
                                     className="group-shortlist-main"
@@ -590,12 +646,65 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                         ))}
                                     </div>
                                 </div>
-                                <button
-                                    className="group-shortlist-remove-btn"
-                                    onClick={() => handleRemoveShortlistedDestination(item.place_id)}
-                                >
-                                    Remove
-                                </button>
+                                <div className="group-shortlist-actions">
+                                    <button
+                                        className="group-shortlist-itinerary-btn"
+                                        onClick={() => handleAddShortlistToItinerary("destination", item.place_id, item.name)}
+                                        disabled={addingToItinerary === `destination:${item.place_id}`}
+                                    >
+                                        {addingToItinerary === `destination:${item.place_id}` ? "Adding..." : "Add to Itinerary"}
+                                    </button>
+                                    <button
+                                        className="group-shortlist-remove-btn"
+                                        onClick={() => handleRemoveShortlistedDestination(item.place_id)}
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div className="group-shortlist-section">
+                <h2 className="group-shortlist-title">Shortlisted Restaurants ({restaurantShortlist.length})</h2>
+                {restaurantShortlist.length === 0 ? (
+                    <p className="group-shortlist-empty">No restaurants shortlisted yet.</p>
+                ) : (
+                    <div className="group-shortlist-list">
+                        {restaurantShortlist.map((item) => (
+                            <div key={item.id} className="group-shortlist-card">
+                                <img
+                                    src={getShortlistImage(item)}
+                                    alt={item.name}
+                                    className="group-shortlist-thumb"
+                                    loading="lazy"
+                                />
+                                <div className="group-shortlist-main">
+                                    <h3 className="group-shortlist-name">{item.name}</h3>
+                                    {item.address && <p className="group-shortlist-address">{item.address}</p>}
+                                    <div className="group-shortlist-meta">
+                                        {item.rating != null && (
+                                            <span className="group-shortlist-rating">★ {item.rating.toFixed(1)}</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="group-shortlist-actions">
+                                    <button
+                                        className="group-shortlist-itinerary-btn"
+                                        onClick={() => handleAddShortlistToItinerary("restaurant", item.place_id, item.name)}
+                                        disabled={addingToItinerary === `restaurant:${item.place_id}`}
+                                    >
+                                        {addingToItinerary === `restaurant:${item.place_id}` ? "Adding..." : "Add to Itinerary"}
+                                    </button>
+                                    <button
+                                        className="group-shortlist-remove-btn"
+                                        onClick={() => handleRemoveShortlistedDestination(item.place_id)}
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -627,12 +736,21 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                         )}
                                     </div>
                                 </div>
-                                <button
-                                    className="group-shortlist-remove-btn"
-                                    onClick={() => handleRemoveShortlistedFlight(item.flight_offer_id)}
-                                >
-                                    Remove
-                                </button>
+                                <div className="group-shortlist-actions">
+                                    <button
+                                        className="group-shortlist-itinerary-btn"
+                                        onClick={() => handleAddShortlistToItinerary("flight", item.flight_offer_id, item.airline)}
+                                        disabled={addingToItinerary === `flight:${item.flight_offer_id}`}
+                                    >
+                                        {addingToItinerary === `flight:${item.flight_offer_id}` ? "Adding..." : "Add to Itinerary"}
+                                    </button>
+                                    <button
+                                        className="group-shortlist-remove-btn"
+                                        onClick={() => handleRemoveShortlistedFlight(item.flight_offer_id)}
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>

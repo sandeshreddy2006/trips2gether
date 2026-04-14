@@ -980,6 +980,50 @@
     margin: 0;
 }
 
+.booking-shortlist-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.booking-group-select {
+    border: 1px solid #d5e4dc;
+    border-radius: 6px;
+    padding: 0.48rem 0.55rem;
+    background: white;
+    color: #1f2937;
+    font-size: 0.83rem;
+}
+
+.booking-shortlist-btn {
+    border: 1px solid #2d7a4a;
+    border-radius: 6px;
+    background: #f3faf6;
+    color: #1f6f45;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.45rem 0.65rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    align-self: flex-start;
+}
+
+.booking-shortlist-btn:hover:not(:disabled) {
+    background: #2d7a4a;
+    color: #fff;
+}
+
+.booking-shortlist-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.booking-inline-hint {
+    margin: 0;
+    color: #6b7280;
+    font-size: 0.8rem;
+}
+
 .view-details-btn {
     padding: 0.6rem 1.2rem;
     background-color: #2d7a4a;

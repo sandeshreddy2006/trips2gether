@@ -195,6 +195,8 @@ export default function Dashboard() {
     const [previousPolls, setPreviousPolls] = useState<DashboardPoll[]>([]);
     const [selectedOptionByPollId, setSelectedOptionByPollId] = useState<Record<number, number>>({});
     const [submittingPollVotes, setSubmittingPollVotes] = useState<Record<number, boolean>>({});
+    const [selectedGroupByBookingId, setSelectedGroupByBookingId] = useState<Record<number, string>>({});
+    const [shortlistingBookingIds, setShortlistingBookingIds] = useState<Record<number, boolean>>({});
     const [pollForm, setPollForm] = useState({
         groupId: "",
         question: "",
@@ -411,6 +413,34 @@ export default function Dashboard() {
             setSelectedAdvisorGroupId(String(groups[0].id));
         }
         setShowTripSuccessAdvisor(true);
+    };
+
+    const handleShortlistBookingToGroup = async (bookingId: number) => {
+        const selectedGroupId = selectedGroupByBookingId[bookingId] || (groups[0] ? String(groups[0].id) : "");
+        if (!selectedGroupId) {
+            setToastMessage("Select a group to add this booking to group plan.");
+            return;
+        }
+
+        setShortlistingBookingIds((prev) => ({ ...prev, [bookingId]: true }));
+        try {
+            const response = await fetch(`/api/bookings/${bookingId}/shortlist-to-group`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ group_id: Number(selectedGroupId) }),
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to add booking to group plan"));
+            }
+
+            setToastMessage("Booking added to group flight shortlist.");
+        } catch (error) {
+            setToastMessage(error instanceof Error ? error.message : "Failed to add booking to group plan");
+        } finally {
+            setShortlistingBookingIds((prev) => ({ ...prev, [bookingId]: false }));
+        }
     };
 
     const handleSubmitPollVote = async (poll: DashboardPoll) => {
@@ -1032,6 +1062,32 @@ export default function Dashboard() {
                                                 {new Date(booking.created_at).toLocaleDateString()} • {booking.currency} {booking.total_amount}
                                             </p>
                                             <p className="booking-info">Status: {booking.payment_status}</p>
+                                            {groups.length > 0 ? (
+                                                <div className="booking-shortlist-row">
+                                                    <select
+                                                        className="booking-group-select"
+                                                        value={selectedGroupByBookingId[booking.id] || ""}
+                                                        onChange={(event) => {
+                                                            const value = event.target.value;
+                                                            setSelectedGroupByBookingId((prev) => ({ ...prev, [booking.id]: value }));
+                                                        }}
+                                                    >
+                                                        <option value="">Select group</option>
+                                                        {groups.map((group) => (
+                                                            <option key={group.id} value={group.id}>{group.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button
+                                                        className="booking-shortlist-btn"
+                                                        onClick={() => handleShortlistBookingToGroup(booking.id)}
+                                                        disabled={Boolean(shortlistingBookingIds[booking.id])}
+                                                    >
+                                                        {shortlistingBookingIds[booking.id] ? "Adding..." : "Shortlist to Group Plan"}
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <p className="booking-inline-hint">Join a group to add this booking to a group plan.</p>
+                                            )}
                                             <button className="view-details-btn" onClick={() => router.push("/bookings")}>View Details</button>
                                         </div>
                                     </div>

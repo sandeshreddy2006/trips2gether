@@ -43,6 +43,7 @@ from .schemas import (
     ItineraryItemOut,
     ItineraryItemReorderIn,
     ItinerarySharedNotesIn,
+    ItineraryShortlistImportIn,
     ItineraryItemUpdateIn,
     ItineraryTimelineOut,
     TripStateUpdateIn,
@@ -76,6 +77,7 @@ from .schemas import (
     BookingStatusOut,
     BookingOut,
     BookingListOut,
+    BookingShortlistToGroupIn,
 )
 from .auth import (
     hash_password,
@@ -403,6 +405,49 @@ def _assert_itinerary_mutable(group: models.Group) -> None:
             status_code=400,
             detail="Itinerary is finalized for this trip state. Only shared notes can be edited.",
         )
+
+
+def _coerce_hhmm(value: str | None) -> tuple[int, int] | None:
+    if not value:
+        return None
+    try:
+        parts = value.strip().split(":")
+        if len(parts) != 2:
+            return None
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
+            return None
+        return hours, minutes
+    except Exception:
+        return None
+
+
+def _duration_label(start_at: datetime, end_at: datetime | None) -> str:
+    if not end_at or end_at <= start_at:
+        return "N/A"
+    minutes = int((end_at - start_at).total_seconds() // 60)
+    if minutes <= 0:
+        return "N/A"
+    hours, rem = divmod(minutes, 60)
+    if hours and rem:
+        return f"{hours}h {rem}m"
+    if hours:
+        return f"{hours}h"
+    return f"{rem}m"
+
+
+def _resolve_itinerary_slot(group: models.Group, plan: models.TripPlan, db: Session) -> datetime:
+    items = _get_itinerary_items(plan.id, db)
+    if items:
+        last_item = max(items, key=lambda entry: (entry.end_at or entry.start_at, entry.sort_order, entry.id))
+        return (last_item.end_at or last_item.start_at) + timedelta(hours=1)
+
+    if group.trip_start_at:
+        return group.trip_start_at.replace(hour=10, minute=0, second=0, microsecond=0)
+
+    now = datetime.utcnow().replace(second=0, microsecond=0)
+    return now + timedelta(hours=2)
 
 
 def _snapshot_trip_plan_history(
@@ -3111,6 +3156,167 @@ def add_itinerary_item(
     return payload
 
 
+@app.post("/groups/{group_id}/itinerary/from-shortlist", response_model=dict)
+def add_itinerary_item_from_shortlist(
+    group_id: int,
+    body: ItineraryShortlistImportIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create an itinerary item directly from a shortlisted destination/hotel/flight entry."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+    _assert_itinerary_mutable(group)
+
+    plan = _get_or_create_trip_plan(group, db)
+    resolved_start = body.start_at or _resolve_itinerary_slot(group, plan, db)
+    resolved_end = body.end_at
+
+    shortlist_type = body.shortlist_type
+    reference = body.shortlist_reference.strip()
+    title = ""
+    item_type = "other"
+    location_name = None
+    location_address = None
+    notes = body.notes.strip() if body.notes else None
+    details: dict = {"shortlist_type": shortlist_type}
+
+    if shortlist_type in ("destination", "restaurant"):
+        entry = (
+            db.query(models.GroupShortlistDestination)
+            .filter(
+                models.GroupShortlistDestination.group_id == group_id,
+                models.GroupShortlistDestination.place_id == reference,
+            )
+            .first()
+        )
+        if not entry:
+            raise HTTPException(status_code=404, detail="Shortlisted destination not found")
+
+        try:
+            destination_types = json.loads(entry.destination_types_json or "[]")
+            if not isinstance(destination_types, list):
+                destination_types = []
+        except Exception:
+            destination_types = []
+
+        is_restaurant = shortlist_type == "restaurant" or any(str(t).lower() == "restaurant" for t in destination_types)
+        shortlist_type = "restaurant" if is_restaurant else "destination"
+        item_type = "dining" if is_restaurant else "activity"
+        title = ("Restaurant: " if is_restaurant else "Destination: ") + entry.name
+        location_name = entry.name
+        location_address = entry.address
+        details.update({
+            "place_id": entry.place_id,
+            "types": destination_types,
+            "rating": entry.rating,
+            "photo_url": entry.photo_url,
+            "photo_reference": entry.photo_reference,
+        })
+
+    elif shortlist_type == "hotel":
+        entry = (
+            db.query(models.GroupShortlistHotel)
+            .filter(
+                models.GroupShortlistHotel.group_id == group_id,
+                models.GroupShortlistHotel.place_id == reference,
+            )
+            .first()
+        )
+        if not entry:
+            raise HTTPException(status_code=404, detail="Shortlisted hotel not found")
+
+        item_type = "accommodation"
+        title = f"Hotel: {entry.name}"
+        location_name = entry.name
+        location_address = entry.address
+        if resolved_end is None and entry.nights:
+            resolved_end = resolved_start + timedelta(days=max(entry.nights, 1))
+        details.update({
+            "place_id": entry.place_id,
+            "rating": entry.rating,
+            "price_per_night": entry.price_per_night,
+            "total_price": entry.total_price,
+            "currency": entry.currency,
+            "booking_url": entry.booking_url,
+            "photo_url": entry.photo_url,
+            "photo_reference": entry.photo_reference,
+        })
+
+    elif shortlist_type == "flight":
+        entry = (
+            db.query(models.GroupShortlistFlight)
+            .filter(
+                models.GroupShortlistFlight.group_id == group_id,
+                models.GroupShortlistFlight.flight_offer_id == reference,
+            )
+            .first()
+        )
+        if not entry:
+            raise HTTPException(status_code=404, detail="Shortlisted flight not found")
+
+        item_type = "flight"
+        title = f"Flight: {entry.airline} {entry.departure_airport} -> {entry.arrival_airport}"
+        location_name = entry.departure_airport
+        location_address = f"Arrive at {entry.arrival_airport}"
+
+        dep_parts = _coerce_hhmm(entry.departure_time)
+        arr_parts = _coerce_hhmm(entry.arrival_time)
+        if dep_parts:
+            resolved_start = resolved_start.replace(hour=dep_parts[0], minute=dep_parts[1], second=0, microsecond=0)
+        if arr_parts:
+            candidate_end = resolved_start.replace(hour=arr_parts[0], minute=arr_parts[1], second=0, microsecond=0)
+            if candidate_end <= resolved_start:
+                candidate_end = candidate_end + timedelta(days=1)
+            resolved_end = resolved_end or candidate_end
+        elif resolved_end is None:
+            resolved_end = resolved_start + timedelta(hours=3)
+
+        details.update({
+            "flight_offer_id": entry.flight_offer_id,
+            "airline": entry.airline,
+            "price": entry.price,
+            "currency": entry.currency,
+            "duration": entry.duration,
+            "stops": entry.stops,
+            "departure_airport": entry.departure_airport,
+            "arrival_airport": entry.arrival_airport,
+            "cabin_class": entry.cabin_class,
+            "emissions_kg": entry.emissions_kg,
+        })
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported shortlist type")
+
+    if resolved_end is not None and resolved_end < resolved_start:
+        raise HTTPException(status_code=400, detail="End time cannot be before start time")
+
+    max_sort_order = db.query(func.max(models.ItineraryItem.sort_order)).filter(models.ItineraryItem.trip_plan_id == plan.id).scalar() or 0
+    itinerary_item = models.ItineraryItem(
+        trip_plan_id=plan.id,
+        item_type=item_type,
+        title=title,
+        sort_order=max_sort_order + 1 if max_sort_order > 0 else 0,
+        start_at=resolved_start,
+        end_at=resolved_end,
+        location_name=location_name,
+        location_address=location_address,
+        notes=notes,
+        source_kind=f"shortlist:{shortlist_type}",
+        source_reference=reference,
+        details_json=json.dumps(details),
+        created_by=current_user.id,
+    )
+    db.add(itinerary_item)
+    db.commit()
+    db.refresh(itinerary_item)
+
+    warnings = _build_time_conflict_warnings(plan.id, itinerary_item.id, itinerary_item.start_at, itinerary_item.end_at, db)
+    payload = _build_itinerary_payload(group, plan, db, warnings)
+    payload["item"] = serialize_itinerary_item(itinerary_item)
+    payload["message"] = "Shortlisted item added to itinerary"
+    return payload
+
+
 @app.patch("/groups/{group_id}/itinerary/notes", response_model=dict)
 def update_itinerary_shared_notes(
     group_id: int,
@@ -4451,3 +4657,143 @@ def get_user_bookings(request: Request, db: Session = Depends(get_db)):
         bookings=bookings,
         total_count=len(bookings)
     )
+
+
+@app.post("/bookings/{booking_id}/shortlist-to-group", response_model=dict)
+def shortlist_booking_to_group(
+    booking_id: int,
+    body: BookingShortlistToGroupIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Add a previously booked flight into a group's flight shortlist."""
+    current_user = get_current_user_info(request, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="User profile not found")
+
+    booking = (
+        db.query(models.Booking)
+        .filter(
+            models.Booking.id == booking_id,
+            models.Booking.profile_id == profile.id,
+        )
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    _group, _membership = _get_group_and_membership(body.group_id, current_user.id, db)
+
+    offer_ref = (booking.offer_id or booking.order_id or "").strip()
+    if not offer_ref:
+        raise HTTPException(status_code=400, detail="Booking does not have a valid offer reference")
+
+    existing = (
+        db.query(models.GroupShortlistFlight)
+        .filter(
+            models.GroupShortlistFlight.group_id == body.group_id,
+            models.GroupShortlistFlight.flight_offer_id == offer_ref,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="This booking is already shortlisted for the selected group")
+
+    try:
+        slices = json.loads(booking.slices_json or "[]")
+        if not isinstance(slices, list):
+            slices = []
+    except Exception:
+        slices = []
+
+    segments: list[dict] = []
+    for slice_item in slices:
+        slice_segments = slice_item.get("segments") if isinstance(slice_item, dict) else None
+        if isinstance(slice_segments, list):
+            for segment in slice_segments:
+                if isinstance(segment, dict):
+                    segments.append(segment)
+
+    first_segment = segments[0] if segments else {}
+    last_segment = segments[-1] if segments else {}
+    operating = first_segment.get("operating_carrier") if isinstance(first_segment.get("operating_carrier"), dict) else {}
+    marketing = first_segment.get("marketing_carrier") if isinstance(first_segment.get("marketing_carrier"), dict) else {}
+
+    airline = (
+        operating.get("name")
+        or marketing.get("name")
+        or "Booked Flight"
+    )
+    logo_url = (
+        operating.get("logo_symbol_url")
+        or operating.get("logo_lockup_url")
+        or marketing.get("logo_symbol_url")
+        or marketing.get("logo_lockup_url")
+    )
+
+    departure_airport = (
+        (first_segment.get("origin") or {}).get("iata_code")
+        if isinstance(first_segment, dict) else None
+    ) or "N/A"
+    arrival_airport = (
+        (last_segment.get("destination") or {}).get("iata_code")
+        if isinstance(last_segment, dict) else None
+    ) or "N/A"
+
+    departure_dt = None
+    arrival_dt = None
+    try:
+        departing_at = first_segment.get("departing_at") if isinstance(first_segment, dict) else None
+        arriving_at = last_segment.get("arriving_at") if isinstance(last_segment, dict) else None
+        if departing_at:
+            departure_dt = datetime.fromisoformat(str(departing_at).replace("Z", "+00:00"))
+        if arriving_at:
+            arrival_dt = datetime.fromisoformat(str(arriving_at).replace("Z", "+00:00"))
+    except Exception:
+        departure_dt = None
+        arrival_dt = None
+
+    departure_time = departure_dt.strftime("%H:%M") if departure_dt else None
+    arrival_time = arrival_dt.strftime("%H:%M") if arrival_dt else None
+    duration = _duration_label(departure_dt, arrival_dt) if departure_dt else "N/A"
+
+    first_passengers = first_segment.get("passengers") if isinstance(first_segment, dict) else None
+    if not isinstance(first_passengers, list):
+        first_passengers = []
+    first_passenger = first_passengers[0] if first_passengers else {}
+    cabin_class = first_passenger.get("cabin_class") if isinstance(first_passenger, dict) else None
+    baggages = first_passenger.get("baggages") if isinstance(first_passenger, dict) else []
+    if not isinstance(baggages, list):
+        baggages = []
+
+    shortlist_item = models.GroupShortlistFlight(
+        group_id=body.group_id,
+        flight_offer_id=offer_ref,
+        airline=str(airline),
+        logo_url=str(logo_url) if logo_url else None,
+        price=float(booking.total_amount or 0),
+        currency=booking.currency or "USD",
+        duration=duration,
+        stops=max(0, len(segments) - 1),
+        departure_time=departure_time,
+        arrival_time=arrival_time,
+        departure_airport=departure_airport,
+        arrival_airport=arrival_airport,
+        cabin_class=str(cabin_class) if cabin_class else None,
+        baggages_json=json.dumps(baggages),
+        slices_json=json.dumps(slices),
+        emissions_kg=None,
+        added_by=current_user.id,
+    )
+
+    db.add(shortlist_item)
+    db.commit()
+    db.refresh(shortlist_item)
+
+    return {
+        "ok": True,
+        "message": "Booked flight added to group shortlist",
+        "item": serialize_shortlist_flight_item(shortlist_item),
+    }

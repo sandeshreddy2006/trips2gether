@@ -801,6 +801,14 @@ class ItinerarySharedNotesIn(BaseModel):
     shared_notes: Optional[str] = None
 
 
+class ItineraryShortlistImportIn(BaseModel):
+    shortlist_type: Literal["destination", "hotel", "flight", "restaurant"]
+    shortlist_reference: str = Field(min_length=1)
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
 class ItineraryItemOut(BaseModel):
     id: int
     trip_plan_id: int
@@ -832,4 +840,8 @@ class ItineraryTimelineOut(BaseModel):
     is_empty: bool = False
     group_name: Optional[str] = None
     group_status: Optional[str] = None
+
+
+class BookingShortlistToGroupIn(BaseModel):
+    group_id: int
 
