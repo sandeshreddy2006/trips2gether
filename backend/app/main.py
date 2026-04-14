@@ -14,6 +14,7 @@ from .schemas import (
     LoginIn,
     RegisterIn,
     GoogleOAuthIn,
+    AuthLocationUpdateIn,
     ForgotPasswordIn,
     VerifyResetCodeIn,
     ResetPasswordIn,
@@ -1241,6 +1242,37 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
         "id": user.id,
         "email": user.email,
         "name": user.name,
+        "location": user.location,
+        "latitude": user.latitude,
+        "longitude": user.longitude,
+    }
+
+
+@app.patch("/auth/location", response_model=dict)
+def update_auth_location(body: AuthLocationUpdateIn, request: Request, db: Session = Depends(get_db)):
+    """Update authenticated user's location data without blocking login."""
+    user = get_current_user_info(request, db)
+
+    has_payload = (
+        body.latitude is not None
+        or body.longitude is not None
+        or (body.location is not None and body.location.strip() != "")
+    )
+    if not has_payload:
+        raise HTTPException(status_code=400, detail="No location fields provided")
+
+    if body.latitude is not None:
+        user.latitude = body.latitude
+    if body.longitude is not None:
+        user.longitude = body.longitude
+    if body.location is not None:
+        user.location = body.location.strip() or None
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "ok": True,
         "location": user.location,
         "latitude": user.latitude,
         "longitude": user.longitude,

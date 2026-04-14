@@ -1,5 +1,5 @@
 'use client';
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 export type User = {
@@ -37,6 +37,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         longitude: null,
         location: null,
     });
+    const lastSyncedLocationRef = useRef<string | null>(null);
 
     // Get user's geolocation on app load
     useEffect(() => {
@@ -123,6 +124,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         checkAuthStatus();
     }, []);
+
+    // Sync location to backend after login without blocking auth flow.
+    useEffect(() => {
+        if (!isAuthenticated) return;
+
+        const hasLocationData =
+            locationData.latitude !== null ||
+            locationData.longitude !== null ||
+            (locationData.location !== null && locationData.location.trim() !== "");
+
+        if (!hasLocationData) return;
+
+        const signature = JSON.stringify({
+            latitude: locationData.latitude,
+            longitude: locationData.longitude,
+            location: locationData.location,
+        });
+
+        if (lastSyncedLocationRef.current === signature) return;
+        lastSyncedLocationRef.current = signature;
+
+        void fetch('/api/auth/location', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                latitude: locationData.latitude,
+                longitude: locationData.longitude,
+                location: locationData.location,
+            }),
+        }).catch((err) => {
+            console.log('Background location sync failed:', err);
+        });
+    }, [isAuthenticated, locationData]);
 
     useEffect(() => {
         if (!isAuthenticated || !user || typeof window === "undefined") {

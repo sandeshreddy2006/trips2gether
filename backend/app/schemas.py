@@ -27,6 +27,12 @@ class GoogleOAuthIn(BaseModel):
     location: str | None = None
     rememberMe: bool = False
 
+
+class AuthLocationUpdateIn(BaseModel):
+    latitude: float | None = None
+    longitude: float | None = None
+    location: str | None = None
+
 class UserOut(BaseModel):
     id: int
     email: str
