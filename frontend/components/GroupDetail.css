@@ -311,28 +311,6 @@
     flex-shrink: 0;
 }
 
-.group-shortlist-itinerary-btn {
-    padding: 0.35rem 0.7rem;
-    border: 1px solid #2d7a4a;
-    border-radius: 6px;
-    background: white;
-    color: #2d7a4a;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.group-shortlist-itinerary-btn:hover:not(:disabled) {
-    background: #2d7a4a;
-    color: white;
-}
-
-.group-shortlist-itinerary-btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-}
-
 .group-shortlist-remove-btn:hover {
     background: #d32f2f;
     color: white;

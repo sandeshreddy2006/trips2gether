@@ -168,14 +168,6 @@ def _collect_group_context(group_id: int, db: Session) -> dict:
         .all()
     )
 
-    itinerary_items = []
-    if group.trip_plan:
-        itinerary_items = (
-            db.query(models.ItineraryItem)
-            .filter(models.ItineraryItem.trip_plan_id == group.trip_plan.id)
-            .all()
-        )
-
     return {
         "group_name": group.name,
         "group_status": group.status,
@@ -210,14 +202,6 @@ def _collect_group_context(group_id: int, db: Session) -> dict:
             }
             for h in hotels
         ],
-        "itinerary_items": [
-            {
-                "title": item.title,
-                "type": item.item_type,
-                "start_at": item.start_at.isoformat(),
-            }
-            for item in itinerary_items
-        ],
     }
 
 
@@ -233,8 +217,7 @@ Consider:
 2. Member preference alignment (budget ranges, travel styles, dietary needs)
 3. Poll outcomes and unresolved decisions
 4. Shortlisted options diversity and conflicts
-5. Itinerary completeness and realism
-6. Overall planning progress
+5. Overall planning progress
 
 Return ONLY a valid JSON object with this exact structure (no markdown, no extra text):
 {{
@@ -253,7 +236,7 @@ Score guidelines:
 
 Calibration (important):
 - Be moderately optimistic by default; avoid overly harsh scoring for early-stage plans.
-- Lack of full profile data or missing itinerary details alone should not force very low scores.
+- Lack of full profile data alone should not force very low scores.
 - Reserve scores below 40 for clear, severe conflicts (hard budget clashes, contradictory decisions, or complete planning deadlock)."""
 
 

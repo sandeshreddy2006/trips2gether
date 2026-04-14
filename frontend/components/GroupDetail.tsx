@@ -123,7 +123,6 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [saving, setSaving] = useState(false);
     const [tripScore, setTripScore] = useState<TripSuccessScore | null>(null);
     const [scoreLoading, setScoreLoading] = useState(false);
-    const [addingToItinerary, setAddingToItinerary] = useState<string | null>(null);
     const isOwner = group?.role === "owner";
 
     const memberUserIds = new Set(members.map((m) => m.user_id));
@@ -264,37 +263,6 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             setHotelShortlist((prev) => prev.filter((item) => item.place_id !== placeId));
         } catch (err) {
             alert(err instanceof Error ? err.message : "Failed to remove hotel from shortlist");
-        }
-    }
-
-    async function handleAddShortlistToItinerary(
-        shortlistType: "destination" | "restaurant" | "hotel" | "flight",
-        shortlistReference: string,
-        label: string,
-    ) {
-        const actionKey = `${shortlistType}:${shortlistReference}`;
-        setAddingToItinerary(actionKey);
-        try {
-            const res = await fetch(`/api/groups/${groupId}/itinerary/from-shortlist`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({
-                    shortlist_type: shortlistType,
-                    shortlist_reference: shortlistReference,
-                }),
-            });
-
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                throw new Error(data.detail || "Failed to add shortlist item to itinerary");
-            }
-
-            alert(`${label} added to itinerary.`);
-        } catch (err) {
-            alert(err instanceof Error ? err.message : "Failed to add shortlist item to itinerary");
-        } finally {
-            setAddingToItinerary(null);
         }
     }
 
@@ -601,13 +569,6 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                 </div>
                                 <div className="group-shortlist-actions">
                                     <button
-                                        className="group-shortlist-itinerary-btn"
-                                        onClick={() => handleAddShortlistToItinerary("hotel", item.place_id, item.name)}
-                                        disabled={addingToItinerary === `hotel:${item.place_id}`}
-                                    >
-                                        {addingToItinerary === `hotel:${item.place_id}` ? "Adding..." : "Add to Itinerary"}
-                                    </button>
-                                    <button
                                         className="group-shortlist-remove-btn"
                                         onClick={() => handleRemoveShortlistedHotel(item.place_id)}
                                     >
@@ -648,13 +609,6 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                 </div>
                                 <div className="group-shortlist-actions">
                                     <button
-                                        className="group-shortlist-itinerary-btn"
-                                        onClick={() => handleAddShortlistToItinerary("destination", item.place_id, item.name)}
-                                        disabled={addingToItinerary === `destination:${item.place_id}`}
-                                    >
-                                        {addingToItinerary === `destination:${item.place_id}` ? "Adding..." : "Add to Itinerary"}
-                                    </button>
-                                    <button
                                         className="group-shortlist-remove-btn"
                                         onClick={() => handleRemoveShortlistedDestination(item.place_id)}
                                     >
@@ -691,13 +645,6 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                     </div>
                                 </div>
                                 <div className="group-shortlist-actions">
-                                    <button
-                                        className="group-shortlist-itinerary-btn"
-                                        onClick={() => handleAddShortlistToItinerary("restaurant", item.place_id, item.name)}
-                                        disabled={addingToItinerary === `restaurant:${item.place_id}`}
-                                    >
-                                        {addingToItinerary === `restaurant:${item.place_id}` ? "Adding..." : "Add to Itinerary"}
-                                    </button>
                                     <button
                                         className="group-shortlist-remove-btn"
                                         onClick={() => handleRemoveShortlistedDestination(item.place_id)}
@@ -737,13 +684,6 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                     </div>
                                 </div>
                                 <div className="group-shortlist-actions">
-                                    <button
-                                        className="group-shortlist-itinerary-btn"
-                                        onClick={() => handleAddShortlistToItinerary("flight", item.flight_offer_id, item.airline)}
-                                        disabled={addingToItinerary === `flight:${item.flight_offer_id}`}
-                                    >
-                                        {addingToItinerary === `flight:${item.flight_offer_id}` ? "Adding..." : "Add to Itinerary"}
-                                    </button>
                                     <button
                                         className="group-shortlist-remove-btn"
                                         onClick={() => handleRemoveShortlistedFlight(item.flight_offer_id)}
