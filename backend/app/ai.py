@@ -13,6 +13,19 @@ CLAUDE_MODEL_FALLBACKS = [
     "claude-3-5-sonnet-latest",
     "claude-3-5-haiku-latest",
 ]
+TRIP_SCORE_LENIENCY_BONUS = max(0, min(15, int(os.getenv("TRIP_SCORE_LENIENCY_BONUS", "6"))))
+
+
+def _label_for_score(score: int) -> str:
+    if score >= 85:
+        return "Excellent"
+    if score >= 70:
+        return "Good"
+    if score >= 50:
+        return "Needs Work"
+    if score >= 30:
+        return "At Risk"
+    return "Unlikely"
 
 
 def _extract_json_object(raw_text: str) -> dict:
@@ -236,7 +249,12 @@ Score guidelines:
 - 70-84: Good — mostly aligned with minor issues
 - 50-69: Needs Work — notable conflicts or gaps in planning
 - 30-49: At Risk — significant disagreements or missing critical decisions
-- 0-29: Unlikely — major conflicts, no progress, incompatible preferences"""
+- 0-29: Unlikely — major conflicts, no progress, incompatible preferences
+
+Calibration (important):
+- Be moderately optimistic by default; avoid overly harsh scoring for early-stage plans.
+- Lack of full profile data or missing itinerary details alone should not force very low scores.
+- Reserve scores below 40 for clear, severe conflicts (hard budget clashes, contradictory decisions, or complete planning deadlock)."""
 
 
 def get_trip_success_score(group_id: int, db: Session) -> dict:
@@ -318,9 +336,9 @@ def get_trip_success_score(group_id: int, db: Session) -> dict:
         score = int(result.get("score", 0))
         score = max(0, min(100, score))
 
-        label = result.get("label", "Unavailable")
-        if label not in {"Excellent", "Good", "Needs Work", "At Risk", "Unlikely"}:
-            label = "Good"
+        # Apply a small, configurable leniency bonus to avoid overly pessimistic outputs.
+        score = min(100, score + TRIP_SCORE_LENIENCY_BONUS)
+        label = _label_for_score(score)
 
         reasons = result.get("reasons", [])
         if not isinstance(reasons, list):
