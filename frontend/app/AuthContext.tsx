@@ -39,6 +39,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
     const lastSyncedLocationRef = useRef<string | null>(null);
     const lastGeocodeCoordsRef = useRef<string | null>(null);
+    const ipFallbackAttemptedRef = useRef(false);
+    const geolocationErrorCountRef = useRef(0);
 
     // Get user's geolocation on app load
     useEffect(() => {
@@ -48,6 +50,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         let cancelled = false;
         let watchId: number | null = null;
+
+        const tryIpLocationFallback = async () => {
+            if (cancelled || ipFallbackAttemptedRef.current) {
+                return;
+            }
+            ipFallbackAttemptedRef.current = true;
+
+            try {
+                const response = await fetch("https://ipapi.co/json/");
+                if (!response.ok) {
+                    console.log("IP fallback HTTP error:", response.status, response.statusText);
+                    return;
+                }
+
+                const data = await response.json();
+                const latitude = typeof data.latitude === "number" ? data.latitude : null;
+                const longitude = typeof data.longitude === "number" ? data.longitude : null;
+                const parts = [data.city, data.region, data.country_name].filter(Boolean);
+                const locationLabel = parts.length > 0 ? parts.join(", ") : null;
+
+                if (!cancelled) {
+                    setLocationData((prev) => ({
+                        latitude: prev.latitude ?? latitude,
+                        longitude: prev.longitude ?? longitude,
+                        location: prev.location ?? locationLabel,
+                    }));
+                }
+            } catch (err) {
+                console.log("IP fallback location failed:", err);
+            }
+        };
 
         const reverseGeocode = async (latitude: number, longitude: number) => {
             const coordsKey = `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
@@ -100,9 +133,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         };
 
         const onLocationError = (error: GeolocationPositionError) => {
+            geolocationErrorCountRef.current += 1;
             const codeLabel =
                 error.code === 1 ? "PERMISSION_DENIED" : error.code === 2 ? "POSITION_UNAVAILABLE" : "TIMEOUT";
-            console.log("Location permission denied or unavailable:", codeLabel, error.message);
+            if (geolocationErrorCountRef.current <= 2) {
+                console.log("Location permission denied or unavailable:", codeLabel, error.message);
+            }
+
+            void tryIpLocationFallback();
+
+            if (watchId !== null && (error.code === 1 || geolocationErrorCountRef.current >= 3)) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
         };
 
         // First fast attempt.
