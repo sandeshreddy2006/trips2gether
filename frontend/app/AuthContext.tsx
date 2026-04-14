@@ -60,14 +60,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                             const response = await fetch(
                                 `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
                             );
-                            if (response.ok) {
+                            if (!response.ok) {
+                                console.log("Geocoding HTTP error:", response.status, response.statusText);
+                            } else {
                                 const data = await response.json();
-                                if (data.results && data.results.length > 0) {
+                                if (data.status === "OK" && data.results && data.results.length > 0) {
                                     const address = data.results[0].formatted_address;
                                     setLocationData((prev) => ({
                                         ...prev,
                                         location: address,
                                     }));
+                                } else {
+                                    console.log("Geocoding API error:", data.status, data.error_message || "Unknown error");
                                 }
                             }
                         }
