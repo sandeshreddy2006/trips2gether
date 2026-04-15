@@ -60,7 +60,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             try {
                 const response = await fetch("https://ipapi.co/json/");
                 if (!response.ok) {
-                    console.log("IP fallback HTTP error:", response.status, response.statusText);
                     return;
                 }
 
@@ -78,7 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     }));
                 }
             } catch (err) {
-                console.log("IP fallback location failed:", err);
+                // Silently fail IP fallback
             }
         };
 
@@ -94,14 +93,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     `/api/geo/reverse-geocode?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`
                 );
                 if (!response.ok) {
-                    let detail = "Unknown error";
-                    try {
-                        const errorData = await response.json();
-                        detail = errorData.detail || errorData.message || detail;
-                    } catch {
-                        // ignore
-                    }
-                    console.log("Geocoding HTTP error:", response.status, detail);
                     return;
                 }
 
@@ -114,11 +105,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                             location: address,
                         }));
                     }
-                } else {
-                    console.log("Geocoding API error:", data.message || "No location returned");
                 }
             } catch (err) {
-                console.log("Could not get location name:", err);
+                // Silently fail reverse geocoding
             }
         };
 
@@ -135,11 +124,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         const onLocationError = (error: GeolocationPositionError) => {
             geolocationErrorCountRef.current += 1;
-            const codeLabel =
-                error.code === 1 ? "PERMISSION_DENIED" : error.code === 2 ? "POSITION_UNAVAILABLE" : "TIMEOUT";
-            if (geolocationErrorCountRef.current <= 2) {
-                console.log("Location permission denied or unavailable:", codeLabel, error.message);
-            }
 
             void tryIpLocationFallback();
 
@@ -191,7 +175,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         userData.avatar_url = profileData.avatar_url;
                     }
                 } catch (err) {
-                    console.log("Could not load profile avatar:", err);
+                    // Silently fail avatar load
                 }
 
                 setUser(userData);
@@ -243,8 +227,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 longitude: locationData.longitude,
                 location: locationData.location,
             }),
-        }).catch((err) => {
-            console.log('Background location sync failed:', err);
+        }).catch(() => {
+            // Silently fail background sync
         });
     }, [isAuthenticated, locationData]);
 
