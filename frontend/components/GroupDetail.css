@@ -111,8 +111,8 @@
 
 .group-overview-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-    gap: 1.1rem;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 1.5rem;
     align-items: start;
 }
 
@@ -471,11 +471,18 @@
     font-size: 1rem;
     color: #2d7a4a;
     display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .group-member-email {
     font-size: 0.83rem;
     color: #2d7a4a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
 }
 
 .group-member-role {

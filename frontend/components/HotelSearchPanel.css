@@ -74,6 +74,8 @@
     color: white;
     font-weight: 700;
     cursor: pointer;
+    grid-column: 1 / -1;
+    width: 100%;
 }
 
 .hotel-submit-btn:disabled {
