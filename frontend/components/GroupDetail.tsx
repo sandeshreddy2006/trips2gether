@@ -5,6 +5,8 @@ import "./GroupDetail.css";
 import HotelSearchPanel from "./HotelSearchPanel";
 import CostSummaryCard from "./CostSummaryCard";
 import CostBreakdownTable from "./CostBreakdownTable";
+import MemberCostBreakdown from "./MemberCostBreakdown";
+import { useAuth } from "@/app/AuthContext";
 
 type Member = {
     id: number;
@@ -135,8 +137,11 @@ function formatStops(stops: number): string {
     return `${stops} stops`;
 }
 
+const FLIGHT_LOGO_FALLBACK = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='90' viewBox='0 0 120 90'><rect width='120' height='90' rx='12' fill='%23eef4f0'/><text x='60' y='53' text-anchor='middle' font-size='26' fill='%232e6b55'>✈</text></svg>";
+
 export default function GroupDetail({ groupId }: { groupId: number }) {
     const router = useRouter();
+    const { user } = useAuth();
     const [group, setGroup] = useState<GroupInfo | null>(null);
     const [members, setMembers] = useState<Member[]>([]);
     const [friends, setFriends] = useState<Friend[]>([]);
@@ -161,12 +166,20 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const invitableFriends = friends.filter((f) => !memberUserIds.has(f.id));
     const destinationShortlist = shortlist.filter((item) => !item.types.some((type) => type.toLowerCase() === "restaurant"));
     const restaurantShortlist = shortlist.filter((item) => item.types.some((type) => type.toLowerCase() === "restaurant"));
+    const heroItem = destinationShortlist[0] || restaurantShortlist[0] || hotelShortlist[0] || shortlist[0] || null;
+    const heroImage = heroItem ? getShortlistImage(heroItem, "") : "";
+    const heroUsesFlightCollage = !heroImage && flightShortlist.length > 0;
+    const heroFlightLogos = flightShortlist.slice(0, 4);
+    const heroBackgroundImage = heroImage || (heroUsesFlightCollage ? "" : "/trip-marseille.jpg");
 
-    function getShortlistImage(item: { photo_reference: string | null; photo_url: string | null }): string {
+    function getShortlistImage(
+        item: { photo_reference: string | null; photo_url: string | null },
+        fallback: string = "/trip-marseille.jpg",
+    ): string {
         if (item.photo_reference) {
             return `/api/destinations/image?photo_reference=${encodeURIComponent(item.photo_reference)}&width=640&height=420`;
         }
-        return item.photo_url || "/trip-marseille.jpg";
+        return item.photo_url || fallback;
     }
 
     async function fetchTripScore() {
@@ -220,6 +233,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 throw new Error(data.detail || "Failed to remove member");
             }
             setMembers((prev) => prev.filter((m) => m.user_id !== userId));
+            await fetchCostSummary();
         } catch (err) {
             alert(err instanceof Error ? err.message : "Failed to remove member");
         }
@@ -257,6 +271,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 setMembers(data.members || []);
             }
             setSelectedIds(new Set());
+            await fetchCostSummary();
         } catch (err) {
             alert(err instanceof Error ? err.message : "Failed to invite members");
         } finally {
@@ -276,6 +291,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 throw new Error(data.detail || "Failed to remove destination from shortlist");
             }
             setShortlist((prev) => prev.filter((item) => item.place_id !== placeId));
+            await fetchCostSummary();
         } catch (err) {
             alert(err instanceof Error ? err.message : "Failed to remove destination from shortlist");
         }
@@ -293,6 +309,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 throw new Error(data.detail || "Failed to remove flight from shortlist");
             }
             setFlightShortlist((prev) => prev.filter((item) => item.flight_offer_id !== flightOfferId));
+            await fetchCostSummary();
         } catch (err) {
             alert(err instanceof Error ? err.message : "Failed to remove flight from shortlist");
         }
@@ -310,6 +327,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 throw new Error(data.detail || "Failed to remove hotel from shortlist");
             }
             setHotelShortlist((prev) => prev.filter((item) => item.place_id !== placeId));
+            await fetchCostSummary();
         } catch (err) {
             alert(err instanceof Error ? err.message : "Failed to remove hotel from shortlist");
         }
@@ -321,6 +339,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             if (!res.ok) return;
             const data = await res.json().catch(() => ({ items: [] }));
             setHotelShortlist(data.items || []);
+            await fetchCostSummary();
         } catch {
             // Keep UI interactive even if refresh fails.
         }
@@ -530,58 +549,90 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 )}
             </div>
 
-            <div className="group-members-section">
-                <h2 className="group-members-title">
-                    Members ({members.length})
-                </h2>
-                <div className="group-members-list">
-                    {members.map((m) => (
-                        <div key={m.id} className="group-member-row">
-                            <div className="group-member-info">
-                                <img src={m.avatar_url || "/UserIcon.svg"} alt={m.name} className="group-member-avatar" />
-                                <div>
-                                    <span className="group-member-name">{m.name}</span>
-                                    <span className="group-member-email">{m.email}</span>
-                                </div>
+            <div
+                className="group-hero-banner"
+                style={heroBackgroundImage ? { backgroundImage: `url(${heroBackgroundImage})` } : undefined}
+            >
+                {heroUsesFlightCollage && (
+                    <div className="group-hero-flight-collage" aria-hidden="true">
+                        {heroFlightLogos.map((item) => (
+                            <div key={item.flight_offer_id} className="group-hero-flight-tile">
+                                <img
+                                    src={item.logo_url || FLIGHT_LOGO_FALLBACK}
+                                    alt=""
+                                    loading="lazy"
+                                    onError={(event) => {
+                                        event.currentTarget.src = FLIGHT_LOGO_FALLBACK;
+                                    }}
+                                />
                             </div>
-                            <div className="group-member-actions">
-                                {isOwner && m.role !== "owner" ? (
-                                    <>
-                                        <select
-                                            className="group-role-select"
-                                            value={m.role}
-                                            onChange={(e) => handleRoleChange(m.user_id, e.target.value)}
-                                        >
-                                            <option value="member">Member</option>
-                                            <option value="admin">Admin</option>
-                                            <option value="viewer">Viewer</option>
-                                        </select>
-                                        <button
-                                            className="group-remove-btn"
-                                            onClick={() => handleRemoveMember(m.user_id)}
-                                        >
-                                            Remove
-                                        </button>
-                                    </>
-                                ) : (
-                                    <span className={`group-member-role ${m.role === "owner" ? "role-owner" : ""}`}>
-                                        {m.role}
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
+                )}
+                <div className="group-hero-overlay">
+                    <h2>{group.name}</h2>
+                    <div className="group-hero-stats">
+                        <span>{flightShortlist.length} Flights</span>
+                        <span>{hotelShortlist.length} Hotels</span>
+                        <span>{destinationShortlist.length + restaurantShortlist.length} Activities</span>
+                    </div>
                 </div>
             </div>
 
-            <div className="group-shortlist-section">
-                <HotelSearchPanel
-                    title="Search Hotels For This Group"
-                    subtitle="Compare hotel options with travel dates, guest count, room count, and sorting."
-                    initialDestination={shortlist[0]?.name || ""}
-                    groupId={groupId}
-                    onShortlistChange={refreshHotelShortlist}
-                />
+            <div className="group-overview-grid">
+                <div className="group-members-section">
+                    <h2 className="group-members-title">
+                        Members ({members.length})
+                    </h2>
+                    <div className="group-members-list">
+                        {members.map((m) => (
+                            <div key={m.id} className="group-member-row">
+                                <div className="group-member-info">
+                                    <img src={m.avatar_url || "/UserIcon.svg"} alt={m.name} className="group-member-avatar" />
+                                    <div>
+                                        <span className="group-member-name">{m.name}</span>
+                                        <span className="group-member-email">{m.email}</span>
+                                    </div>
+                                </div>
+                                <div className="group-member-actions">
+                                    {isOwner && m.role !== "owner" ? (
+                                        <>
+                                            <select
+                                                className="group-role-select"
+                                                value={m.role}
+                                                onChange={(e) => handleRoleChange(m.user_id, e.target.value)}
+                                            >
+                                                <option value="member">Member</option>
+                                                <option value="admin">Admin</option>
+                                                <option value="viewer">Viewer</option>
+                                            </select>
+                                            <button
+                                                className="group-remove-btn"
+                                                onClick={() => handleRemoveMember(m.user_id)}
+                                            >
+                                                Remove
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <span className={`group-member-role ${m.role === "owner" ? "role-owner" : ""}`}>
+                                            {m.role}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="group-shortlist-section group-shortlist-section-compact">
+                    <HotelSearchPanel
+                        title="Search Hotels For This Group"
+                        subtitle="Compare hotel options with travel dates, guest count, room count, and sorting."
+                        initialDestination={shortlist[0]?.name || ""}
+                        groupId={groupId}
+                        onShortlistChange={refreshHotelShortlist}
+                    />
+                </div>
             </div>
 
             <div className="group-shortlist-section">
@@ -639,6 +690,12 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                     <div className="group-shortlist-list">
                         {destinationShortlist.map((item) => (
                             <div key={item.id} className="group-shortlist-card">
+                                <img
+                                    src={getShortlistImage(item)}
+                                    alt={item.name}
+                                    className="group-shortlist-thumb"
+                                    loading="lazy"
+                                />
                                 <div
                                     className="group-shortlist-main"
                                     onClick={() => router.push(`/destination/${item.place_id}`)}
@@ -716,6 +773,15 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                     <div className="group-shortlist-list">
                         {flightShortlist.map((item) => (
                             <div key={item.id} className="group-shortlist-card">
+                                <img
+                                    src={item.logo_url || FLIGHT_LOGO_FALLBACK}
+                                    alt={`${item.airline} logo`}
+                                    className="group-flight-logo"
+                                    loading="lazy"
+                                    onError={(event) => {
+                                        event.currentTarget.src = FLIGHT_LOGO_FALLBACK;
+                                    }}
+                                />
                                 <div className="group-shortlist-main group-flight-shortlist-main">
                                     <h3 className="group-shortlist-name">{item.airline}</h3>
                                     <p className="group-shortlist-address">
@@ -792,6 +858,13 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                         <CostBreakdownTable
                             items={costSummary.breakdown}
                             currency={costSummary.currency}
+                        />
+                    )}
+                    {costSummary.members_breakdown.length > 0 && (
+                        <MemberCostBreakdown
+                            members={costSummary.members_breakdown}
+                            currency={costSummary.currency}
+                            currentUserId={user?.id ?? null}
                         />
                     )}
                 </div>

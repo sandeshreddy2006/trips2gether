@@ -1,0 +1,94 @@
+.member-cost-breakdown-card {
+    margin-top: 1rem;
+    border: 1px solid #e3e7ef;
+    border-radius: 14px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.member-cost-breakdown-header {
+    padding: 1rem 1rem 0.75rem;
+    border-bottom: 1px solid #eef2f8;
+}
+
+.member-cost-breakdown-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1f2a3d;
+}
+
+.member-cost-breakdown-header p {
+    margin: 0.3rem 0 0;
+    font-size: 0.88rem;
+    color: #5f6b7e;
+}
+
+.member-cost-breakdown-table-wrap {
+    overflow-x: auto;
+}
+
+.member-cost-breakdown-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 520px;
+}
+
+.member-cost-breakdown-table th,
+.member-cost-breakdown-table td {
+    padding: 0.72rem 1rem;
+    border-bottom: 1px solid #eef2f8;
+    text-align: left;
+    font-size: 0.92rem;
+}
+
+.member-cost-breakdown-table th {
+    background: #f8faff;
+    color: #3b4657;
+    font-weight: 700;
+}
+
+.member-cost-breakdown-table tr:last-child td {
+    border-bottom: none;
+}
+
+.member-cost-breakdown-table .member-name {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-weight: 600;
+    color: #1f2a3d;
+}
+
+.member-you-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.16rem 0.48rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #1f6a43;
+    background: #e7f7ee;
+    border: 1px solid #bfe7cf;
+}
+
+.member-cost-breakdown-table .member-email {
+    color: #5f6b7e;
+}
+
+.member-cost-breakdown-table .share-column,
+.member-cost-breakdown-table .member-share {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.member-cost-breakdown-table .member-share {
+    font-weight: 700;
+    color: #2b3f66;
+}
+
+@media (max-width: 640px) {
+    .member-cost-breakdown-table {
+        min-width: 460px;
+    }
+}

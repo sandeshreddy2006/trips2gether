@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import "./ItineraryPlanner.css";
 import CostSummaryCard from "./CostSummaryCard";
 import CostBreakdownTable from "./CostBreakdownTable";
+import MemberCostBreakdown from "./MemberCostBreakdown";
+import { useAuth } from "@/app/AuthContext";
 
 type ItineraryPlan = {
     id: number;
@@ -419,6 +421,7 @@ type WarningModalState = {
 
 export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     const router = useRouter();
+    const { user } = useAuth();
     const searchParams = useSearchParams();
     const historyIdParam = searchParams.get("historyId");
     const parsedHistoryId = historyIdParam ? Number(historyIdParam) : null;
@@ -491,6 +494,24 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             });
     }, [items]);
 
+    const fetchCostSummary = async () => {
+        if (isArchivedSnapshotView || !groupId) {
+            return;
+        }
+
+        try {
+            const costRes = await fetch(`/api/groups/${groupId}/cost-summary`, {
+                credentials: "include",
+            });
+            if (costRes.ok) {
+                const costData = await costRes.json();
+                setCostSummary(costData as CostSummary);
+            }
+        } catch (err) {
+            console.error("Error fetching cost summary:", err);
+        }
+    };
+
     const refreshItinerary = async () => {
         const endpoint = isArchivedSnapshotView
             ? `/api/itinerary/history/${historyId}`
@@ -508,20 +529,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
         setResponse(data as ItineraryResponse);
         setSharedNotesDraft((data as ItineraryResponse).trip_plan.shared_notes || "");
 
-        // Fetch cost summary after itinerary is loaded
-        if (!isArchivedSnapshotView && groupId) {
-            try {
-                const costRes = await fetch(`/api/groups/${groupId}/cost-summary`, {
-                    credentials: "include",
-                });
-                if (costRes.ok) {
-                    const costData = await costRes.json();
-                    setCostSummary(costData as CostSummary);
-                }
-            } catch (err) {
-                console.error("Error fetching cost summary:", err);
-            }
-        }
+        await fetchCostSummary();
     };
 
     useEffect(() => {
@@ -651,6 +659,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             setResponse(data as ItineraryResponse);
             setSharedNotesDraft((data as ItineraryResponse).trip_plan.shared_notes || "");
             resetForm();
+            await fetchCostSummary();
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to start a new trip");
         } finally {
@@ -727,6 +736,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             } else {
                 setForm(createEmptyFormState());
             }
+            await fetchCostSummary();
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to save itinerary item");
         } finally {
@@ -771,6 +781,7 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             if (editingItemId === item.id) {
                 resetForm();
             }
+            await fetchCostSummary();
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to delete itinerary item");
         } finally {
@@ -1161,6 +1172,13 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                 <CostBreakdownTable
                                     items={costSummary.breakdown}
                                     currency={costSummary.currency}
+                                />
+                            )}
+                            {costSummary.members_breakdown.length > 0 && (
+                                <MemberCostBreakdown
+                                    members={costSummary.members_breakdown}
+                                    currency={costSummary.currency}
+                                    currentUserId={user?.id ?? null}
                                 />
                             )}
                         </div>
