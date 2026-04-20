@@ -451,6 +451,12 @@
     gap: 0.75rem;
     min-width: 0;
     flex: 1;
+    width: 100%;
+}
+
+.group-member-info>div {
+    min-width: 0;
+    flex: 1;
 }
 
 .group-member-avatar {
@@ -469,7 +475,7 @@
 
 .group-member-email {
     font-size: 0.83rem;
-    color: #888;
+    color: #2d7a4a;
 }
 
 .group-member-role {
@@ -583,6 +589,8 @@
     font-size: 0.85rem;
     background: white;
     cursor: pointer;
+    position: relative;
+    z-index: auto;
 }
 
 /* Danger zone */
