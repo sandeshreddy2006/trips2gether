@@ -898,3 +898,46 @@ class TripCostSummary(BaseModel):
     has_missing_costs: bool = False
     breakdown_details: str = ""  # Summary like "5 flights, 3 hotels, 2 activities"
 
+
+# -------------------------
+# Group Trip Payment Schemas
+# -------------------------
+
+class TripPaymentStripeIn(BaseModel):
+    """Initiate Stripe checkout for trip share payment."""
+    group_id: int
+
+class TripPaymentWalletIn(BaseModel):
+    """Pay trip share from wallet balance."""
+    group_id: int
+
+class TripPaymentConfirmIn(BaseModel):
+    """Confirm Stripe session after redirect."""
+    session_id: str
+
+class TripPaymentOut(BaseModel):
+    """Response after payment is processed."""
+    payment_id: int
+    group_id: int
+    amount: float
+    currency: str
+    payment_method: str
+    payment_status: str
+    wallet_balance: Optional[float] = None
+
+class TripPaymentCheckoutOut(BaseModel):
+    """Response with Stripe checkout URL."""
+    session_id: str
+    checkout_url: str
+    amount: float
+    currency: str
+
+class TripPaymentStatusOut(BaseModel):
+    """Payment status for a member in a group."""
+    user_id: int
+    member_name: str
+    amount_due: float
+    amount_paid: float
+    currency: str
+    payment_status: str  # unpaid | paid | partial
+

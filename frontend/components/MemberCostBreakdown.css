@@ -89,6 +89,108 @@
 
 @media (max-width: 640px) {
     .member-cost-breakdown-table {
-        min-width: 460px;
+        min-width: 560px;
     }
+}
+
+/* Paid / Owed column */
+.member-paid-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    white-space: nowrap;
+}
+
+.member-paid-amount {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #1a6b3c;
+}
+
+.member-remaining-amount {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #9a6700;
+}
+
+/* Payment badges */
+.payment-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.payment-paid {
+    color: #1a6b3c;
+    background: #e0f5e8;
+    border: 1px solid #b3e0c4;
+}
+
+.payment-unpaid {
+    color: #8b5e00;
+    background: #fff5dd;
+    border: 1px solid #f0d88a;
+}
+
+.payment-partial {
+    color: #7c4b00;
+    background: #ffefd0;
+    border: 1px solid #f0c860;
+}
+
+/* Pay section */
+.member-pay-section {
+    padding: 1rem;
+    border-top: 1px solid #eef2f8;
+    background: #f8faf9;
+}
+
+.member-pay-label {
+    margin: 0 0 0.6rem;
+    font-size: 0.92rem;
+    color: #1f2a3d;
+}
+
+.member-pay-error {
+    margin: 0 0 0.6rem;
+    font-size: 0.85rem;
+    color: #c62828;
+    background: #ffeaea;
+    padding: 0.45rem 0.7rem;
+    border-radius: 8px;
+}
+
+.member-pay-buttons {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.member-pay-btn {
+    padding: 0.55rem 1.2rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.member-pay-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.member-pay-wallet {
+    background: linear-gradient(140deg, #196f46, #2f9b69);
+    color: white;
+}
+
+.member-pay-stripe {
+    background: #635bff;
+    color: white;
 }

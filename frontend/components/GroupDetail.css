@@ -922,3 +922,36 @@
     margin: 1.5rem 0;
     border: 1px solid #e0e6ed;
 }
+
+/* Payment messages */
+.payment-message {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.75rem;
+    padding: 0.65rem 1rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.payment-message-success {
+    background: #e0f5e8;
+    color: #1a6b3c;
+    border: 1px solid #b3e0c4;
+}
+
+.payment-message-error {
+    background: #ffeaea;
+    color: #c62828;
+    border: 1px solid #f0b3b3;
+}
+
+.payment-message-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: inherit;
+    padding: 0 0.3rem;
+}

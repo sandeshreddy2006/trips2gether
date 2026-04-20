@@ -1179,6 +1179,8 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                     members={costSummary.members_breakdown}
                                     currency={costSummary.currency}
                                     currentUserId={user?.id ?? null}
+                                    groupId={groupId}
+                                    onPaymentComplete={fetchCostSummary}
                                 />
                             )}
                         </div>

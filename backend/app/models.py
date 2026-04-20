@@ -414,3 +414,23 @@ class WalletTopUp(Base):
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     profile = relationship("Profile", back_populates="wallet_topups")
+
+
+class GroupTripPayment(Base):
+    """Tracks per-member payment for their share of a group trip."""
+    __tablename__ = "group_trip_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    currency = Column(String(12), nullable=False, default="USD")
+    payment_method = Column(String(50), nullable=False)  # "stripe" or "wallet"
+    stripe_session_id = Column(String(255), nullable=True, unique=True, index=True)
+    payment_status = Column(String(50), nullable=False, default="pending")  # pending | paid | failed | cancelled
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_group_trip_payments_group_user", "group_id", "user_id"),
+    )

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import "./GroupDetail.css";
 import HotelSearchPanel from "./HotelSearchPanel";
 import CostSummaryCard from "./CostSummaryCard";
@@ -111,6 +111,8 @@ type MemberCostBreakdown = {
     member_name: string;
     member_email: string;
     individual_share: number;
+    amount_paid?: number;
+    payment_status?: string;
 };
 
 type CostSummary = {
@@ -141,6 +143,7 @@ const FLIGHT_LOGO_FALLBACK = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.
 
 export default function GroupDetail({ groupId }: { groupId: number }) {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user } = useAuth();
     const [group, setGroup] = useState<GroupInfo | null>(null);
     const [members, setMembers] = useState<Member[]>([]);
@@ -160,6 +163,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [scoreLoading, setScoreLoading] = useState(false);
     const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
     const [costLoading, setCostLoading] = useState(false);
+    const [paymentMessage, setPaymentMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const isOwner = group?.role === "owner";
 
     const memberUserIds = new Set(members.map((m) => m.user_id));
@@ -480,6 +484,41 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
         }
         fetchData();
     }, [groupId]);
+
+    // Handle Stripe payment redirect return
+    useEffect(() => {
+        const paymentStatus = searchParams.get("payment");
+        const sessionId = searchParams.get("session_id");
+
+        if (!paymentStatus) return;
+
+        if (paymentStatus === "success" && sessionId) {
+            (async () => {
+                try {
+                    const res = await fetch(`/api/groups/${groupId}/pay-stripe-confirm`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        credentials: "include",
+                        body: JSON.stringify({ session_id: sessionId }),
+                    });
+                    if (res.ok) {
+                        setPaymentMessage({ type: "success", text: "Payment successful! Your share has been paid." });
+                        fetchCostSummary();
+                    } else {
+                        const data = await res.json().catch(() => ({ detail: "Confirmation failed" }));
+                        setPaymentMessage({ type: "error", text: data.detail || "Payment confirmation failed." });
+                    }
+                } catch {
+                    setPaymentMessage({ type: "error", text: "Could not confirm payment. Please try again." });
+                }
+            })();
+        } else if (paymentStatus === "cancel") {
+            setPaymentMessage({ type: "error", text: "Payment was cancelled. No charges were made." });
+        }
+
+        // Clean URL params
+        router.replace(`/group/${groupId}`, { scroll: false });
+    }, [searchParams, groupId, router]);
 
     if (loading) return <div className="group-detail-loading">Loading...</div>;
     if (error) return <div className="group-detail-error">{error}</div>;
@@ -863,7 +902,18 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                             members={costSummary.members_breakdown}
                             currency={costSummary.currency}
                             currentUserId={user?.id ?? null}
+                            groupId={groupId}
+                            onPaymentComplete={() => {
+                                fetchCostSummary();
+                                setPaymentMessage({ type: "success", text: "Payment successful! Your share has been paid." });
+                            }}
                         />
+                    )}
+                    {paymentMessage && (
+                        <div className={`payment-message payment-message-${paymentMessage.type}`}>
+                            {paymentMessage.text}
+                            <button onClick={() => setPaymentMessage(null)} className="payment-message-close">×</button>
+                        </div>
                     )}
                 </div>
             )}

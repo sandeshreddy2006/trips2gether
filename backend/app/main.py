@@ -79,6 +79,12 @@ from .schemas import (
     BookingOut,
     BookingListOut,
     BookingShortlistToGroupIn,
+    TripPaymentStripeIn,
+    TripPaymentWalletIn,
+    TripPaymentConfirmIn,
+    TripPaymentOut,
+    TripPaymentCheckoutOut,
+    TripPaymentStatusOut,
 )
 from .auth import (
     hash_password,
@@ -3690,7 +3696,37 @@ def get_group_cost_summary(
     
     cost_data = calculate_trip_total_cost(group_id, db)
     members_breakdown = calculate_cost_per_member(group_id, db)
-    
+
+    # Attach payment status for each member
+    per_person = cost_data["per_person_cost"]
+    payments = (
+        db.query(models.GroupTripPayment)
+        .filter(
+            models.GroupTripPayment.group_id == group_id,
+            models.GroupTripPayment.payment_status == "paid",
+        )
+        .all()
+    )
+    paid_by_user: dict[int, float] = {}
+    for p in payments:
+        paid_by_user[p.user_id] = round(paid_by_user.get(p.user_id, 0) + p.amount, 2)
+
+    members_with_payment = []
+    for m in members_breakdown:
+        uid = m["member_id"]
+        amount_paid = paid_by_user.get(uid, 0.0)
+        if amount_paid >= per_person:
+            status = "paid"
+        elif amount_paid > 0:
+            status = "partial"
+        else:
+            status = "unpaid"
+        members_with_payment.append({
+            **m,
+            "amount_paid": amount_paid,
+            "payment_status": status,
+        })
+
     return {
         "total_cost": cost_data["total_cost"],
         "currency": cost_data["currency"],
@@ -3700,7 +3736,7 @@ def get_group_cost_summary(
         "items_missing_cost": cost_data["items_missing_cost"],
         "has_missing_costs": cost_data["has_missing_costs"],
         "breakdown": cost_data["items_breakdown"],
-        "members_breakdown": members_breakdown,
+        "members_breakdown": members_with_payment,
     }
 
 
@@ -4970,3 +5006,287 @@ def shortlist_booking_to_group(
         "message": "Booked flight added to group shortlist",
         "item": serialize_shortlist_flight_item(shortlist_item),
     }
+
+
+# =========================================================================
+# Trip Share Payment Endpoints
+# =========================================================================
+
+@app.post("/groups/{group_id}/pay-stripe", response_model=TripPaymentCheckoutOut)
+def create_trip_payment_stripe(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create a Stripe checkout session to pay the user's trip share."""
+    from .cost_calculator import calculate_trip_total_cost
+
+    current_user = get_current_user_info(request, db)
+    _get_group_and_membership(group_id, current_user.id, db)
+
+    cost_data = calculate_trip_total_cost(group_id, db)
+    per_person = cost_data["per_person_cost"]
+    if per_person <= 0:
+        raise HTTPException(status_code=400, detail="No cost to pay")
+
+    # Calculate already paid amount
+    already_paid = (
+        db.query(func.coalesce(func.sum(models.GroupTripPayment.amount), 0))
+        .filter(
+            models.GroupTripPayment.group_id == group_id,
+            models.GroupTripPayment.user_id == current_user.id,
+            models.GroupTripPayment.payment_status == "paid",
+        )
+        .scalar()
+    )
+    remaining = round(per_person - float(already_paid), 2)
+    if remaining <= 0:
+        raise HTTPException(status_code=400, detail="Your share is already fully paid")
+
+    stripe_api_key = os.getenv("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    stripe.api_key = stripe_api_key
+    frontend_base_url = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": cost_data["currency"].lower(),
+                        "product_data": {
+                            "name": f"Trip Share Payment – Group #{group_id}",
+                        },
+                        "unit_amount": int(round(remaining * 100)),
+                    },
+                    "quantity": 1,
+                }
+            ],
+            success_url=f"{frontend_base_url}/group/{group_id}?payment=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{frontend_base_url}/group/{group_id}?payment=cancel",
+            metadata={
+                "user_id": str(current_user.id),
+                "group_id": str(group_id),
+                "kind": "trip_share_payment",
+            },
+        )
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe checkout failed: {message}")
+
+    # Create pending payment record
+    payment = models.GroupTripPayment(
+        group_id=group_id,
+        user_id=current_user.id,
+        amount=remaining,
+        currency=cost_data["currency"],
+        payment_method="stripe",
+        stripe_session_id=session.id,
+        payment_status="pending",
+    )
+    db.add(payment)
+    db.commit()
+
+    return TripPaymentCheckoutOut(
+        session_id=session.id,
+        checkout_url=session.url,
+        amount=remaining,
+        currency=cost_data["currency"],
+    )
+
+
+@app.post("/groups/{group_id}/pay-stripe-confirm", response_model=TripPaymentOut)
+def confirm_trip_payment_stripe(
+    group_id: int,
+    body: TripPaymentConfirmIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Confirm Stripe checkout and mark payment as paid."""
+    current_user = get_current_user_info(request, db)
+    _get_group_and_membership(group_id, current_user.id, db)
+
+    stripe_api_key = os.getenv("STRIPE_API_KEY")
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    stripe.api_key = stripe_api_key
+
+    try:
+        session = stripe.checkout.Session.retrieve(body.session_id)
+    except stripe.error.StripeError as exc:
+        message = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe confirmation failed: {message}")
+
+    raw_metadata = getattr(session, "metadata", None)
+    if hasattr(raw_metadata, "to_dict"):
+        metadata = raw_metadata.to_dict()
+    elif raw_metadata:
+        metadata = dict(raw_metadata)
+    else:
+        metadata = {}
+
+    if str(metadata.get("user_id", "")) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Session does not belong to current user")
+
+    if str(metadata.get("group_id", "")) != str(group_id):
+        raise HTTPException(status_code=403, detail="Session does not belong to this group")
+
+    payment = (
+        db.query(models.GroupTripPayment)
+        .filter(models.GroupTripPayment.stripe_session_id == body.session_id)
+        .first()
+    )
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment record not found")
+
+    if payment.payment_status == "paid":
+        return TripPaymentOut(
+            payment_id=payment.id,
+            group_id=payment.group_id,
+            amount=payment.amount,
+            currency=payment.currency,
+            payment_method=payment.payment_method,
+            payment_status="paid",
+        )
+
+    if session.payment_status != "paid":
+        payment.payment_status = "failed"
+        payment.updated_at = datetime.now()
+        db.commit()
+        raise HTTPException(status_code=400, detail="Payment was not completed")
+
+    payment.payment_status = "paid"
+    payment.updated_at = datetime.now()
+    db.commit()
+
+    return TripPaymentOut(
+        payment_id=payment.id,
+        group_id=payment.group_id,
+        amount=payment.amount,
+        currency=payment.currency,
+        payment_method="stripe",
+        payment_status="paid",
+    )
+
+
+@app.post("/groups/{group_id}/pay-wallet", response_model=TripPaymentOut)
+def pay_trip_share_with_wallet(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Pay the user's trip share from their wallet balance."""
+    from .cost_calculator import calculate_trip_total_cost
+
+    current_user = get_current_user_info(request, db)
+    _get_group_and_membership(group_id, current_user.id, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    cost_data = calculate_trip_total_cost(group_id, db)
+    per_person = cost_data["per_person_cost"]
+    if per_person <= 0:
+        raise HTTPException(status_code=400, detail="No cost to pay")
+
+    already_paid = (
+        db.query(func.coalesce(func.sum(models.GroupTripPayment.amount), 0))
+        .filter(
+            models.GroupTripPayment.group_id == group_id,
+            models.GroupTripPayment.user_id == current_user.id,
+            models.GroupTripPayment.payment_status == "paid",
+        )
+        .scalar()
+    )
+    remaining = round(per_person - float(already_paid), 2)
+    if remaining <= 0:
+        raise HTTPException(status_code=400, detail="Your share is already fully paid")
+
+    balance = round(float(profile.wallet_balance or 0), 2)
+    if balance < remaining:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient wallet balance. Need {cost_data['currency']} {remaining:.2f}, have {cost_data['currency']} {balance:.2f}",
+        )
+
+    # Deduct from wallet
+    profile.wallet_balance = round(balance - remaining, 2)
+    profile.updated_at = datetime.now()
+
+    payment = models.GroupTripPayment(
+        group_id=group_id,
+        user_id=current_user.id,
+        amount=remaining,
+        currency=cost_data["currency"],
+        payment_method="wallet",
+        payment_status="paid",
+    )
+    db.add(payment)
+    db.commit()
+    db.refresh(profile)
+
+    return TripPaymentOut(
+        payment_id=payment.id,
+        group_id=group_id,
+        amount=remaining,
+        currency=cost_data["currency"],
+        payment_method="wallet",
+        payment_status="paid",
+        wallet_balance=round(float(profile.wallet_balance), 2),
+    )
+
+
+@app.get("/groups/{group_id}/payment-status", response_model=list[TripPaymentStatusOut])
+def get_group_payment_status(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Get payment status for all members of a group."""
+    from .cost_calculator import calculate_trip_total_cost, calculate_cost_per_member
+
+    current_user = get_current_user_info(request, db)
+    _get_group_and_membership(group_id, current_user.id, db)
+
+    cost_data = calculate_trip_total_cost(group_id, db)
+    members_breakdown = calculate_cost_per_member(group_id, db)
+    per_person = cost_data["per_person_cost"]
+
+    payments = (
+        db.query(models.GroupTripPayment)
+        .filter(
+            models.GroupTripPayment.group_id == group_id,
+            models.GroupTripPayment.payment_status == "paid",
+        )
+        .all()
+    )
+    paid_by_user: dict[int, float] = {}
+    for p in payments:
+        paid_by_user[p.user_id] = round(paid_by_user.get(p.user_id, 0) + p.amount, 2)
+
+    result = []
+    for m in members_breakdown:
+        uid = m["member_id"]
+        amount_paid = paid_by_user.get(uid, 0.0)
+        if amount_paid >= per_person:
+            status = "paid"
+        elif amount_paid > 0:
+            status = "partial"
+        else:
+            status = "unpaid"
+        result.append(TripPaymentStatusOut(
+            user_id=uid,
+            member_name=m["member_name"],
+            amount_due=per_person,
+            amount_paid=amount_paid,
+            currency=cost_data["currency"],
+            payment_status=status,
+        ))
+
+    return result
