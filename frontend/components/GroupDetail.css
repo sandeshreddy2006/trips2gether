@@ -471,18 +471,14 @@
     font-size: 1rem;
     color: #2d7a4a;
     display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-word;
 }
 
 .group-member-email {
     font-size: 0.83rem;
     color: #2d7a4a;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     display: block;
+    word-break: break-all;
 }
 
 .group-member-role {
