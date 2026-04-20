@@ -579,60 +579,58 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 </div>
             </div>
 
-            <div className="group-overview-grid">
-                <div className="group-members-section">
-                    <h2 className="group-members-title">
-                        Members ({members.length})
-                    </h2>
-                    <div className="group-members-list">
-                        {members.map((m) => (
-                            <div key={m.id} className="group-member-row">
-                                <div className="group-member-info">
-                                    <img src={m.avatar_url || "/UserIcon.svg"} alt={m.name} className="group-member-avatar" />
-                                    <div>
-                                        <span className="group-member-name">{m.name}</span>
-                                        <span className="group-member-email">{m.email}</span>
-                                    </div>
-                                </div>
-                                <div className="group-member-actions">
-                                    {isOwner && m.role !== "owner" ? (
-                                        <>
-                                            <select
-                                                className="group-role-select"
-                                                value={m.role}
-                                                onChange={(e) => handleRoleChange(m.user_id, e.target.value)}
-                                            >
-                                                <option value="member">Member</option>
-                                                <option value="admin">Admin</option>
-                                                <option value="viewer">Viewer</option>
-                                            </select>
-                                            <button
-                                                className="group-remove-btn"
-                                                onClick={() => handleRemoveMember(m.user_id)}
-                                            >
-                                                Remove
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <span className={`group-member-role ${m.role === "owner" ? "role-owner" : ""}`}>
-                                            {m.role}
-                                        </span>
-                                    )}
+            <div className="group-members-section">
+                <h2 className="group-members-title">
+                    Members ({members.length})
+                </h2>
+                <div className="group-members-list">
+                    {members.map((m) => (
+                        <div key={m.id} className="group-member-row">
+                            <div className="group-member-info">
+                                <img src={m.avatar_url || "/UserIcon.svg"} alt={m.name} className="group-member-avatar" />
+                                <div>
+                                    <span className="group-member-name">{m.name}</span>
+                                    <span className="group-member-email">{m.email}</span>
                                 </div>
                             </div>
-                        ))}
-                    </div>
+                            <div className="group-member-actions">
+                                {isOwner && m.role !== "owner" ? (
+                                    <>
+                                        <select
+                                            className="group-role-select"
+                                            value={m.role}
+                                            onChange={(e) => handleRoleChange(m.user_id, e.target.value)}
+                                        >
+                                            <option value="member">Member</option>
+                                            <option value="admin">Admin</option>
+                                            <option value="viewer">Viewer</option>
+                                        </select>
+                                        <button
+                                            className="group-remove-btn"
+                                            onClick={() => handleRemoveMember(m.user_id)}
+                                        >
+                                            Remove
+                                        </button>
+                                    </>
+                                ) : (
+                                    <span className={`group-member-role ${m.role === "owner" ? "role-owner" : ""}`}>
+                                        {m.role}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    ))}
                 </div>
+            </div>
 
-                <div className="group-shortlist-section group-shortlist-section-compact">
-                    <HotelSearchPanel
-                        title="Search Hotels For This Group"
-                        subtitle="Compare hotel options with travel dates, guest count, room count, and sorting."
-                        initialDestination={shortlist[0]?.name || ""}
-                        groupId={groupId}
-                        onShortlistChange={refreshHotelShortlist}
-                    />
-                </div>
+            <div className="group-shortlist-section">
+                <HotelSearchPanel
+                    title="Search Hotels For This Group"
+                    subtitle="Compare hotel options with travel dates, guest count, room count, and sorting."
+                    initialDestination={shortlist[0]?.name || ""}
+                    groupId={groupId}
+                    onShortlistChange={refreshHotelShortlist}
+                />
             </div>
 
             <div className="group-shortlist-section">
