@@ -687,6 +687,36 @@ export default function Profile() {
         }
     };
 
+    const formatBookingDate = (value: string) => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return "Date unavailable";
+        }
+
+        return date.toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+        });
+    };
+
+    const formatBookingAmount = (booking: TravelBooking) => {
+        const amount = Number(booking.total_amount);
+        if (Number.isNaN(amount)) {
+            return `${booking.currency} ${booking.total_amount}`;
+        }
+
+        return `${booking.currency} ${amount.toFixed(2)}`;
+    };
+
+    const formatStatusLabel = (status: string) => {
+        return status
+            .split("_")
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
+    };
+
     return (
         <div className="profile-container">
             <div className="profile-header">
@@ -1237,16 +1267,65 @@ export default function Profile() {
                     )}
 
                     {activeTab === "trips" && (
-                        <div className="profile-card">
-                            <h2>Travel History</h2>
+                        <div className="profile-card travel-history-card">
+                            <div className="section-header">
+                                <h2>Travel History</h2>
+                            </div>
                             {travelHistoryLoading ? (
                                 <p className="placeholder-text">Loading your travel history...</p>
                             ) : travelHistoryError ? (
-                                <p className="placeholder-text">{travelHistoryError}</p>
-                            ) : travelHistoryLoaded && (travelBookings.length > 0 || travelGroups.length > 0) ? (
-                                <p className="placeholder-text">Your travel history is ready to display.</p>
+                                <p className="friends-error">{travelHistoryError}</p>
                             ) : (
-                                <p className="placeholder-text">No travel history to show yet.</p>
+                                <section className="travel-history-section">
+                                    <div className="travel-history-subheader">
+                                        <div>
+                                            <h3>Past Bookings</h3>
+                                            <p>Review your previous flight purchases and payment details.</p>
+                                        </div>
+                                        {travelHistoryLoaded && (
+                                            <span className="travel-history-count">
+                                                {travelBookings.length} {travelBookings.length === 1 ? "booking" : "bookings"}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {!travelHistoryLoaded ? (
+                                        <p className="placeholder-text">Open Travel History to load your previous bookings.</p>
+                                    ) : travelBookings.length === 0 ? (
+                                        <p className="placeholder-text">
+                                            No previous flight bookings yet.
+                                            {travelGroups.length > 0 ? " Your group travel plans will appear in the next section." : ""}
+                                        </p>
+                                    ) : (
+                                        <div className="booking-history-list">
+                                            {travelBookings.map((booking) => (
+                                                <article key={booking.id} className="booking-history-card">
+                                                    <div className="booking-history-main">
+                                                        <span className="booking-history-label">Booking Reference</span>
+                                                        <strong className="booking-history-reference">
+                                                            {booking.booking_reference || "Reference pending"}
+                                                        </strong>
+                                                        <span className="booking-history-order">Order {booking.order_id}</span>
+                                                    </div>
+                                                    <div className="booking-history-detail">
+                                                        <span className="booking-history-label">Amount</span>
+                                                        <strong>{formatBookingAmount(booking)}</strong>
+                                                    </div>
+                                                    <div className="booking-history-detail">
+                                                        <span className="booking-history-label">Payment Status</span>
+                                                        <span className="booking-status-pill">
+                                                            {formatStatusLabel(booking.payment_status)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="booking-history-detail">
+                                                        <span className="booking-history-label">Booked On</span>
+                                                        <strong>{formatBookingDate(booking.created_at)}</strong>
+                                                    </div>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    )}
+                                </section>
                             )}
                         </div>
                     )}

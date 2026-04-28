@@ -436,6 +436,104 @@
     margin-bottom: 0;
 }
 
+.travel-history-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.travel-history-section {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.travel-history-subheader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.travel-history-subheader h3 {
+    margin: 0 0 6px 0;
+    color: #1a1a1a;
+    font-size: 17px;
+}
+
+.travel-history-subheader p {
+    margin: 0;
+    color: #667085;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.travel-history-count {
+    flex-shrink: 0;
+    border: 1px solid #cfe5d8;
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: #f1f8f4;
+    color: #2E6B55;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.booking-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.booking-history-card {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(120px, 1fr));
+    gap: 16px;
+    border: 1px solid #e6efea;
+    border-radius: 12px;
+    padding: 16px;
+    background: #fbfdfc;
+}
+
+.booking-history-main,
+.booking-history-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.booking-history-label {
+    color: #667085;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.booking-history-reference,
+.booking-history-detail strong {
+    color: #1f2937;
+    font-size: 15px;
+}
+
+.booking-history-order {
+    color: #6b7280;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.booking-status-pill {
+    align-self: flex-start;
+    border-radius: 999px;
+    background: #e8f5ee;
+    color: #246148;
+    padding: 5px 9px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
 .photos-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -819,6 +917,14 @@
 
     .wallet-topup-btn {
         width: 100%;
+    }
+
+    .travel-history-subheader {
+        flex-direction: column;
+    }
+
+    .booking-history-card {
+        grid-template-columns: 1fr;
     }
 }
 
