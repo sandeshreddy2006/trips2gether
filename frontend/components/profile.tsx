@@ -31,6 +31,7 @@ type TravelGroup = {
     status: string;
     created_by: number;
     created_at?: string | null;
+    joined_at?: string | null;
     member_count: number;
     role?: string | null;
     trip_item_count?: number;
@@ -170,6 +171,7 @@ export default function Profile() {
 
     useEffect(() => {
         void loadFriendRequests(true);
+        void loadTravelHistory();
     }, []);
 
     async function handleAddFriend() {
@@ -716,6 +718,26 @@ export default function Profile() {
             .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
             .join(" ");
     };
+
+    const recentActivities = [
+        ...travelBookings.map((booking) => ({
+            id: `booking-${booking.id}`,
+            type: "Booking",
+            title: `Flight booked ${booking.booking_reference || booking.order_id}`,
+            detail: `${formatBookingAmount(booking)} - ${formatStatusLabel(booking.payment_status)}`,
+            date: booking.created_at,
+        })),
+        ...travelGroups.map((group) => ({
+            id: `group-${group.id}`,
+            type: "Group",
+            title: `Joined ${group.name}`,
+            detail: `${group.member_count} ${group.member_count === 1 ? "member" : "members"} - ${formatStatusLabel(group.role || "member")}`,
+            date: group.joined_at || group.created_at || "",
+        })),
+    ]
+        .filter((activity) => activity.date && !Number.isNaN(new Date(activity.date).getTime()))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5);
 
     return (
         <div className="profile-container">
@@ -1505,7 +1527,26 @@ export default function Profile() {
                 <div className="profile-sidebar">
                     <div className="sidebar-section">
                         <h3>Recent Activity</h3>
-                        <p className="placeholder-text">No recent activity</p>
+                        {travelHistoryLoading ? (
+                            <p className="placeholder-text">Loading recent activity...</p>
+                        ) : travelHistoryError ? (
+                            <p className="recent-activity-error">Unable to load recent activity</p>
+                        ) : recentActivities.length === 0 ? (
+                            <p className="placeholder-text">No recent activity</p>
+                        ) : (
+                            <div className="recent-activity-list">
+                                {recentActivities.map((activity) => (
+                                    <div key={activity.id} className="recent-activity-item">
+                                        <div className="recent-activity-topline">
+                                            <span className="recent-activity-type">{activity.type}</span>
+                                            <span className="recent-activity-date">{formatBookingDate(activity.date)}</span>
+                                        </div>
+                                        <strong>{activity.title}</strong>
+                                        <span>{activity.detail}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
