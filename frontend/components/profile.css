@@ -534,6 +534,81 @@
     font-weight: 700;
 }
 
+.travel-history-empty {
+    border: 1px dashed #cfe5d8;
+    border-radius: 12px;
+    background: #f8fcfa;
+    padding: 28px;
+    text-align: center;
+}
+
+.travel-history-empty h3 {
+    margin: 0 0 8px 0;
+    color: #1f2937;
+    font-size: 18px;
+}
+
+.travel-history-empty p {
+    margin: 0;
+    color: #667085;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.group-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.group-history-card {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(100px, 1fr)) auto;
+    gap: 16px;
+    align-items: center;
+    border: 1px solid #e6efea;
+    border-radius: 12px;
+    padding: 16px;
+    background: #ffffff;
+}
+
+.group-history-main,
+.group-history-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.group-history-main strong,
+.group-history-detail strong {
+    color: #1f2937;
+    font-size: 15px;
+}
+
+.group-history-description {
+    color: #6b7280;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.group-history-link {
+    justify-self: end;
+    border: 1px solid #2E6B55;
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #2E6B55;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.group-history-link:hover {
+    background: #f1f8f4;
+}
+
 .photos-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -925,6 +1000,15 @@
 
     .booking-history-card {
         grid-template-columns: 1fr;
+    }
+
+    .group-history-card {
+        grid-template-columns: 1fr;
+    }
+
+    .group-history-link {
+        justify-self: stretch;
+        text-align: center;
     }
 }
 
