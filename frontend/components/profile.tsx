@@ -12,6 +12,32 @@ type Friend = {
     status: string;
 };
 
+type TravelBooking = {
+    id: number;
+    order_id: string;
+    booking_reference: string;
+    total_amount: string;
+    currency: string;
+    payment_status: string;
+    offer_id?: string | null;
+    created_at: string;
+    updated_at: string;
+};
+
+type TravelGroup = {
+    id: number;
+    name: string;
+    description?: string | null;
+    status: string;
+    created_by: number;
+    created_at?: string | null;
+    member_count: number;
+    role?: string | null;
+    trip_item_count?: number;
+    trip_start_at?: string | null;
+    trip_end_at?: string | null;
+};
+
 export default function Profile() {
     const { user, locationData } = useAuth();
     const [activeTab, setActiveTab] = useState("overview");
@@ -30,6 +56,11 @@ export default function Profile() {
     const [showFaceSetup, setShowFaceSetup] = useState(false);
     const [faceVerificationEnabled, setFaceVerificationEnabled] = useState(false);
     const [faceVerificationLoading, setFaceVerificationLoading] = useState(false);
+    const [travelBookings, setTravelBookings] = useState<TravelBooking[]>([]);
+    const [travelGroups, setTravelGroups] = useState<TravelGroup[]>([]);
+    const [travelHistoryLoading, setTravelHistoryLoading] = useState(false);
+    const [travelHistoryLoaded, setTravelHistoryLoaded] = useState(false);
+    const [travelHistoryError, setTravelHistoryError] = useState<string | null>(null);
 
     async function loadFriends(keepFeedback = true) {
         setFriendsLoading(true);
@@ -85,6 +116,56 @@ export default function Profile() {
 
     async function refreshFriendsTab(keepFeedback = true) {
         await Promise.all([loadFriends(keepFeedback), loadFriendRequests(keepFeedback)]);
+    }
+
+    async function loadTravelHistory() {
+        if (travelHistoryLoading || travelHistoryLoaded) {
+            return;
+        }
+
+        setTravelHistoryLoading(true);
+        setTravelHistoryError(null);
+        try {
+            const [bookingsRes, groupsRes] = await Promise.all([
+                fetch("/api/bookings", { credentials: "include" }),
+                fetch("/api/groups", { credentials: "include" }),
+            ]);
+
+            if (!bookingsRes.ok) {
+                let msg = "Failed to load past bookings";
+                try {
+                    const data = await bookingsRes.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+
+            if (!groupsRes.ok) {
+                let msg = "Failed to load groups";
+                try {
+                    const data = await groupsRes.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+
+            const [bookingsData, groupsData] = await Promise.all([
+                bookingsRes.json(),
+                groupsRes.json(),
+            ]);
+
+            setTravelBookings(Array.isArray(bookingsData.bookings) ? bookingsData.bookings : []);
+            setTravelGroups(Array.isArray(groupsData.groups) ? groupsData.groups : []);
+            setTravelHistoryLoaded(true);
+        } catch (err) {
+            setTravelHistoryError(err instanceof Error ? err.message : "Failed to load travel history");
+        } finally {
+            setTravelHistoryLoading(false);
+        }
     }
 
     useEffect(() => {
@@ -192,6 +273,9 @@ export default function Profile() {
         setActiveTab(tab);
         if (tab === "friends" && !friendsLoading && friends.length === 0) {
             void refreshFriendsTab(false);
+        }
+        if (tab === "trips") {
+            void loadTravelHistory();
         }
     }
 
@@ -678,7 +762,7 @@ export default function Profile() {
                             className={`tab ${activeTab === "trips" ? "active" : ""}`}
                             onClick={() => onTabClick("trips")}
                         >
-                            Upcoming Trips
+                            Travel History
                         </button>
                         <button
                             className={`tab ${activeTab === "friends" ? "active" : ""}`}
@@ -1154,8 +1238,16 @@ export default function Profile() {
 
                     {activeTab === "trips" && (
                         <div className="profile-card">
-                            <h2>Upcoming Trips</h2>
-                            <p className="placeholder-text">No upcoming trips scheduled</p>
+                            <h2>Travel History</h2>
+                            {travelHistoryLoading ? (
+                                <p className="placeholder-text">Loading your travel history...</p>
+                            ) : travelHistoryError ? (
+                                <p className="placeholder-text">{travelHistoryError}</p>
+                            ) : travelHistoryLoaded && (travelBookings.length > 0 || travelGroups.length > 0) ? (
+                                <p className="placeholder-text">Your travel history is ready to display.</p>
+                            ) : (
+                                <p className="placeholder-text">No travel history to show yet.</p>
+                            )}
                         </div>
                     )}
 
