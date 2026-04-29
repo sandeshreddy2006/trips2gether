@@ -81,6 +81,18 @@ type ArchivedTripHistory = {
     archived_at: string | null;
 };
 
+type PreviousTripSummary = {
+    id: string;
+    title: string;
+    destination: string;
+    dates: string;
+    groupSize: string;
+    status: string;
+    actionLabel: string;
+    actionPath: string;
+    sortDate: string | null;
+};
+
 type PollSection = "upcoming" | "previous";
 type PollDecisionType = "destination" | "flight" | "hotel" | "activity" | "other";
 
@@ -142,6 +154,24 @@ function parseApiError(data: unknown, fallback: string): string {
         if (typeof detail === "string") return detail;
     }
     return fallback;
+}
+
+function formatDashboardDate(value: string | null): string {
+    if (!value) return "Date unavailable";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Date unavailable";
+
+    return date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
+}
+
+function formatDashboardDateRange(start: string | null, end: string | null): string {
+    if (!start && !end) return "Dates unavailable";
+    if (start && end) return `${formatDashboardDate(start)} - ${formatDashboardDate(end)}`;
+    return formatDashboardDate(start || end);
 }
 
 function getDefaultPollDeadlineInputValue(): string {
@@ -385,6 +415,52 @@ export default function Dashboard() {
         : selectedTripSection === "active"
             ? activeTrips
             : previousTrips;
+
+    const previousTripSummaries = useMemo<PreviousTripSummary[]>(() => {
+        const archivedItems = archivedHistory.map((item) => ({
+            id: `history-${item.id}`,
+            title: item.title || item.group_name,
+            destination: item.group_name,
+            dates: formatDashboardDateRange(item.starts_at, item.ends_at),
+            groupSize: "Group size unavailable",
+            status: "archived",
+            actionLabel: "View Itinerary",
+            actionPath: `/group/${item.group_id}/itinerary?historyId=${item.id}`,
+            sortDate: item.archived_at || item.ends_at || item.starts_at,
+        }));
+
+        const groupItems = previousTrips.map((group) => ({
+            id: `group-${group.id}`,
+            title: group.name,
+            destination: group.description || "Group trip",
+            dates: formatDashboardDateRange(group.trip_start_at, group.trip_end_at),
+            groupSize: `${group.member_count} ${group.member_count === 1 ? "member" : "members"}`,
+            status: normalizeGroupStatus(group.status),
+            actionLabel: "Open Group",
+            actionPath: `/group/${group.id}`,
+            sortDate: group.trip_end_at || group.trip_start_at || group.created_at,
+        }));
+
+        const bookingItems = bookings.map((booking) => ({
+            id: `booking-${booking.id}`,
+            title: `Flight booking ${booking.booking_reference || booking.order_id}`,
+            destination: "Booked flight",
+            dates: `Booked ${formatDashboardDate(booking.created_at)}`,
+            groupSize: "Solo booking",
+            status: booking.payment_status,
+            actionLabel: "View Booking",
+            actionPath: "/bookings/history",
+            sortDate: booking.created_at,
+        }));
+
+        return [...archivedItems, ...groupItems, ...bookingItems]
+            .sort((a, b) => {
+                const aTime = a.sortDate ? new Date(a.sortDate).getTime() : 0;
+                const bTime = b.sortDate ? new Date(b.sortDate).getTime() : 0;
+                return bTime - aTime;
+            })
+            .slice(0, 6);
+    }, [archivedHistory, bookings, previousTrips]);
 
     const handlePlanTrip = () => {
         if (groups.length === 0) {
@@ -799,6 +875,52 @@ export default function Dashboard() {
                             </div>
                         </div>
                     )}
+
+                    <section className="previous-summary-section">
+                        <div className="previous-summary-header">
+                            <div>
+                                <p className="previous-summary-kicker">Travel History</p>
+                                <h3 className="previous-summary-title">Previous Trips</h3>
+                            </div>
+                            <span className="previous-summary-count">
+                                {previousTripSummaries.length} {previousTripSummaries.length === 1 ? "item" : "items"}
+                            </span>
+                        </div>
+
+                        {loadingBookings ? (
+                            <div className="trip-section-empty">Loading previous trips...</div>
+                        ) : previousTripSummaries.length === 0 ? (
+                            <div className="trip-section-empty">
+                                No previous bookings or group trips yet. Completed plans and flight bookings will appear here.
+                            </div>
+                        ) : (
+                            <div className="previous-summary-grid">
+                                {previousTripSummaries.map((trip) => (
+                                    <article key={trip.id} className="previous-summary-card">
+                                        <div className="previous-summary-main">
+                                            <span className="previous-summary-label">Destination</span>
+                                            <h4>{trip.title}</h4>
+                                            <p>{trip.destination}</p>
+                                        </div>
+                                        <div className="previous-summary-meta">
+                                            <span>{trip.dates}</span>
+                                            <span>{trip.groupSize}</span>
+                                            <span className={`previous-status status-${trip.status.toLowerCase().replaceAll("_", "-")}`}>
+                                                {trip.status.replaceAll("_", " ")}
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="previous-summary-action"
+                                            onClick={() => router.push(trip.actionPath)}
+                                        >
+                                            {trip.actionLabel}
+                                        </button>
+                                    </article>
+                                ))}
+                            </div>
+                        )}
+                    </section>
 
                     {/* Trip Cards */}
                     {featuredDestination && (

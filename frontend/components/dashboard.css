@@ -210,6 +210,133 @@
     color: #4d6459;
 }
 
+.previous-summary-section {
+    background: #ffffff;
+    border: 1px solid rgba(46, 107, 85, 0.12);
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 12px 30px rgba(12, 40, 28, 0.08);
+}
+
+.previous-summary-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.previous-summary-kicker {
+    margin: 0 0 0.25rem 0;
+    color: #2e6b55;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.previous-summary-title {
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 1.25rem;
+}
+
+.previous-summary-count {
+    border-radius: 999px;
+    background: #edf7f1;
+    color: #2e6b55;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.previous-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1rem;
+}
+
+.previous-summary-card {
+    border: 1px solid #e1ece6;
+    border-radius: 14px;
+    padding: 1rem;
+    background: linear-gradient(180deg, #fbfdfc 0%, #ffffff 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.previous-summary-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.previous-summary-label {
+    color: #667a70;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.previous-summary-main h4 {
+    margin: 0;
+    color: #1f2937;
+    font-size: 1rem;
+}
+
+.previous-summary-main p {
+    margin: 0;
+    color: #5f6f66;
+    font-size: 0.88rem;
+    line-height: 1.4;
+}
+
+.previous-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.previous-summary-meta span {
+    border-radius: 999px;
+    background: #f4f7f5;
+    color: #43594f;
+    padding: 0.32rem 0.58rem;
+    font-size: 0.78rem;
+    font-weight: 650;
+}
+
+.previous-summary-meta .previous-status {
+    background: #fff7e6;
+    color: #9a5b00;
+    text-transform: capitalize;
+}
+
+.previous-summary-meta .status-archived,
+.previous-summary-meta .status-paid {
+    background: #e8f5ee;
+    color: #246148;
+}
+
+.previous-summary-action {
+    margin-top: auto;
+    align-self: flex-start;
+    border: 1px solid #2e6b55;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #2e6b55;
+    cursor: pointer;
+    font-weight: 700;
+    padding: 0.55rem 0.85rem;
+}
+
+.previous-summary-action:hover {
+    background: #f1f8f4;
+}
+
 /* Trip Cards */
 .trip-card {
     background: white;
