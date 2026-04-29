@@ -1,6 +1,7 @@
 .notification-bell-container{position:relative;display:inline-block}
-.notification-btn{background:transparent;border:0;cursor:pointer;position:relative;padding:6px}
-.notification-icon{width:22px;height:22px}
+.notification-btn{background:transparent;border:0;cursor:pointer;position:relative;padding:8px;transition:opacity 0.2s;display:flex;align-items:center;justify-content:center}
+.notification-btn:hover{opacity:0.7}
+.notification-icon{width:28px;height:28px;color:#FFC107}
 .notification-badge{position:absolute;top:4px;right:4px;background:#ff4d4f;color:#fff;border-radius:12px;padding:2px 6px;font-size:12px}
 .notification-dropdown{position:absolute;right:0;top:36px;width:320px;background:#fff;border:1px solid #e6e6e6;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,0.08);z-index:40}
 .notification-header{padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600}
