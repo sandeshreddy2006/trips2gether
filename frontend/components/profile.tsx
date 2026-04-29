@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../app/AuthContext";
 import FaceVerificationSetup from "./FaceVerificationSetup";
 import "./profile.css";
@@ -10,6 +10,33 @@ type Friend = {
     name: string;
     avatar_url?: string | null;
     status: string;
+};
+
+type TravelBooking = {
+    id: number;
+    order_id: string;
+    booking_reference: string;
+    total_amount: string;
+    currency: string;
+    payment_status: string;
+    offer_id?: string | null;
+    created_at: string;
+    updated_at: string;
+};
+
+type TravelGroup = {
+    id: number;
+    name: string;
+    description?: string | null;
+    status: string;
+    created_by: number;
+    created_at?: string | null;
+    joined_at?: string | null;
+    member_count: number;
+    role?: string | null;
+    trip_item_count?: number;
+    trip_start_at?: string | null;
+    trip_end_at?: string | null;
 };
 
 export default function Profile() {
@@ -30,6 +57,11 @@ export default function Profile() {
     const [showFaceSetup, setShowFaceSetup] = useState(false);
     const [faceVerificationEnabled, setFaceVerificationEnabled] = useState(false);
     const [faceVerificationLoading, setFaceVerificationLoading] = useState(false);
+    const [travelBookings, setTravelBookings] = useState<TravelBooking[]>([]);
+    const [travelGroups, setTravelGroups] = useState<TravelGroup[]>([]);
+    const [travelHistoryLoading, setTravelHistoryLoading] = useState(false);
+    const [travelHistoryLoaded, setTravelHistoryLoaded] = useState(false);
+    const [travelHistoryError, setTravelHistoryError] = useState<string | null>(null);
 
     async function loadFriends(keepFeedback = true) {
         setFriendsLoading(true);
@@ -87,9 +119,63 @@ export default function Profile() {
         await Promise.all([loadFriends(keepFeedback), loadFriendRequests(keepFeedback)]);
     }
 
+    const loadTravelHistory = useCallback(async () => {
+        if (travelHistoryLoading || travelHistoryLoaded) {
+            return;
+        }
+
+        setTravelHistoryLoading(true);
+        setTravelHistoryError(null);
+        try {
+            const [bookingsRes, groupsRes] = await Promise.all([
+                fetch("/api/bookings", { credentials: "include" }),
+                fetch("/api/groups", { credentials: "include" }),
+            ]);
+
+            if (!bookingsRes.ok) {
+                let msg = "Failed to load past bookings";
+                try {
+                    const data = await bookingsRes.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+
+            if (!groupsRes.ok) {
+                let msg = "Failed to load groups";
+                try {
+                    const data = await groupsRes.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+
+            const [bookingsData, groupsData] = await Promise.all([
+                bookingsRes.json(),
+                groupsRes.json(),
+            ]);
+
+            setTravelBookings(Array.isArray(bookingsData.bookings) ? bookingsData.bookings : []);
+            setTravelGroups(Array.isArray(groupsData.groups) ? groupsData.groups : []);
+            setTravelHistoryLoaded(true);
+        } catch (err) {
+            setTravelHistoryError(err instanceof Error ? err.message : "Failed to load travel history");
+        } finally {
+            setTravelHistoryLoading(false);
+        }
+    }, [travelHistoryLoaded, travelHistoryLoading]);
+
     useEffect(() => {
         void loadFriendRequests(true);
     }, []);
+
+    useEffect(() => {
+        void loadTravelHistory();
+    }, [loadTravelHistory]);
 
     async function handleAddFriend() {
         const identifier = friendLookup.trim();
@@ -192,6 +278,9 @@ export default function Profile() {
         setActiveTab(tab);
         if (tab === "friends" && !friendsLoading && friends.length === 0) {
             void refreshFriendsTab(false);
+        }
+        if (tab === "trips") {
+            void loadTravelHistory();
         }
     }
 
@@ -603,6 +692,69 @@ export default function Profile() {
         }
     };
 
+    const formatBookingDate = (value: string) => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return "Date unavailable";
+        }
+
+        return date.toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+        });
+    };
+
+    const formatBookingAmount = (booking: TravelBooking) => {
+        const amount = Number(booking.total_amount);
+        if (Number.isNaN(amount)) {
+            return `${booking.currency} ${booking.total_amount}`;
+        }
+
+        return `${booking.currency} ${amount.toFixed(2)}`;
+    };
+
+    const formatStatusLabel = (status: string) => {
+        if (!status) {
+            return "Unknown";
+        }
+
+        return status
+            .split("_")
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" ");
+    };
+
+    const getStatusPillClass = (status: string) => {
+        const normalizedStatus = status
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "");
+
+        return `booking-status-pill status-${normalizedStatus || "unknown"}`;
+    };
+
+    const recentActivities = [
+        ...travelBookings.map((booking) => ({
+            id: `booking-${booking.id}`,
+            type: "Booking",
+            title: `Flight booked ${booking.booking_reference || booking.order_id}`,
+            detail: `${formatBookingAmount(booking)} - ${formatStatusLabel(booking.payment_status)}`,
+            date: booking.created_at,
+        })),
+        ...travelGroups.map((group) => ({
+            id: `group-${group.id}`,
+            type: "Group",
+            title: `Joined ${group.name}`,
+            detail: `${group.member_count} ${group.member_count === 1 ? "member" : "members"} - ${formatStatusLabel(group.role || "member")}`,
+            date: group.joined_at || group.created_at || "",
+        })),
+    ]
+        .filter((activity) => activity.date && !Number.isNaN(new Date(activity.date).getTime()))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5);
+
     return (
         <div className="profile-container">
             <div className="profile-header">
@@ -678,7 +830,7 @@ export default function Profile() {
                             className={`tab ${activeTab === "trips" ? "active" : ""}`}
                             onClick={() => onTabClick("trips")}
                         >
-                            Upcoming Trips
+                            Travel History
                         </button>
                         <button
                             className={`tab ${activeTab === "friends" ? "active" : ""}`}
@@ -1153,9 +1305,123 @@ export default function Profile() {
                     )}
 
                     {activeTab === "trips" && (
-                        <div className="profile-card">
-                            <h2>Upcoming Trips</h2>
-                            <p className="placeholder-text">No upcoming trips scheduled</p>
+                        <div className="profile-card travel-history-card">
+                            <div className="section-header">
+                                <h2>Travel History</h2>
+                            </div>
+                            {travelHistoryLoading ? (
+                                <p className="placeholder-text">Loading your travel history...</p>
+                            ) : travelHistoryError ? (
+                                <p className="friends-error">{travelHistoryError}</p>
+                            ) : travelHistoryLoaded && travelBookings.length === 0 && travelGroups.length === 0 ? (
+                                <div className="travel-history-empty">
+                                    <h3>No travel history yet</h3>
+                                    <p>Your past flight bookings and group travel plans will show up here once you start planning.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <section className="travel-history-section">
+                                        <div className="travel-history-subheader">
+                                            <div>
+                                                <h3>Past Bookings</h3>
+                                                <p>Review your previous flight purchases and payment details.</p>
+                                            </div>
+                                            {travelHistoryLoaded && (
+                                                <span className="travel-history-count">
+                                                    {travelBookings.length} {travelBookings.length === 1 ? "booking" : "bookings"}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {!travelHistoryLoaded ? (
+                                            <p className="placeholder-text">Open Travel History to load your previous bookings.</p>
+                                        ) : travelBookings.length === 0 ? (
+                                            <p className="placeholder-text">No previous flight bookings yet.</p>
+                                        ) : (
+                                            <div className="booking-history-list">
+                                                {travelBookings.map((booking) => (
+                                                    <article key={booking.id} className="booking-history-card">
+                                                        <div className="booking-history-main">
+                                                            <span className="booking-history-label">Booking Reference</span>
+                                                            <strong className="booking-history-reference">
+                                                                {booking.booking_reference || "Reference pending"}
+                                                            </strong>
+                                                            <span className="booking-history-order">Order {booking.order_id}</span>
+                                                        </div>
+                                                        <div className="booking-history-detail">
+                                                            <span className="booking-history-label">Amount</span>
+                                                            <strong>{formatBookingAmount(booking)}</strong>
+                                                        </div>
+                                                        <div className="booking-history-detail">
+                                                            <span className="booking-history-label">Payment Status</span>
+                                                            <span className={getStatusPillClass(booking.payment_status)}>
+                                                                {formatStatusLabel(booking.payment_status)}
+                                                            </span>
+                                                        </div>
+                                                        <div className="booking-history-detail">
+                                                            <span className="booking-history-label">Booked On</span>
+                                                            <strong>{formatBookingDate(booking.created_at)}</strong>
+                                                        </div>
+                                                    </article>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </section>
+
+                                    <section className="travel-history-section">
+                                        <div className="travel-history-subheader">
+                                            <div>
+                                                <h3>My Groups</h3>
+                                                <p>Jump back into the group trips you belong to.</p>
+                                            </div>
+                                            {travelHistoryLoaded && (
+                                                <span className="travel-history-count">
+                                                    {travelGroups.length} {travelGroups.length === 1 ? "group" : "groups"}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {!travelHistoryLoaded ? (
+                                            <p className="placeholder-text">Open Travel History to load your groups.</p>
+                                        ) : travelGroups.length === 0 ? (
+                                            <p className="placeholder-text">You are not a member of any groups yet.</p>
+                                        ) : (
+                                            <div className="group-history-list">
+                                                {travelGroups.map((group) => (
+                                                    <article key={group.id} className="group-history-card">
+                                                        <div className="group-history-main">
+                                                            <span className="booking-history-label">Group</span>
+                                                            <strong>{group.name}</strong>
+                                                            {group.description && (
+                                                                <span className="group-history-description">{group.description}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="group-history-detail">
+                                                            <span className="booking-history-label">Members</span>
+                                                            <strong>
+                                                                {group.member_count} {group.member_count === 1 ? "member" : "members"}
+                                                            </strong>
+                                                        </div>
+                                                        <div className="group-history-detail">
+                                                            <span className="booking-history-label">Role</span>
+                                                            <strong>{formatStatusLabel(group.role || "member")}</strong>
+                                                        </div>
+                                                        <div className="group-history-detail">
+                                                            <span className="booking-history-label">Status</span>
+                                                            <span className={getStatusPillClass(group.status)}>
+                                                                {formatStatusLabel(group.status)}
+                                                            </span>
+                                                        </div>
+                                                        <a className="group-history-link" href={`/group/${group.id}`}>
+                                                            View Group
+                                                        </a>
+                                                    </article>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </section>
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -1277,7 +1543,26 @@ export default function Profile() {
                 <div className="profile-sidebar">
                     <div className="sidebar-section">
                         <h3>Recent Activity</h3>
-                        <p className="placeholder-text">No recent activity</p>
+                        {travelHistoryLoading ? (
+                            <p className="placeholder-text">Loading recent activity...</p>
+                        ) : travelHistoryError ? (
+                            <p className="recent-activity-error">Unable to load recent activity</p>
+                        ) : recentActivities.length === 0 ? (
+                            <p className="placeholder-text">No recent activity</p>
+                        ) : (
+                            <div className="recent-activity-list">
+                                {recentActivities.map((activity) => (
+                                    <div key={activity.id} className="recent-activity-item">
+                                        <div className="recent-activity-topline">
+                                            <span className="recent-activity-type">{activity.type}</span>
+                                            <span className="recent-activity-date">{formatBookingDate(activity.date)}</span>
+                                        </div>
+                                        <strong>{activity.title}</strong>
+                                        <span>{activity.detail}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
