@@ -4,6 +4,7 @@ import { useAuth } from "./AuthContext";
 import Search from "../components/Search";
 import SignInModal from "../components/SignInModal";
 import SignUpModal from "../components/SignUpModal";
+import NotificationBell from "../components/NotificationBell";
 import { useRouter } from "next/navigation";
 import "../components/homepage.css";
 
@@ -95,6 +96,7 @@ export default function AppLayout({
                     <div className="auth">
                         {isAuthenticated && user ? (
                             <div className="profile-dropdown-container">
+                                <NotificationBell />
                                 <button
                                     className="profile-btn"
                                     onClick={() =>

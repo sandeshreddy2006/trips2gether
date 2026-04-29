@@ -140,17 +140,33 @@ class GroupPollVoteIn(BaseModel):
 class GroupNotificationOut(BaseModel):
     id: int
     user_id: int
-    group_id: int
+    group_id: int | None = None
     poll_id: int | None = None
     notification_type: str
     title: str
     body: str
     payload: Dict[str, Any] = Field(default_factory=dict)
+    is_read: bool = False
     created_at: datetime
 
 
 class GroupNotificationListOut(BaseModel):
     items: list[GroupNotificationOut]
+
+
+class NotificationOut(BaseModel):
+    id: int
+    user_id: int
+    notification_type: str
+    title: str
+    body: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    is_read: bool = False
+    created_at: datetime
+
+
+class NotificationListOut(BaseModel):
+    items: list[NotificationOut]
 
 
 class GroupAddMembersIn(BaseModel):

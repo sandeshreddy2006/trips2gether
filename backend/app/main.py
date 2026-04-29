@@ -53,6 +53,8 @@ from .schemas import (
     GroupPollVoteIn,
     GroupNotificationOut,
     GroupNotificationListOut,
+    NotificationOut,
+    NotificationListOut,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -180,6 +182,37 @@ def _ensure_group_shortlist_cost_columns() -> None:
 
 
 _ensure_group_shortlist_cost_columns()
+
+
+def _ensure_notifications_columns_and_table() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("group_notifications")}
+    except Exception:
+        columns = set()
+
+    with engine.begin() as connection:
+        if "is_read" not in columns:
+            try:
+                connection.execute(text("ALTER TABLE group_notifications ADD COLUMN is_read BOOLEAN NOT NULL DEFAULT 0"))
+            except Exception:
+                # best-effort; continue
+                pass
+
+    # Ensure the personal notifications table exists
+    try:
+        has_table = inspector.has_table("notifications")
+    except Exception:
+        has_table = False
+
+    if not has_table:
+        try:
+            models.Notification.__table__.create(bind=engine, checkfirst=True)
+        except Exception:
+            pass
+
+
+_ensure_notifications_columns_and_table()
 
 
 def _ensure_trip_plan_history_table() -> None:
@@ -1893,6 +1926,7 @@ def _serialize_notification(notification: models.GroupNotification) -> dict:
         "title": notification.title,
         "body": notification.body,
         "payload": payload,
+        "is_read": bool(getattr(notification, "is_read", False)),
         "created_at": notification.created_at.isoformat() if notification.created_at else None,
     }
 
@@ -2497,6 +2531,94 @@ def delete_poll_notification(notification_id: int, request: Request, db: Session
     return {"ok": True, "message": "Notification removed"}
 
 
+@app.patch("/poll-notifications/{notification_id}/read", response_model=dict)
+def mark_poll_notification_read(notification_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notification = (
+        db.query(models.GroupNotification)
+        .filter(
+            models.GroupNotification.id == notification_id,
+            models.GroupNotification.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    notification.is_read = True
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/notifications", response_model=NotificationListOut)
+def list_personal_notifications(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notes = (
+        db.query(models.Notification)
+        .filter(models.Notification.user_id == current_user.id)
+        .order_by(models.Notification.created_at.desc())
+        .all()
+    )
+
+    items = []
+    for n in notes:
+        payload = {}
+        try:
+            payload = json.loads(n.payload_json or "{}")
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+
+        items.append({
+            "id": n.id,
+            "user_id": n.user_id,
+            "notification_type": n.notification_type,
+            "title": n.title,
+            "body": n.body,
+            "payload": payload,
+            "is_read": bool(n.is_read),
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+        })
+
+    return {"items": items}
+
+
+@app.patch("/notifications/{notification_id}/read", response_model=dict)
+def mark_personal_notification_read(notification_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notification = (
+        db.query(models.Notification)
+        .filter(
+            models.Notification.id == notification_id,
+            models.Notification.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    notification.is_read = True
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/notifications/unread-count", response_model=dict)
+def get_unread_notifications_count(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    personal_unread = (
+        db.query(func.count(models.Notification.id))
+        .filter(models.Notification.user_id == current_user.id, models.Notification.is_read == False)
+        .scalar()
+    ) or 0
+    group_unread = (
+        db.query(func.count(models.GroupNotification.id))
+        .filter(models.GroupNotification.user_id == current_user.id, models.GroupNotification.is_read == False)
+        .scalar()
+    ) or 0
+    return {"unread_count": int(personal_unread) + int(group_unread)}
+
+
 @app.get("/groups/{group_id}/members", response_model=GroupMemberListOut)
 def list_group_members(group_id: int, request: Request, db: Session = Depends(get_db)):
     """List all members of a group. Caller must be a member."""
@@ -2618,6 +2740,31 @@ def add_group_members(
         added.append(uid)
 
     db.commit()
+
+    # Create notifications for newly added members
+    if added:
+        notifications: list[models.GroupNotification] = []
+        inviter_name = current_user.name if current_user else "A member"
+        for uid in added:
+            title = f"You've been added to {group.name}"
+            body = f"{inviter_name} added you to the group {group.name}."
+            payload = {"group_id": group.id, "added_by": current_user.id}
+            n = models.GroupNotification(
+                user_id=uid,
+                group_id=group.id,
+                poll_id=None,
+                notification_type="group.invite",
+                title=title,
+                body=body,
+                payload_json=json.dumps(payload),
+            )
+            db.add(n)
+            notifications.append(n)
+
+        db.commit()
+        # Broadcast real-time notification events for the group
+        if notifications:
+            _broadcast_poll_notifications(notifications)
 
     return {
         "ok": True,
@@ -3296,6 +3443,37 @@ def add_itinerary_item(
     db.commit()
     db.refresh(item)
 
+    # Notify group members about the new itinerary item
+    try:
+        members = (
+            db.query(models.GroupMember)
+            .filter(models.GroupMember.group_id == group_id)
+            .all()
+        )
+        created_notifications: list[models.GroupNotification] = []
+        for member in members:
+            if member.user_id == current_user.id:
+                continue
+            title = f"Itinerary updated in {group.name}"
+            body = f"{current_user.name} added '{item.title}' to the itinerary."
+            payload = {"group_id": group.id, "trip_plan_id": plan.id, "item_id": item.id}
+            n = models.GroupNotification(
+                user_id=member.user_id,
+                group_id=group.id,
+                poll_id=None,
+                notification_type="itinerary.added",
+                title=title,
+                body=body,
+                payload_json=json.dumps(payload),
+            )
+            db.add(n)
+            created_notifications.append(n)
+        db.commit()
+        if created_notifications:
+            _broadcast_poll_notifications(created_notifications)
+    except Exception:
+        db.rollback()
+
     warnings = _build_time_conflict_warnings(plan.id, item.id, item.start_at, item.end_at, db)
 
     payload = _build_itinerary_payload(group, plan, db, warnings)
@@ -3545,6 +3723,37 @@ def update_itinerary_item(
 
     db.commit()
     db.refresh(item)
+
+    # Notify other group members about the itinerary update
+    try:
+        members = (
+            db.query(models.GroupMember)
+            .filter(models.GroupMember.group_id == group_id)
+            .all()
+        )
+        created_notifications: list[models.GroupNotification] = []
+        for member in members:
+            if member.user_id == current_user.id:
+                continue
+            title = f"Itinerary updated in {group.name}"
+            body = f"{current_user.name} updated '{item.title}' in the itinerary."
+            payload = {"group_id": group.id, "trip_plan_id": plan.id, "item_id": item.id}
+            n = models.GroupNotification(
+                user_id=member.user_id,
+                group_id=group.id,
+                poll_id=None,
+                notification_type="itinerary.updated",
+                title=title,
+                body=body,
+                payload_json=json.dumps(payload),
+            )
+            db.add(n)
+            created_notifications.append(n)
+        db.commit()
+        if created_notifications:
+            _broadcast_poll_notifications(created_notifications)
+    except Exception:
+        db.rollback()
 
     warnings = _build_time_conflict_warnings(plan.id, item.id, item.start_at, item.end_at, db)
     payload = _build_itinerary_payload(group, plan, db, warnings)
@@ -4726,6 +4935,23 @@ def create_booking(body: BookingCreateIn, request: Request, background_tasks: Ba
         db.commit()
         db.refresh(booking)
 
+        # Create a personal notification for the booking confirmation
+        try:
+            notif_payload = {
+                "order_id": order_id,
+                "booking_reference": booking_reference,
+            }
+            pnotif = models.Notification(
+                user_id=current_user.id,
+                notification_type="booking.confirmation",
+                title=f"Booking confirmed - {booking_reference or order_id}",
+                body=f"Your booking {booking_reference or order_id} is confirmed.",
+                payload_json=json.dumps(notif_payload),
+            )
+            db.add(pnotif)
+            db.commit()
+        except Exception:
+            db.rollback()
         try:
             formatted_time = datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
             booking_pdf = generate_booking_confirmation_pdf(
