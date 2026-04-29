@@ -534,6 +534,33 @@
     font-weight: 700;
 }
 
+.booking-status-pill.status-paid,
+.booking-status-pill.status-confirmed,
+.booking-status-pill.status-active {
+    background: #e8f5ee;
+    color: #246148;
+}
+
+.booking-status-pill.status-pending,
+.booking-status-pill.status-planning,
+.booking-status-pill.status-upcoming {
+    background: #fff7e6;
+    color: #9a5b00;
+}
+
+.booking-status-pill.status-failed,
+.booking-status-pill.status-cancelled,
+.booking-status-pill.status-canceled {
+    background: #fef3f2;
+    color: #b42318;
+}
+
+.booking-status-pill.status-archived,
+.booking-status-pill.status-unknown {
+    background: #f2f4f7;
+    color: #475467;
+}
+
 .travel-history-empty {
     border: 1px dashed #cfe5d8;
     border-radius: 12px;
@@ -980,6 +1007,20 @@
         right: 16px;
         max-width: 300px;
     }
+
+    .travel-history-subheader {
+        flex-direction: column;
+    }
+
+    .booking-history-card,
+    .group-history-card {
+        grid-template-columns: 1fr;
+    }
+
+    .group-history-link {
+        justify-self: stretch;
+        text-align: center;
+    }
 }
 
 @media (max-width: 480px) {
@@ -1052,22 +1093,6 @@
         width: 100%;
     }
 
-    .travel-history-subheader {
-        flex-direction: column;
-    }
-
-    .booking-history-card {
-        grid-template-columns: 1fr;
-    }
-
-    .group-history-card {
-        grid-template-columns: 1fr;
-    }
-
-    .group-history-link {
-        justify-self: stretch;
-        text-align: center;
-    }
 }
 
 /* Modern Form Styling */

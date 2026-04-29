@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../app/AuthContext";
 import FaceVerificationSetup from "./FaceVerificationSetup";
 import "./profile.css";
@@ -119,7 +119,7 @@ export default function Profile() {
         await Promise.all([loadFriends(keepFeedback), loadFriendRequests(keepFeedback)]);
     }
 
-    async function loadTravelHistory() {
+    const loadTravelHistory = useCallback(async () => {
         if (travelHistoryLoading || travelHistoryLoaded) {
             return;
         }
@@ -167,12 +167,15 @@ export default function Profile() {
         } finally {
             setTravelHistoryLoading(false);
         }
-    }
+    }, [travelHistoryLoaded, travelHistoryLoading]);
 
     useEffect(() => {
         void loadFriendRequests(true);
-        void loadTravelHistory();
     }, []);
+
+    useEffect(() => {
+        void loadTravelHistory();
+    }, [loadTravelHistory]);
 
     async function handleAddFriend() {
         const identifier = friendLookup.trim();
@@ -712,11 +715,24 @@ export default function Profile() {
     };
 
     const formatStatusLabel = (status: string) => {
+        if (!status) {
+            return "Unknown";
+        }
+
         return status
             .split("_")
             .filter(Boolean)
             .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
             .join(" ");
+    };
+
+    const getStatusPillClass = (status: string) => {
+        const normalizedStatus = status
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "");
+
+        return `booking-status-pill status-${normalizedStatus || "unknown"}`;
     };
 
     const recentActivities = [
@@ -1338,7 +1354,7 @@ export default function Profile() {
                                                         </div>
                                                         <div className="booking-history-detail">
                                                             <span className="booking-history-label">Payment Status</span>
-                                                            <span className="booking-status-pill">
+                                                            <span className={getStatusPillClass(booking.payment_status)}>
                                                                 {formatStatusLabel(booking.payment_status)}
                                                             </span>
                                                         </div>
@@ -1392,7 +1408,7 @@ export default function Profile() {
                                                         </div>
                                                         <div className="group-history-detail">
                                                             <span className="booking-history-label">Status</span>
-                                                            <span className="booking-status-pill">
+                                                            <span className={getStatusPillClass(group.status)}>
                                                                 {formatStatusLabel(group.status)}
                                                             </span>
                                                         </div>
