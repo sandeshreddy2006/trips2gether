@@ -182,6 +182,21 @@ def _ensure_group_shortlist_cost_columns() -> None:
 _ensure_group_shortlist_cost_columns()
 
 
+def _ensure_profile_visibility_column() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("profiles")}
+    except Exception:
+        return
+
+    if "visibility" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE profiles ADD COLUMN visibility VARCHAR(20) NOT NULL DEFAULT 'public'"))
+
+
+_ensure_profile_visibility_column()
+
+
 def _ensure_trip_plan_history_table() -> None:
     inspector = inspect(engine)
     try:

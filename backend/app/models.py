@@ -350,6 +350,7 @@ class Profile(Base):
     username = Column(String(120), nullable=False)
     avatar_url = Column(Text, nullable=True)
     bio = Column(Text, nullable=True)
+    visibility = Column(String(20), nullable=False, default="public", server_default="public")
     
     # Travel Preferences
     budget_min = Column(Integer, nullable=True)  # in USD
