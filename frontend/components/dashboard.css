@@ -51,7 +51,12 @@
 .welcome-section {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
+    background: #ffffff;
+    border: 1px solid rgba(46, 107, 85, 0.12);
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 10px 26px rgba(12, 40, 28, 0.07);
 }
 
 .welcome-title {
@@ -62,19 +67,21 @@
 }
 
 .action-buttons {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
     width: 100%;
 }
 
 .action-btn {
-    padding: 0.75rem 1rem;
+    min-width: 118px;
+    width: auto;
+    padding: 0.62rem 0.9rem;
     border: 2px solid rgba(45, 122, 74, 0.3);
-    border-radius: 12px;
+    border-radius: 999px;
     background: rgba(45, 122, 74, 0.08);
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.84rem;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -83,6 +90,7 @@
     transition: all 0.3s ease;
     text-align: center;
     color: #1a1a1a;
+    flex: 0 0 auto;
 }
 
 .action-btn:hover {
@@ -1748,7 +1756,12 @@
     }
 
     .action-buttons {
-        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+        gap: 0.55rem;
+    }
+
+    .action-btn {
+        flex: 1 1 calc(50% - 0.55rem);
+        min-width: 130px;
     }
 
     .trips-grid {
@@ -1780,7 +1793,12 @@
 
 @media (max-width: 480px) {
     .action-buttons {
-        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+    }
+
+    .action-btn {
+        flex-basis: 100%;
+        min-width: 0;
     }
 
     .welcome-title {

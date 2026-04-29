@@ -454,13 +454,13 @@ export default function Dashboard() {
                 });
                 const data = await response.json().catch(() => ({ results: [] }));
                 if (!response.ok) {
-                    throw new Error(parseApiError(data, "Hotel deals are unavailable right now."));
+                    throw new Error(parseApiError(data, "Hotel ideas are unavailable right now."));
                 }
 
                 setHotelDeals(Array.isArray(data.results) ? data.results.slice(0, 3) : []);
             } catch (error) {
                 setHotelDeals([]);
-                setHotelDealsError(error instanceof Error ? error.message : "Hotel deals are unavailable right now.");
+                setHotelDealsError(error instanceof Error ? error.message.replaceAll("deals", "ideas") : "Hotel ideas are unavailable right now.");
             } finally {
                 setLoadingHotelDeals(false);
             }
@@ -490,13 +490,13 @@ export default function Dashboard() {
                 });
                 const data = await response.json().catch(() => ({ results: [] }));
                 if (!response.ok) {
-                    throw new Error(parseApiError(data, "Airline deals are unavailable right now."));
+                    throw new Error(parseApiError(data, "Airline ideas are unavailable right now."));
                 }
 
                 setFlightDeals(Array.isArray(data.results) ? data.results.slice(0, 3) : []);
             } catch (error) {
                 setFlightDeals([]);
-                setFlightDealsError(error instanceof Error ? error.message : "Airline deals are unavailable right now.");
+                setFlightDealsError(error instanceof Error ? error.message.replaceAll("deals", "ideas") : "Airline ideas are unavailable right now.");
             } finally {
                 setLoadingFlightDeals(false);
             }
@@ -641,7 +641,7 @@ export default function Dashboard() {
                 id: `hotel-${hotel.place_id}`,
                 label: hotel.name,
                 category: "Hotel" as const,
-                primary: hotel.address || "Hotel deal",
+                primary: hotel.address || "Hotel idea",
                 secondary: hotel.rating != null ? `${hotel.rating.toFixed(1)} rating` : "No rating yet",
                 estimatedCost,
                 currency: hotel.currency,
@@ -1157,7 +1157,7 @@ export default function Dashboard() {
                     <section className="dashboard-deals-section">
                         <div className="previous-summary-header">
                             <div>
-                                <p className="previous-summary-kicker">Explore Deals</p>
+                                <p className="previous-summary-kicker">Trip Ideas</p>
                                 <h3 className="previous-summary-title">Popular Destinations, Hotels, and Flights</h3>
                             </div>
                         </div>
@@ -1210,13 +1210,13 @@ export default function Dashboard() {
 
                             <div className="deal-column">
                                 <div className="deal-column-header">
-                                    <h4>Hotel Deals</h4>
+                                    <h4>Hotel Ideas</h4>
                                     <button type="button" onClick={() => router.push("/hotels")}>Explore</button>
                                 </div>
                                 {loadingHotelDeals ? (
-                                    <div className="deal-empty">Loading hotel deals...</div>
+                                    <div className="deal-empty">Loading hotel ideas...</div>
                                 ) : hotelDeals.length === 0 ? (
-                                    <div className="deal-empty">{hotelDealsError || "No hotel deals available right now."}</div>
+                                    <div className="deal-empty">{hotelDealsError || "No hotel ideas available right now."}</div>
                                 ) : (
                                     <div className="deal-card-list">
                                         {hotelDeals.map((hotel) => (
@@ -1256,13 +1256,13 @@ export default function Dashboard() {
 
                             <div className="deal-column">
                                 <div className="deal-column-header">
-                                    <h4>Airline Deals</h4>
+                                    <h4>Airline Ideas</h4>
                                     <button type="button" onClick={() => router.push("/bookings")}>Search</button>
                                 </div>
                                 {loadingFlightDeals ? (
-                                    <div className="deal-empty">Loading airline deals...</div>
+                                    <div className="deal-empty">Loading airline ideas...</div>
                                 ) : flightDeals.length === 0 ? (
-                                    <div className="deal-empty">{flightDealsError || "No airline deals available right now."}</div>
+                                    <div className="deal-empty">{flightDealsError || "No airline ideas available right now."}</div>
                                 ) : (
                                     <div className="deal-card-list">
                                         {flightDeals.map((flight) => (
@@ -1306,7 +1306,7 @@ export default function Dashboard() {
 
                         {selectedComparisonItems.length === 0 ? (
                             <div className="trip-section-empty">
-                                Select previous trips or deals to compare flights, hotels, and estimated total cost.
+                                Select previous trips or trip ideas to compare flights, hotels, and estimated total cost.
                             </div>
                         ) : (
                             <>
