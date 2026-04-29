@@ -119,6 +119,20 @@ type PreviousTripSummary = {
     actionLabel: string;
     actionPath: string;
     sortDate: string | null;
+    estimatedCost: number | null;
+    currency: string;
+    costNote: string;
+};
+
+type ComparableItem = {
+    id: string;
+    label: string;
+    category: "Previous Trip" | "Destination" | "Hotel" | "Flight";
+    primary: string;
+    secondary: string;
+    estimatedCost: number | null;
+    currency: string;
+    costNote: string;
 };
 
 type PollSection = "upcoming" | "previous";
@@ -202,6 +216,11 @@ function formatDashboardDateRange(start: string | null, end: string | null): str
     return formatDashboardDate(start || end);
 }
 
+function formatDashboardMoney(amount: number | null, currency = "USD"): string {
+    if (amount == null || Number.isNaN(amount)) return "Estimate unavailable";
+    return `${currency} ${amount.toFixed(2)}`;
+}
+
 function getDefaultPollDeadlineInputValue(): string {
     const twoDaysLater = new Date(Date.now() + (2 * 24 * 60 * 60 * 1000));
     const year = twoDaysLater.getFullYear();
@@ -267,6 +286,7 @@ export default function Dashboard() {
     const [submittingPollVotes, setSubmittingPollVotes] = useState<Record<number, boolean>>({});
     const [selectedGroupByBookingId, setSelectedGroupByBookingId] = useState<Record<number, string>>({});
     const [shortlistingBookingIds, setShortlistingBookingIds] = useState<Record<number, boolean>>({});
+    const [selectedComparisonIds, setSelectedComparisonIds] = useState<string[]>([]);
     const [pollForm, setPollForm] = useState({
         groupId: "",
         question: "",
@@ -540,6 +560,9 @@ export default function Dashboard() {
             actionLabel: "View Itinerary",
             actionPath: `/group/${item.group_id}/itinerary?historyId=${item.id}`,
             sortDate: item.archived_at || item.ends_at || item.starts_at,
+            estimatedCost: null,
+            currency: "USD",
+            costNote: "Archived itinerary cost varies",
         }));
 
         const groupItems = previousTrips.map((group) => ({
@@ -552,19 +575,28 @@ export default function Dashboard() {
             actionLabel: "Open Group",
             actionPath: `/group/${group.id}`,
             sortDate: group.trip_end_at || group.trip_start_at || group.created_at,
+            estimatedCost: null,
+            currency: "USD",
+            costNote: "Group trip cost varies by itinerary",
         }));
 
-        const bookingItems = bookings.map((booking) => ({
-            id: `booking-${booking.id}`,
-            title: `Flight booking ${booking.booking_reference || booking.order_id}`,
-            destination: "Booked flight",
-            dates: `Booked ${formatDashboardDate(booking.created_at)}`,
-            groupSize: "Solo booking",
-            status: booking.payment_status,
-            actionLabel: "View Booking",
-            actionPath: "/bookings/history",
-            sortDate: booking.created_at,
-        }));
+        const bookingItems = bookings.map((booking) => {
+            const bookingAmount = Number(booking.total_amount);
+            return {
+                id: `booking-${booking.id}`,
+                title: `Flight booking ${booking.booking_reference || booking.order_id}`,
+                destination: "Booked flight",
+                dates: `Booked ${formatDashboardDate(booking.created_at)}`,
+                groupSize: "Solo booking",
+                status: booking.payment_status,
+                actionLabel: "View Booking",
+                actionPath: "/bookings/history",
+                sortDate: booking.created_at,
+                estimatedCost: Number.isNaN(bookingAmount) ? null : bookingAmount,
+                currency: booking.currency,
+                costNote: "Confirmed flight booking",
+            };
+        });
 
         return [...archivedItems, ...groupItems, ...bookingItems]
             .sort((a, b) => {
@@ -574,6 +606,86 @@ export default function Dashboard() {
             })
             .slice(0, 6);
     }, [archivedHistory, bookings, previousTrips]);
+
+    const comparisonOptions = useMemo<ComparableItem[]>(() => {
+        const previousTripOptions = previousTripSummaries.map((trip) => ({
+            id: trip.id,
+            label: trip.title,
+            category: "Previous Trip" as const,
+            primary: trip.destination,
+            secondary: `${trip.dates} • ${trip.groupSize}`,
+            estimatedCost: trip.estimatedCost,
+            currency: trip.currency,
+            costNote: trip.costNote,
+        }));
+
+        const destinationOptions = destinationDeals.map((destination) => ({
+            id: `destination-${destination.place_id}`,
+            label: destination.name,
+            category: "Destination" as const,
+            primary: destination.address || "Popular destination",
+            secondary: destination.rating != null ? `${destination.rating.toFixed(1)} rating` : "No rating yet",
+            estimatedCost: null,
+            currency: "USD",
+            costNote: "Destination cost varies",
+        }));
+
+        const hotelOptions = hotelDeals.map((hotel) => {
+            const estimatedCost = hotel.total_price ?? (
+                hotel.price_per_night != null && hotel.nights != null
+                    ? hotel.price_per_night * hotel.nights
+                    : hotel.price_per_night ?? null
+            );
+
+            return {
+                id: `hotel-${hotel.place_id}`,
+                label: hotel.name,
+                category: "Hotel" as const,
+                primary: hotel.address || "Hotel deal",
+                secondary: hotel.rating != null ? `${hotel.rating.toFixed(1)} rating` : "No rating yet",
+                estimatedCost,
+                currency: hotel.currency,
+                costNote: hotel.total_price != null ? "Estimated stay total" : "Nightly estimate",
+            };
+        });
+
+        const flightOptions = flightDeals.map((flight) => ({
+            id: `flight-${flight.id}`,
+            label: `${flight.departure_airport} to ${flight.arrival_airport}`,
+            category: "Flight" as const,
+            primary: flight.airline,
+            secondary: `${flight.duration} • ${flight.stops === 0 ? "Nonstop" : `${flight.stops} stops`}`,
+            estimatedCost: flight.price,
+            currency: flight.currency,
+            costNote: "Flight offer price",
+        }));
+
+        return [...previousTripOptions, ...destinationOptions, ...hotelOptions, ...flightOptions];
+    }, [destinationDeals, flightDeals, hotelDeals, previousTripSummaries]);
+
+    const selectedComparisonItems = useMemo(() => {
+        return selectedComparisonIds
+            .map((id) => comparisonOptions.find((item) => item.id === id))
+            .filter((item): item is ComparableItem => Boolean(item));
+    }, [comparisonOptions, selectedComparisonIds]);
+
+    const comparisonTotal = selectedComparisonItems.reduce((total, item) => {
+        return item.estimatedCost == null ? total : total + item.estimatedCost;
+    }, 0);
+    const comparisonCurrencies = Array.from(
+        new Set(selectedComparisonItems.filter((item) => item.estimatedCost != null).map((item) => item.currency))
+    );
+    const comparisonTotalCurrency = comparisonCurrencies.length === 1 ? comparisonCurrencies[0] : "USD";
+    const comparisonTotalLabel = comparisonCurrencies.length > 1 ? "Total Known Estimate (mixed currencies)" : "Total Known Estimate";
+
+    const toggleComparisonItem = (itemId: string) => {
+        setSelectedComparisonIds((prev) => {
+            if (prev.includes(itemId)) {
+                return prev.filter((id) => id !== itemId);
+            }
+            return [...prev, itemId].slice(-4);
+        });
+    };
 
     const handlePlanTrip = () => {
         if (groups.length === 0) {
@@ -1029,6 +1141,13 @@ export default function Dashboard() {
                                         >
                                             {trip.actionLabel}
                                         </button>
+                                        <button
+                                            type="button"
+                                            className={`compare-toggle ${selectedComparisonIds.includes(trip.id) ? "selected" : ""}`}
+                                            onClick={() => toggleComparisonItem(trip.id)}
+                                        >
+                                            {selectedComparisonIds.includes(trip.id) ? "Selected" : "Compare"}
+                                        </button>
                                     </article>
                                 ))}
                             </div>
@@ -1073,6 +1192,16 @@ export default function Dashboard() {
                                                         <span>Cost varies</span>
                                                     </div>
                                                 </div>
+                                                <button
+                                                    type="button"
+                                                    className={`compare-toggle deal-compare-toggle ${selectedComparisonIds.includes(`destination-${destination.place_id}`) ? "selected" : ""}`}
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        toggleComparisonItem(`destination-${destination.place_id}`);
+                                                    }}
+                                                >
+                                                    {selectedComparisonIds.includes(`destination-${destination.place_id}`) ? "Selected" : "Compare"}
+                                                </button>
                                             </article>
                                         ))}
                                     </div>
@@ -1112,6 +1241,13 @@ export default function Dashboard() {
                                                         </span>
                                                     </div>
                                                 </div>
+                                                <button
+                                                    type="button"
+                                                    className={`compare-toggle deal-compare-toggle ${selectedComparisonIds.includes(`hotel-${hotel.place_id}`) ? "selected" : ""}`}
+                                                    onClick={() => toggleComparisonItem(`hotel-${hotel.place_id}`)}
+                                                >
+                                                    {selectedComparisonIds.includes(`hotel-${hotel.place_id}`) ? "Selected" : "Compare"}
+                                                </button>
                                             </article>
                                         ))}
                                     </div>
@@ -1142,12 +1278,61 @@ export default function Dashboard() {
                                                 <div className="flight-deal-price">
                                                     {flight.currency} {flight.price.toFixed(2)}
                                                 </div>
+                                                <button
+                                                    type="button"
+                                                    className={`compare-toggle ${selectedComparisonIds.includes(`flight-${flight.id}`) ? "selected" : ""}`}
+                                                    onClick={() => toggleComparisonItem(`flight-${flight.id}`)}
+                                                >
+                                                    {selectedComparisonIds.includes(`flight-${flight.id}`) ? "Selected" : "Compare"}
+                                                </button>
                                             </article>
                                         ))}
                                     </div>
                                 )}
                             </div>
                         </div>
+                    </section>
+
+                    <section className="cost-comparison-section">
+                        <div className="previous-summary-header">
+                            <div>
+                                <p className="previous-summary-kicker">Cost Planning</p>
+                                <h3 className="previous-summary-title">Cost Comparison</h3>
+                            </div>
+                            <span className="previous-summary-count">
+                                {selectedComparisonItems.length} selected
+                            </span>
+                        </div>
+
+                        {selectedComparisonItems.length === 0 ? (
+                            <div className="trip-section-empty">
+                                Select previous trips or deals to compare flights, hotels, and estimated total cost.
+                            </div>
+                        ) : (
+                            <>
+                                <div className="comparison-grid">
+                                    {selectedComparisonItems.map((item) => (
+                                        <article key={item.id} className="comparison-card">
+                                            <div className="comparison-card-topline">
+                                                <span>{item.category}</span>
+                                                <button type="button" onClick={() => toggleComparisonItem(item.id)}>Remove</button>
+                                            </div>
+                                            <h4>{item.label}</h4>
+                                            <p>{item.primary}</p>
+                                            <p>{item.secondary}</p>
+                                            <div className="comparison-cost">
+                                                {formatDashboardMoney(item.estimatedCost, item.currency)}
+                                            </div>
+                                            <span className="comparison-note">{item.costNote}</span>
+                                        </article>
+                                    ))}
+                                </div>
+                                <div className="comparison-total-row">
+                                    <span>{comparisonTotalLabel}</span>
+                                    <strong>{formatDashboardMoney(comparisonTotal, comparisonTotalCurrency)}</strong>
+                                </div>
+                            </>
+                        )}
                     </section>
 
                     {/* Trip Cards */}

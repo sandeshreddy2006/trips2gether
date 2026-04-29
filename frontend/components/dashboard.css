@@ -337,6 +337,26 @@
     background: #f1f8f4;
 }
 
+.compare-toggle {
+    border: 1px solid rgba(46, 107, 85, 0.35);
+    border-radius: 8px;
+    background: #f8fcfa;
+    color: #2e6b55;
+    cursor: pointer;
+    font-weight: 800;
+    padding: 0.5rem 0.75rem;
+}
+
+.compare-toggle:hover,
+.compare-toggle.selected {
+    background: #2e6b55;
+    color: #ffffff;
+}
+
+.deal-compare-toggle {
+    margin: 0 0.85rem 0.85rem;
+}
+
 .dashboard-deals-section {
     background: #ffffff;
     border: 1px solid rgba(46, 107, 85, 0.12);
@@ -485,6 +505,98 @@
     font-size: 0.88rem;
     line-height: 1.5;
     padding: 1rem;
+}
+
+.cost-comparison-section {
+    background: linear-gradient(180deg, rgba(12, 36, 25, 0.96) 0%, rgba(17, 46, 32, 0.96) 100%);
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 18px 40px rgba(7, 20, 14, 0.16);
+}
+
+.cost-comparison-section .previous-summary-kicker,
+.cost-comparison-section .previous-summary-title {
+    color: #f3c969;
+}
+
+.comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 1rem;
+}
+
+.comparison-card {
+    border: 1px solid rgba(126, 205, 164, 0.18);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.07);
+    color: #eaf6ee;
+    padding: 1rem;
+}
+
+.comparison-card-topline {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.comparison-card-topline span {
+    color: #f3c969;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.comparison-card-topline button {
+    border: none;
+    background: transparent;
+    color: #bfe7cf;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0;
+}
+
+.comparison-card h4 {
+    margin: 0 0 0.45rem 0;
+    color: #ffffff;
+}
+
+.comparison-card p {
+    margin: 0 0 0.4rem 0;
+    color: #cfe9d9;
+    font-size: 0.88rem;
+    line-height: 1.4;
+}
+
+.comparison-cost {
+    color: #ffffff;
+    font-size: 1.25rem;
+    font-weight: 900;
+    margin-top: 0.85rem;
+}
+
+.comparison-note {
+    display: block;
+    color: #a9cdb8;
+    font-size: 0.78rem;
+    margin-top: 0.35rem;
+}
+
+.comparison-total-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    border-top: 1px solid rgba(126, 205, 164, 0.18);
+    color: #f3c969;
+    font-weight: 800;
+    margin-top: 1rem;
+    padding-top: 1rem;
+}
+
+.comparison-total-row strong {
+    color: #ffffff;
 }
 
 /* Trip Cards */
