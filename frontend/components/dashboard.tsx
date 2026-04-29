@@ -47,6 +47,34 @@ type Destination = {
     business_status?: string;
 };
 
+type HotelDeal = {
+    place_id: string;
+    name: string;
+    address?: string | null;
+    rating?: number | null;
+    user_ratings_total?: number | null;
+    price_per_night?: number | null;
+    total_price?: number | null;
+    currency: string;
+    nights?: number | null;
+    photo_url?: string | null;
+    photo_reference?: string | null;
+};
+
+type FlightDeal = {
+    id: string;
+    airline: string;
+    price: number;
+    currency: string;
+    duration: string;
+    stops: number;
+    departure_airport: string;
+    arrival_airport: string;
+    departure_time?: string | null;
+    arrival_time?: string | null;
+    logo_url?: string | null;
+};
+
 type Booking = {
     id: number;
     order_id: string;
@@ -184,6 +212,12 @@ function getDefaultPollDeadlineInputValue(): string {
     return `${year}-${month}-${day}T${hour}:${minute}`;
 }
 
+function getFutureDateISO(daysFromNow: number): string {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toISOString().split("T")[0];
+}
+
 // Helper function to get the image URL (using proxy for Safari compatibility)
 const getImageUrl = (destination: Destination | null): string => {
     if (!destination) return '/trip-marseille.jpg';
@@ -208,6 +242,12 @@ export default function Dashboard() {
     const [popularDestinations, setPopularDestinations] = useState<Destination[]>([]);
     const [loadingDestinations, setLoadingDestinations] = useState(true);
     const [trendingError, setTrendingError] = useState<string | null>(null);
+    const [hotelDeals, setHotelDeals] = useState<HotelDeal[]>([]);
+    const [loadingHotelDeals, setLoadingHotelDeals] = useState(true);
+    const [hotelDealsError, setHotelDealsError] = useState<string | null>(null);
+    const [flightDeals, setFlightDeals] = useState<FlightDeal[]>([]);
+    const [loadingFlightDeals, setLoadingFlightDeals] = useState(true);
+    const [flightDealsError, setFlightDealsError] = useState<string | null>(null);
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loadingBookings, setLoadingBookings] = useState(true);
     const [inboxItems, setInboxItems] = useState<InboxNotification[]>([]);
@@ -373,8 +413,81 @@ export default function Dashboard() {
         fetchDestinations();
     }, []);
 
+    useEffect(() => {
+        const fetchHotelDeals = async () => {
+            const destination = popularDestinations[0]?.name || "Paris";
+            try {
+                setLoadingHotelDeals(true);
+                setHotelDealsError(null);
+
+                const response = await fetch("/api/hotels/search", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        destination,
+                        check_in: getFutureDateISO(45),
+                        check_out: getFutureDateISO(48),
+                        guests: 2,
+                        rooms: 1,
+                        sort_by: "rating_desc",
+                    }),
+                });
+                const data = await response.json().catch(() => ({ results: [] }));
+                if (!response.ok) {
+                    throw new Error(parseApiError(data, "Hotel deals are unavailable right now."));
+                }
+
+                setHotelDeals(Array.isArray(data.results) ? data.results.slice(0, 3) : []);
+            } catch (error) {
+                setHotelDeals([]);
+                setHotelDealsError(error instanceof Error ? error.message : "Hotel deals are unavailable right now.");
+            } finally {
+                setLoadingHotelDeals(false);
+            }
+        };
+
+        if (!loadingDestinations) {
+            void fetchHotelDeals();
+        }
+    }, [loadingDestinations, popularDestinations]);
+
+    useEffect(() => {
+        const fetchFlightDeals = async () => {
+            try {
+                setLoadingFlightDeals(true);
+                setFlightDealsError(null);
+
+                const response = await fetch("/api/flights/search", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        origin: "JFK",
+                        destination: "CDG",
+                        depart_date: getFutureDateISO(45),
+                        return_date: getFutureDateISO(52),
+                        travelers: 1,
+                    }),
+                });
+                const data = await response.json().catch(() => ({ results: [] }));
+                if (!response.ok) {
+                    throw new Error(parseApiError(data, "Airline deals are unavailable right now."));
+                }
+
+                setFlightDeals(Array.isArray(data.results) ? data.results.slice(0, 3) : []);
+            } catch (error) {
+                setFlightDeals([]);
+                setFlightDealsError(error instanceof Error ? error.message : "Airline deals are unavailable right now.");
+            } finally {
+                setLoadingFlightDeals(false);
+            }
+        };
+
+        void fetchFlightDeals();
+    }, []);
+
     const featuredDestination = popularDestinations[0] ?? null;
     const trendingCards = popularDestinations.slice(1, 4);
+    const destinationDeals = popularDestinations.slice(0, 3);
 
     const now = useMemo(() => new Date(), []);
 
@@ -920,6 +1033,121 @@ export default function Dashboard() {
                                 ))}
                             </div>
                         )}
+                    </section>
+
+                    <section className="dashboard-deals-section">
+                        <div className="previous-summary-header">
+                            <div>
+                                <p className="previous-summary-kicker">Explore Deals</p>
+                                <h3 className="previous-summary-title">Popular Destinations, Hotels, and Flights</h3>
+                            </div>
+                        </div>
+
+                        <div className="dashboard-deals-grid">
+                            <div className="deal-column">
+                                <div className="deal-column-header">
+                                    <h4>Popular Destinations</h4>
+                                    <button type="button" onClick={() => handleDestinationClick(destinationDeals[0] || null)}>Explore</button>
+                                </div>
+                                {loadingDestinations ? (
+                                    <div className="deal-empty">Loading destinations...</div>
+                                ) : destinationDeals.length === 0 ? (
+                                    <div className="deal-empty">{trendingError || "No popular destinations available right now."}</div>
+                                ) : (
+                                    <div className="deal-card-list">
+                                        {destinationDeals.map((destination) => (
+                                            <article
+                                                key={destination.place_id}
+                                                className="deal-card"
+                                                onClick={() => handleDestinationClick(destination)}
+                                            >
+                                                <div
+                                                    className="deal-card-image"
+                                                    style={{ backgroundImage: `url('${getImageUrl(destination)}')` }}
+                                                />
+                                                <div className="deal-card-body">
+                                                    <h5>{destination.name}</h5>
+                                                    <p>{destination.address || "Trending trip idea"}</p>
+                                                    <div className="deal-card-meta">
+                                                        <span>{destination.rating != null ? `${destination.rating.toFixed(1)} rating` : "No rating yet"}</span>
+                                                        <span>Cost varies</span>
+                                                    </div>
+                                                </div>
+                                            </article>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="deal-column">
+                                <div className="deal-column-header">
+                                    <h4>Hotel Deals</h4>
+                                    <button type="button" onClick={() => router.push("/hotels")}>Explore</button>
+                                </div>
+                                {loadingHotelDeals ? (
+                                    <div className="deal-empty">Loading hotel deals...</div>
+                                ) : hotelDeals.length === 0 ? (
+                                    <div className="deal-empty">{hotelDealsError || "No hotel deals available right now."}</div>
+                                ) : (
+                                    <div className="deal-card-list">
+                                        {hotelDeals.map((hotel) => (
+                                            <article key={hotel.place_id} className="deal-card">
+                                                <div
+                                                    className="deal-card-image"
+                                                    style={{
+                                                        backgroundImage: `url('${hotel.photo_reference
+                                                            ? `/api/destinations/image?photo_reference=${encodeURIComponent(hotel.photo_reference)}&width=500&height=320`
+                                                            : hotel.photo_url || "/trip-marseille.jpg"}')`,
+                                                    }}
+                                                />
+                                                <div className="deal-card-body">
+                                                    <h5>{hotel.name}</h5>
+                                                    <p>{hotel.address || "Top-rated stay"}</p>
+                                                    <div className="deal-card-meta">
+                                                        <span>{hotel.rating != null ? `${hotel.rating.toFixed(1)} rating` : "No rating yet"}</span>
+                                                        <span>
+                                                            {hotel.price_per_night != null
+                                                                ? `${hotel.currency} ${hotel.price_per_night.toFixed(0)} / night`
+                                                                : "Price varies"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </article>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="deal-column">
+                                <div className="deal-column-header">
+                                    <h4>Airline Deals</h4>
+                                    <button type="button" onClick={() => router.push("/bookings")}>Search</button>
+                                </div>
+                                {loadingFlightDeals ? (
+                                    <div className="deal-empty">Loading airline deals...</div>
+                                ) : flightDeals.length === 0 ? (
+                                    <div className="deal-empty">{flightDealsError || "No airline deals available right now."}</div>
+                                ) : (
+                                    <div className="deal-card-list">
+                                        {flightDeals.map((flight) => (
+                                            <article key={flight.id} className="flight-deal-card">
+                                                <div className="flight-deal-route">
+                                                    <strong>{flight.departure_airport} to {flight.arrival_airport}</strong>
+                                                    <span>{flight.airline}</span>
+                                                </div>
+                                                <div className="deal-card-meta">
+                                                    <span>{flight.duration}</span>
+                                                    <span>{flight.stops === 0 ? "Nonstop" : `${flight.stops} ${flight.stops === 1 ? "stop" : "stops"}`}</span>
+                                                </div>
+                                                <div className="flight-deal-price">
+                                                    {flight.currency} {flight.price.toFixed(2)}
+                                                </div>
+                                            </article>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </section>
 
                     {/* Trip Cards */}
