@@ -271,6 +271,20 @@ class Notification(Base):
     user = relationship("User", foreign_keys=[user_id])
 
 
+class UserReport(Base):
+    __tablename__ = "user_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    report_type = Column(String(32), nullable=False, index=True)  # e.g., bug, data_error, feedback
+    title = Column(String(255), nullable=True)
+    description = Column(Text, nullable=False)
+    status = Column(String(32), nullable=False, default="open", index=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class GroupShortlistDestination(Base):
     __tablename__ = "group_shortlist_destinations"
 

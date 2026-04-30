@@ -55,6 +55,9 @@ from .schemas import (
     GroupNotificationListOut,
     NotificationOut,
     NotificationListOut,
+    ReportCreateIn,
+    ReportOut,
+    ReportListOut,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -227,6 +230,23 @@ def _ensure_trip_plan_history_table() -> None:
 
 
 _ensure_trip_plan_history_table()
+
+
+def _ensure_user_reports_table() -> None:
+    inspector = inspect(engine)
+    try:
+        has_table = inspector.has_table("user_reports")
+    except Exception:
+        has_table = False
+
+    if not has_table:
+        try:
+            models.UserReport.__table__.create(bind=engine, checkfirst=True)
+        except Exception:
+            pass
+
+
+_ensure_user_reports_table()
 
 
 app = FastAPI(title="trips2gether API")
@@ -4089,6 +4109,106 @@ def create_profile(request: Request, db: Session = Depends(get_db)):
     db.refresh(new_profile)
     
     return new_profile
+
+
+@app.post("/reports", response_model=dict)
+def create_report(body: ReportCreateIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Create a user report (bug, data error, feedback) and alert the dev team."""
+    current_user = get_current_user_info(request, db)
+
+    report_type = (body.report_type or "bug").strip()
+    description = (body.description or "").strip()
+    title = (body.title or "").strip() if body.title else None
+
+    if not description:
+        raise HTTPException(status_code=400, detail="Description is required")
+
+    report = models.UserReport(
+        user_id=current_user.id,
+        report_type=report_type,
+        title=title,
+        description=description,
+        status="open",
+    )
+    db.add(report)
+    db.flush()
+    db.commit()
+    db.refresh(report)
+
+    # Prepare payload for background alert
+    payload = {
+        "id": report.id,
+        "user_id": report.user_id,
+        "report_type": report.report_type,
+        "title": report.title,
+        "description": report.description,
+        "status": report.status,
+        "created_at": str(report.created_at),
+    }
+
+    background_tasks.add_task(_send_report_alert, payload)
+
+    return {"ok": True, "report": payload}
+
+
+@app.get("/reports", response_model=dict)
+def list_reports(request: Request, db: Session = Depends(get_db)):
+    """List reports for the current authenticated user."""
+    user = get_current_user_info(request, db)
+    items = (
+        db.query(models.UserReport)
+        .filter(models.UserReport.user_id == user.id)
+        .order_by(models.UserReport.created_at.desc())
+        .all()
+    )
+
+    out = []
+    for it in items:
+        out.append({
+            "id": it.id,
+            "user_id": it.user_id,
+            "report_type": it.report_type,
+            "title": it.title,
+            "description": it.description,
+            "status": it.status,
+            "created_at": it.created_at,
+        })
+
+    return {"ok": True, "items": out}
+
+
+def _send_report_alert(payload: dict) -> None:
+    """Background helper to notify dev team about a new user report.
+
+    Uses SMTP credentials from env vars if available; otherwise logs to console.
+    """
+    try:
+        dev_recipient = os.getenv("DEV_REPORT_RECIPIENT") or os.getenv("SMTP_EMAIL")
+        sender = os.getenv("SMTP_EMAIL")
+        sender_password = os.getenv("SMTP_PASSWORD")
+
+        subject = f"[User Report] {payload.get('report_type')} - id:{payload.get('id')}"
+        body = f"<p>A new user report was submitted:</p>"
+        body += f"<ul>"
+        body += f"<li><strong>Report ID:</strong> {payload.get('id')}</li>"
+        body += f"<li><strong>User ID:</strong> {payload.get('user_id')}</li>"
+        body += f"<li><strong>Type:</strong> {payload.get('report_type')}</li>"
+        if payload.get('title'):
+            body += f"<li><strong>Title:</strong> {payload.get('title')}</li>"
+        body += f"<li><strong>Description:</strong> {payload.get('description')}</li>"
+        body += f"<li><strong>Created At:</strong> {payload.get('created_at')}</li>"
+        body += f"</ul>"
+
+        if sender and sender_password and dev_recipient:
+            try:
+                send_email(sender, sender_password, dev_recipient, subject, body)
+                print(f"[Report Alert] Email sent to {dev_recipient} for report {payload.get('id')}")
+            except Exception as e:
+                print(f"[Report Alert] Failed to send email: {e}")
+        else:
+            print("[Report Alert] SMTP credentials or recipient not configured. Report payload:", payload)
+    except Exception as e:
+        print(f"[Report Alert] Unexpected error: {e}")
 
 
 @app.put("/profile/update", response_model=ProfileOut)

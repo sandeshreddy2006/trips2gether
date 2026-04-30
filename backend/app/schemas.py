@@ -169,6 +169,27 @@ class NotificationListOut(BaseModel):
     items: list[NotificationOut]
 
 
+# User report schemas
+class ReportCreateIn(BaseModel):
+    report_type: Literal["bug", "data_error", "feedback"] = "bug"
+    title: str | None = Field(None, max_length=255)
+    description: str = Field(..., min_length=5)
+
+
+class ReportOut(BaseModel):
+    id: int
+    user_id: int
+    report_type: str
+    title: str | None = None
+    description: str
+    status: str
+    created_at: datetime
+
+
+class ReportListOut(BaseModel):
+    items: list[ReportOut]
+
+
 class GroupAddMembersIn(BaseModel):
     user_ids: list[int] = Field(min_length=1, description="List of user IDs to invite")
 
