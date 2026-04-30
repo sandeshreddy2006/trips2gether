@@ -58,6 +58,7 @@ from .schemas import (
     ItineraryTimelineOut,
     TripStateUpdateIn,
     TripSuccessScoreResponse,
+    AiTripPlanGenerateIn,
     GroupPollCreateIn,
     GroupPollVoteIn,
     GroupPollSuggestionIn,
@@ -4573,6 +4574,91 @@ def group_trip_success_score(
     _get_group_and_membership(group_id, current_user.id, db)  # verifies membership
     result = _get_score(group_id, db)
     return result
+
+
+@app.post("/groups/{group_id}/ai-trip-plan/generate", response_model=dict)
+def generate_ai_trip_plan(
+    group_id: int,
+    body: AiTripPlanGenerateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Generate and persist a full AI trip plan snapshot for the group."""
+    from .ai import generate_group_trip_plan as _generate_plan
+
+    current_user = get_current_user_info(request, db)
+    _group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    constraints = {
+        "start_date": body.start_date.strip(),
+        "end_date": body.end_date.strip(),
+        "budget": body.budget,
+        "budget_currency": body.budget_currency.strip() if body.budget_currency else "USD",
+        "accommodation_preference": (body.accommodation_preference or "").strip() or None,
+        "notes": (body.notes or "").strip() or None,
+    }
+
+    result = _generate_plan(group_id, constraints, db)
+    if not result.get("ok") or not result.get("plan"):
+        raise HTTPException(status_code=503, detail=result.get("detail") or "Unable to generate AI trip plan")
+
+    existing = (
+        db.query(models.GroupAiTripPlanSnapshot)
+        .filter(models.GroupAiTripPlanSnapshot.group_id == group_id)
+        .first()
+    )
+    if not existing:
+        existing = models.GroupAiTripPlanSnapshot(
+            group_id=group_id,
+            generated_by=current_user.id,
+        )
+        db.add(existing)
+
+    existing.generated_by = current_user.id
+    existing.constraints_json = json.dumps(constraints)
+    existing.plan_json = json.dumps(result["plan"])
+    db.commit()
+    db.refresh(existing)
+
+    return {
+        "ok": True,
+        "message": "AI trip plan generated",
+        "constraints": constraints,
+        "plan": result["plan"],
+        "saved_at": existing.updated_at.isoformat() if existing.updated_at else None,
+    }
+
+
+@app.get("/groups/{group_id}/ai-trip-plan", response_model=dict)
+def get_ai_trip_plan(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Fetch the most recent saved AI trip plan snapshot for the group."""
+    current_user = get_current_user_info(request, db)
+    _get_group_and_membership(group_id, current_user.id, db)
+
+    existing = (
+        db.query(models.GroupAiTripPlanSnapshot)
+        .filter(models.GroupAiTripPlanSnapshot.group_id == group_id)
+        .first()
+    )
+    if not existing:
+        return {"ok": True, "plan": None, "constraints": None, "saved_at": None}
+
+    try:
+        plan = json.loads(existing.plan_json or "{}")
+    except Exception:
+        plan = {}
+
+    try:
+        constraints = json.loads(existing.constraints_json or "{}")
+    except Exception:
+        constraints = {}
+
+    return {
+        "ok": True,
+        "plan": plan if isinstance(plan, dict) else {},
+        "constraints": constraints if isinstance(constraints, dict) else {},
+        "saved_at": existing.updated_at.isoformat() if existing.updated_at else None,
+    }
 
 
 @app.get("/groups/{group_id}/cost-summary", response_model=dict)

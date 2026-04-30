@@ -924,6 +924,38 @@ class TripSuccessScoreResponse(BaseModel):
 
 
 # -------------------------
+# AI Trip Plan Schemas
+# -------------------------
+
+class AiTripPlanGenerateIn(BaseModel):
+    start_date: str = Field(min_length=1, max_length=32)
+    end_date: str = Field(min_length=1, max_length=32)
+    budget: float = Field(gt=0)
+    budget_currency: str = Field(default="USD", min_length=1, max_length=12)
+    accommodation_preference: str | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class AiTripRecommendationItemOut(BaseModel):
+    title: str
+    summary: str
+    reason: str
+    estimated_cost: float | None = None
+    currency: str | None = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AiTripPlanOut(BaseModel):
+    group_id: int
+    generated_at: str
+    destination: AiTripRecommendationItemOut
+    flights: list[AiTripRecommendationItemOut] = []
+    hotels: list[AiTripRecommendationItemOut] = []
+    restaurants: list[AiTripRecommendationItemOut] = []
+    activities: list[AiTripRecommendationItemOut] = []
+
+
+# -------------------------
 # Itinerary Schemas
 # -------------------------
 

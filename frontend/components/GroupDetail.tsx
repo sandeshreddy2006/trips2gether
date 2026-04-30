@@ -97,6 +97,25 @@ type TripSuccessScore = {
     fallback: boolean;
 };
 
+type AiPlanItem = {
+    title: string;
+    summary: string;
+    reason: string;
+    estimated_cost?: number | null;
+    currency?: string | null;
+    metadata?: Record<string, unknown>;
+};
+
+type AiTripPlan = {
+    group_id: number;
+    generated_at: string;
+    destination: AiPlanItem;
+    flights: AiPlanItem[];
+    hotels: AiPlanItem[];
+    restaurants: AiPlanItem[];
+    activities: AiPlanItem[];
+};
+
 type CostBreakdownItem = {
     item_id: number;
     item_type: string;
@@ -180,6 +199,11 @@ function parseApiError(data: unknown, fallback: string): string {
     return fallback;
 }
 
+function toSafeId(value: string): string {
+    const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return normalized || "ai-item";
+}
+
 function getDefaultPollDeadlineInputValue(): string {
     const twoDaysLater = new Date(Date.now() + (2 * 24 * 60 * 60 * 1000));
     const year = twoDaysLater.getFullYear();
@@ -233,6 +257,20 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [editStatus, setEditStatus] = useState("");
     const [saving, setSaving] = useState(false);
     const [tripScore, setTripScore] = useState<TripSuccessScore | null>(null);
+    const [aiTripPlan, setAiTripPlan] = useState<AiTripPlan | null>(null);
+    const [aiPlanLoading, setAiPlanLoading] = useState(false);
+    const [aiPlanGenerating, setAiPlanGenerating] = useState(false);
+    const [aiPlanSavedAt, setAiPlanSavedAt] = useState<string | null>(null);
+    const [aiPlanFeedback, setAiPlanFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [savingAiKey, setSavingAiKey] = useState<string | null>(null);
+    const [aiForm, setAiForm] = useState({
+        startDate: "",
+        endDate: "",
+        budget: "",
+        budgetCurrency: "USD",
+        accommodationPreference: "",
+        notes: "",
+    });
     const [scoreLoading, setScoreLoading] = useState(false);
     const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
     const [costLoading, setCostLoading] = useState(false);
@@ -266,6 +304,18 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const heroFlightLogos = flightShortlist.slice(0, 4);
     const heroBackgroundImage = heroImage || (heroUsesFlightCollage ? "" : "/trip-marseille.jpg");
     const visiblePolls = pollSection === "upcoming" ? upcomingPolls : previousPolls;
+
+    useEffect(() => {
+        const today = new Date();
+        const inThreeDays = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+        const inSixDays = new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000);
+        const toDateInput = (value: Date) => value.toISOString().slice(0, 10);
+        setAiForm((prev) => ({
+            ...prev,
+            startDate: prev.startDate || toDateInput(inThreeDays),
+            endDate: prev.endDate || toDateInput(inSixDays),
+        }));
+    }, []);
 
     function getShortlistImage(
         item: { photo_reference: string | null; photo_url: string | null },
@@ -314,6 +364,168 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             setCostSummary(null);
         } finally {
             setCostLoading(false);
+        }
+    }
+
+    async function fetchSavedAiTripPlan() {
+        setAiPlanLoading(true);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/ai-trip-plan`, {
+                credentials: "include",
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(parseApiError(data, "Failed to load AI plan"));
+            }
+            setAiTripPlan(data.plan || null);
+            setAiPlanSavedAt(data.saved_at || null);
+        } catch (err) {
+            setAiTripPlan(null);
+            setAiPlanSavedAt(null);
+            setAiPlanFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to load AI plan" });
+        } finally {
+            setAiPlanLoading(false);
+        }
+    }
+
+    async function handleGenerateAiPlan(event: React.FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        const budgetValue = Number(aiForm.budget);
+        if (!aiForm.startDate || !aiForm.endDate || !Number.isFinite(budgetValue) || budgetValue <= 0) {
+            setAiPlanFeedback({ type: "error", text: "Start date, end date, and budget are required." });
+            return;
+        }
+
+        setAiPlanGenerating(true);
+        setAiPlanFeedback(null);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/ai-trip-plan/generate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    start_date: aiForm.startDate,
+                    end_date: aiForm.endDate,
+                    budget: budgetValue,
+                    budget_currency: aiForm.budgetCurrency,
+                    accommodation_preference: aiForm.accommodationPreference || null,
+                    notes: aiForm.notes || null,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(parseApiError(data, "Failed to generate AI plan"));
+            }
+
+            setAiTripPlan(data.plan || null);
+            setAiPlanSavedAt(data.saved_at || null);
+            setAiPlanFeedback({ type: "success", text: "AI trip plan generated and saved." });
+        } catch (err) {
+            setAiPlanFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to generate AI plan" });
+        } finally {
+            setAiPlanGenerating(false);
+        }
+    }
+
+    async function handleSaveAiRecommendation(item: AiPlanItem, section: "destination" | "flight" | "hotel", index: number) {
+        const key = `${section}-${index}-${item.title}`;
+        setSavingAiKey(key);
+        try {
+            if (section === "destination") {
+                const placeId = String(item.metadata?.place_id || `ai-destination-${toSafeId(item.title)}`);
+                const res = await fetch(`/api/groups/${groupId}/shortlist`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        place_id: placeId,
+                        name: item.title,
+                        address: String(item.metadata?.address || item.summary || ""),
+                        rating: typeof item.metadata?.rating === "number" ? item.metadata.rating : null,
+                        types: ["ai_recommendation"],
+                        estimated_cost: item.estimated_cost ?? null,
+                        currency: item.currency || "USD",
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseApiError(data, "Failed to save destination"));
+            } else if (section === "flight") {
+                const offerId = String(item.metadata?.flight_offer_id || `ai-flight-${toSafeId(item.title)}`);
+                const res = await fetch(`/api/groups/${groupId}/flight-shortlist`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        flight_offer_id: offerId,
+                        airline: String(item.metadata?.airline || item.title),
+                        logo_url: item.metadata?.logo_url || null,
+                        price: Number(item.estimated_cost || 0),
+                        currency: item.currency || "USD",
+                        duration: String(item.metadata?.duration || "TBD"),
+                        stops: Number(item.metadata?.stops || 0),
+                        departure_time: item.metadata?.departure_time || null,
+                        arrival_time: item.metadata?.arrival_time || null,
+                        departure_airport: String(item.metadata?.departure_airport || "TBD"),
+                        arrival_airport: String(item.metadata?.arrival_airport || "TBD"),
+                        cabin_class: item.metadata?.cabin_class || null,
+                        baggages: Array.isArray(item.metadata?.baggages) ? item.metadata?.baggages : [],
+                        slices: Array.isArray(item.metadata?.slices) ? item.metadata?.slices : [],
+                        emissions_kg: item.metadata?.emissions_kg || null,
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseApiError(data, "Failed to save flight"));
+            } else {
+                const placeId = String(item.metadata?.place_id || `ai-hotel-${toSafeId(item.title)}`);
+                const res = await fetch(`/api/groups/${groupId}/hotel-shortlist`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        place_id: placeId,
+                        name: item.title,
+                        address: String(item.metadata?.address || ""),
+                        rating: typeof item.metadata?.rating === "number" ? item.metadata.rating : null,
+                        price_level: item.metadata?.price_level || null,
+                        currency: item.currency || "USD",
+                        price_per_night: item.estimated_cost ?? null,
+                        total_price: item.estimated_cost ?? null,
+                        nights: typeof item.metadata?.nights === "number" ? item.metadata.nights : null,
+                        types: ["ai_recommendation"],
+                        amenities: Array.isArray(item.metadata?.amenities) ? item.metadata?.amenities : [],
+                        booking_url: item.metadata?.booking_url || null,
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(parseApiError(data, "Failed to save hotel"));
+            }
+
+            await Promise.all([fetchCostSummary(), fetchDataShortlists()]);
+            setAiPlanFeedback({ type: "success", text: `${section[0].toUpperCase() + section.slice(1)} saved to shortlist.` });
+        } catch (err) {
+            setAiPlanFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to save recommendation" });
+        } finally {
+            setSavingAiKey(null);
+        }
+    }
+
+    async function fetchDataShortlists() {
+        const [shortlistRes, flightShortlistRes, hotelShortlistRes] = await Promise.all([
+            fetch(`/api/groups/${groupId}/shortlist`, { credentials: "include" }),
+            fetch(`/api/groups/${groupId}/flight-shortlist`, { credentials: "include" }),
+            fetch(`/api/groups/${groupId}/hotel-shortlist`, { credentials: "include" }),
+        ]);
+        if (shortlistRes.ok) {
+            const data = await shortlistRes.json().catch(() => ({ items: [] }));
+            setShortlist(data.items || []);
+        }
+        if (flightShortlistRes.ok) {
+            const data = await flightShortlistRes.json().catch(() => ({ items: [] }));
+            setFlightShortlist(data.items || []);
+        }
+        if (hotelShortlistRes.ok) {
+            const data = await hotelShortlistRes.json().catch(() => ({ items: [] }));
+            setHotelShortlist(data.items || []);
         }
     }
 
@@ -775,6 +987,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 fetchTripScore();
                 fetchCostSummary();
                 fetchGroupPolls();
+                fetchSavedAiTripPlan();
             }
         }
         fetchData();
@@ -801,6 +1014,12 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
         const timeout = window.setTimeout(() => setPollFeedback(null), 3800);
         return () => window.clearTimeout(timeout);
     }, [pollFeedback]);
+
+    useEffect(() => {
+        if (!aiPlanFeedback) return;
+        const timeout = window.setTimeout(() => setAiPlanFeedback(null), 4200);
+        return () => window.clearTimeout(timeout);
+    }, [aiPlanFeedback]);
 
     // Handle Stripe payment redirect return
     useEffect(() => {
@@ -836,6 +1055,53 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
         // Clean URL params
         router.replace(`/group/${groupId}`, { scroll: false });
     }, [searchParams, groupId, router]);
+
+    function renderPlanSection(
+        items: AiPlanItem[],
+        section: "destination" | "flight" | "hotel" | "restaurant" | "activity",
+    ) {
+        if (!items.length) {
+            return <p className="group-shortlist-empty">No recommendations generated.</p>;
+        }
+
+        return (
+            <div className="group-ai-plan-list">
+                {items.map((item, index) => {
+                    const saveKey = `${section}-${index}-${item.title}`;
+                    const canSave = section === "destination" || section === "flight" || section === "hotel";
+                    return (
+                        <article key={saveKey} className="group-ai-plan-card">
+                            <div className="group-ai-plan-card-main">
+                                <h4>{item.title}</h4>
+                                <p>{item.summary}</p>
+                                {item.estimated_cost != null && (
+                                    <span className="group-shortlist-type">
+                                        {item.currency || "USD"} {item.estimated_cost.toLocaleString()}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="group-ai-plan-card-actions">
+                                <details>
+                                    <summary>Why this recommendation?</summary>
+                                    <p>{item.reason}</p>
+                                </details>
+                                {canSave && (
+                                    <button
+                                        type="button"
+                                        className="group-save-btn"
+                                        disabled={savingAiKey === saveKey}
+                                        onClick={() => handleSaveAiRecommendation(item, section as "destination" | "flight" | "hotel", index)}
+                                    >
+                                        {savingAiKey === saveKey ? "Saving..." : "Save to shortlist"}
+                                    </button>
+                                )}
+                            </div>
+                        </article>
+                    );
+                })}
+            </div>
+        );
+    }
 
     if (loading) return <div className="group-detail-loading">Loading...</div>;
     if (error) return <div className="group-detail-error">{error}</div>;
@@ -939,6 +1205,114 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                         <span>{destinationShortlist.length + restaurantShortlist.length} Activities</span>
                     </div>
                 </div>
+            </div>
+
+            <div className="group-shortlist-section">
+                <div className="group-ai-plan-header">
+                    <h2 className="group-shortlist-title">AI Group Trip Assistant</h2>
+                    {aiPlanSavedAt && (
+                        <span className="group-ai-plan-meta">
+                            Last saved: {new Date(aiPlanSavedAt).toLocaleString()}
+                        </span>
+                    )}
+                </div>
+
+                <form className="group-ai-plan-form" onSubmit={handleGenerateAiPlan}>
+                    <div className="group-poll-create-grid">
+                        <div>
+                            <label htmlFor="ai-start-date">Start date</label>
+                            <input
+                                id="ai-start-date"
+                                type="date"
+                                value={aiForm.startDate}
+                                onChange={(event) => setAiForm((prev) => ({ ...prev, startDate: event.target.value }))}
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="ai-end-date">End date</label>
+                            <input
+                                id="ai-end-date"
+                                type="date"
+                                value={aiForm.endDate}
+                                onChange={(event) => setAiForm((prev) => ({ ...prev, endDate: event.target.value }))}
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    <div className="group-poll-create-grid">
+                        <div>
+                            <label htmlFor="ai-budget">Total group budget</label>
+                            <input
+                                id="ai-budget"
+                                type="number"
+                                min="1"
+                                step="0.01"
+                                value={aiForm.budget}
+                                onChange={(event) => setAiForm((prev) => ({ ...prev, budget: event.target.value }))}
+                                placeholder="3000"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="ai-budget-currency">Currency</label>
+                            <input
+                                id="ai-budget-currency"
+                                type="text"
+                                value={aiForm.budgetCurrency}
+                                onChange={(event) => setAiForm((prev) => ({ ...prev, budgetCurrency: event.target.value.toUpperCase() }))}
+                            />
+                        </div>
+                    </div>
+
+                    <label htmlFor="ai-accommodation-preference">Accommodation preference (optional)</label>
+                    <input
+                        id="ai-accommodation-preference"
+                        type="text"
+                        value={aiForm.accommodationPreference}
+                        onChange={(event) => setAiForm((prev) => ({ ...prev, accommodationPreference: event.target.value }))}
+                        placeholder="Boutique hotels near city center"
+                    />
+
+                    <label htmlFor="ai-plan-notes">Additional constraints (optional)</label>
+                    <textarea
+                        id="ai-plan-notes"
+                        rows={3}
+                        value={aiForm.notes}
+                        onChange={(event) => setAiForm((prev) => ({ ...prev, notes: event.target.value }))}
+                        placeholder="Must be vegetarian-friendly and avoid overnight flights."
+                    />
+
+                    <button className="group-save-btn" type="submit" disabled={aiPlanGenerating}>
+                        {aiPlanGenerating ? "Generating Plan..." : "Generate Plan"}
+                    </button>
+                </form>
+
+                {aiPlanFeedback && (
+                    <div className={`group-poll-feedback group-poll-feedback-${aiPlanFeedback.type}`}>
+                        {aiPlanFeedback.text}
+                    </div>
+                )}
+
+                {aiPlanLoading ? (
+                    <p className="group-shortlist-empty">Loading saved AI plan...</p>
+                ) : aiTripPlan ? (
+                    <div className="group-ai-plan-results">
+                        <h3>Recommended Destination</h3>
+                        {renderPlanSection([aiTripPlan.destination], "destination")}
+                        <h3>Flights</h3>
+                        {renderPlanSection(aiTripPlan.flights, "flight")}
+                        <h3>Hotels</h3>
+                        {renderPlanSection(aiTripPlan.hotels, "hotel")}
+                        <h3>Restaurants</h3>
+                        {renderPlanSection(aiTripPlan.restaurants, "restaurant")}
+                        <h3>Activities</h3>
+                        {renderPlanSection(aiTripPlan.activities, "activity")}
+                    </div>
+                ) : (
+                    <p className="group-shortlist-empty">No saved AI plan yet. Generate one to get complete recommendations.</p>
+                )}
             </div>
 
             <div className="group-shortlist-section group-poll-section">

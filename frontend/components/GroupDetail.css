@@ -1113,6 +1113,116 @@
     padding: 0.9rem;
 }
 
+.group-ai-plan-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.group-ai-plan-meta {
+    font-size: 0.78rem;
+    color: #567567;
+}
+
+.group-ai-plan-form {
+    margin-top: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 1rem;
+    border: 1px solid #dfebe4;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f8fcf9 0%, #ffffff 100%);
+}
+
+.group-ai-plan-form label {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: #1f5c44;
+}
+
+.group-ai-plan-form input,
+.group-ai-plan-form textarea {
+    width: 100%;
+    border: 1px solid #c7ddd0;
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+    font-size: 0.9rem;
+    color: #223;
+    background: #fff;
+}
+
+.group-ai-plan-results {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.group-ai-plan-results h3 {
+    margin: 0.2rem 0 0;
+    font-size: 0.95rem;
+    color: #1f5c44;
+}
+
+.group-ai-plan-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.group-ai-plan-card {
+    border: 1px solid #dbe8e2;
+    border-radius: 12px;
+    background: #fff;
+    padding: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.group-ai-plan-card-main h4 {
+    margin: 0;
+    font-size: 0.98rem;
+    color: #162d24;
+}
+
+.group-ai-plan-card-main p {
+    margin: 0.3rem 0 0.45rem;
+    color: #4f6f63;
+    font-size: 0.86rem;
+}
+
+.group-ai-plan-card-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.45rem;
+    min-width: 220px;
+}
+
+.group-ai-plan-card-actions details {
+    width: 100%;
+    border: 1px solid #e1ebe6;
+    border-radius: 8px;
+    background: #f9fcfa;
+    padding: 0.45rem 0.55rem;
+}
+
+.group-ai-plan-card-actions summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #215940;
+    font-weight: 600;
+}
+
+.group-ai-plan-card-actions details p {
+    margin: 0.45rem 0 0;
+    font-size: 0.8rem;
+    color: #47685b;
+}
+
 .group-poll-card-header {
     display: flex;
     justify-content: space-between;
@@ -1199,5 +1309,20 @@
     .group-poll-ai-row {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .group-ai-plan-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .group-ai-plan-card {
+        flex-direction: column;
+    }
+
+    .group-ai-plan-card-actions {
+        min-width: 0;
+        width: 100%;
+        align-items: stretch;
     }
 }
