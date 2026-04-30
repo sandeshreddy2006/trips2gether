@@ -50,6 +50,7 @@ type AssistantResponse = {
     reply: string;
     suggestions: string[];
     model?: string | null;
+    assistantLabel?: string;
     fallback?: boolean;
 };
 
@@ -133,6 +134,7 @@ export default function AiAssistantPage() {
                 reply: typeof data?.reply === "string" ? data.reply : "No response generated.",
                 suggestions: Array.isArray(data?.suggestions) ? data.suggestions.filter((s: unknown) => typeof s === "string") : [],
                 model: typeof data?.model === "string" ? data.model : null,
+                assistantLabel: selectedModelName,
                 fallback: Boolean(data?.fallback),
             });
             pushRecentPrompt(clean);
@@ -273,7 +275,8 @@ export default function AiAssistantPage() {
                                 </ul>
                             )}
                             <div className={styles.responseMeta}>
-                                {response.model ? `Model: ${response.model}` : "Model: unavailable"}
+                                {response.assistantLabel ? `Assistant: ${response.assistantLabel}` : `Assistant: ${selectedModelName}`}
+                                {response.model ? ` | Engine: ${response.model}` : ""}
                                 {response.fallback ? " | Fallback response" : ""}
                             </div>
                         </article>
