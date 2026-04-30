@@ -1,7 +1,7 @@
 import asyncio
 import threading
 
-from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, File, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, BackgroundTasks, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -21,6 +21,8 @@ from .schemas import (
     FriendRequestIn,
     FriendsListOut,
     FriendRequestListOut,
+    UserSearchListOut,
+    ProfileViewOut,
     GroupCreateIn,
     GroupOut,
     GroupListOut,
@@ -215,6 +217,19 @@ def _ensure_group_shortlist_cost_columns() -> None:
 _ensure_group_shortlist_cost_columns()
 
 
+def _ensure_profile_visibility_column() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("profiles")}
+    except Exception:
+        return
+
+    if "visibility" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE profiles ADD COLUMN visibility VARCHAR(20) NOT NULL DEFAULT 'public'"))
+
+
+_ensure_profile_visibility_column()
 def _ensure_notifications_columns_and_table() -> None:
     inspector = inspect(engine)
     try:
@@ -1523,6 +1538,121 @@ def _friend_out(user: models.User, status: str, avatar_url: str | None = None) -
         "avatar_url": avatar_url,
         "status": status,
     }
+
+
+def _get_friendship_between(db: Session, user_id: int, other_user_id: int) -> models.Friendship | None:
+    return (
+        db.query(models.Friendship)
+        .filter(
+            or_(
+                and_(
+                    models.Friendship.requester_id == user_id,
+                    models.Friendship.addressee_id == other_user_id,
+                ),
+                and_(
+                    models.Friendship.requester_id == other_user_id,
+                    models.Friendship.addressee_id == user_id,
+                ),
+            )
+        )
+        .first()
+    )
+
+
+def _friend_status_for(current_user_id: int, other_user_id: int, db: Session) -> str:
+    if current_user_id == other_user_id:
+        return "self"
+
+    friendship = _get_friendship_between(db, current_user_id, other_user_id)
+    return friendship.status if friendship else "none"
+
+
+def _can_view_profile(profile: models.Profile, friend_status: str) -> bool:
+    visibility = profile.visibility or "public"
+    return (
+        friend_status == "self"
+        or visibility == "public"
+        or (visibility == "friends_only" and friend_status == "accepted")
+    )
+
+
+def _profile_view_out(profile: models.Profile, friend_status: str) -> dict:
+    can_view = _can_view_profile(profile, friend_status)
+    visible_fields = {
+        "bio": profile.bio,
+        "budget_min": profile.budget_min,
+        "budget_max": profile.budget_max,
+        "travel_mode": profile.travel_mode,
+        "preferred_destination": profile.preferred_destination,
+        "travel_pace": profile.travel_pace,
+        "hotel_type": profile.hotel_type,
+        "room_sharing": profile.room_sharing,
+        "cuisine_preference": profile.cuisine_preference,
+        "dietary_restrictions": profile.dietary_restrictions,
+    }
+
+    return {
+        "id": profile.id,
+        "user_id": profile.user_id,
+        "username": profile.username,
+        "avatar_url": profile.avatar_url,
+        "visibility": profile.visibility or "public",
+        "friend_status": friend_status,
+        "can_view": can_view,
+        **(visible_fields if can_view else {field: None for field in visible_fields}),
+    }
+
+
+@app.get("/users/search", response_model=UserSearchListOut)
+def search_users(
+    request: Request,
+    q: str = Query(..., min_length=1),
+    limit: int = Query(10, ge=1, le=25),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_info(request, db)
+    search_term = q.strip().lower()
+    if not search_term:
+        return {"users": []}
+
+    rows = (
+        db.query(models.User, models.Profile)
+        .join(models.Profile, models.Profile.user_id == models.User.id)
+        .filter(
+            models.User.id != current_user.id,
+            or_(
+                func.lower(models.User.name).like(f"%{search_term}%"),
+                func.lower(models.User.email).like(f"%{search_term}%"),
+            ),
+        )
+        .order_by(models.User.name.asc())
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "users": [
+            {
+                "id": user.id,
+                "name": user.name,
+                "avatar_url": profile.avatar_url,
+                "friend_status": _friend_status_for(current_user.id, user.id, db),
+            }
+            for user, profile in rows
+        ]
+    }
+
+
+@app.get("/users/{user_id}/profile", response_model=ProfileViewOut)
+def get_user_profile(user_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+
+    profile = db.query(models.Profile).filter(models.Profile.user_id == user_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    friend_status = _friend_status_for(current_user.id, user_id, db)
+    return _profile_view_out(profile, friend_status)
 
 
 @app.get("/friends", response_model=FriendsListOut)
