@@ -59,6 +59,8 @@ from .schemas import (
     TripStateUpdateIn,
     TripSuccessScoreResponse,
     AiTripPlanGenerateIn,
+    AiAssistantSuggestIn,
+    AiAssistantSuggestOut,
     GroupPollCreateIn,
     GroupPollVoteIn,
     GroupPollSuggestionIn,
@@ -4573,6 +4575,20 @@ def group_trip_success_score(
     current_user = get_current_user_info(request, db)
     _get_group_and_membership(group_id, current_user.id, db)  # verifies membership
     result = _get_score(group_id, db)
+    return result
+
+
+@app.post("/ai-assistant/suggest", response_model=AiAssistantSuggestOut)
+def ai_assistant_suggest(
+    body: AiAssistantSuggestIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """General-purpose AI assistant endpoint for free-form travel suggestions."""
+    from .ai import generate_general_assistant_reply as _suggest
+
+    _ = get_current_user_info(request, db)
+    result = _suggest(body.prompt, body.mode)
     return result
 
 

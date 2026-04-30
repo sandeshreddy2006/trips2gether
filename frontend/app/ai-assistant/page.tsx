@@ -46,18 +46,24 @@ const quickActions = [
     "Summarize group poll outcomes",
 ];
 
-const historyItems = [
-    "Draft itinerary for Bali trip",
-    "Hotel shortlist for Barcelona",
-    "Flight timing comparison",
-    "Weather-aware packing list",
-];
+type AssistantResponse = {
+    reply: string;
+    suggestions: string[];
+    model?: string | null;
+    fallback?: boolean;
+};
+
+const RECENT_PROMPTS_KEY = "ai-assistant-recent-prompts";
 
 export default function AiAssistantPage() {
     const router = useRouter();
     const { isAuthenticated, isLoading } = useAuth();
     const [prompt, setPrompt] = useState("");
     const [selectedModel, setSelectedModel] = useState(modelCards[0].id);
+    const [recentPrompts, setRecentPrompts] = useState<string[]>([]);
+    const [loadingResponse, setLoadingResponse] = useState(false);
+    const [response, setResponse] = useState<AssistantResponse | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
@@ -70,6 +76,80 @@ export default function AiAssistantPage() {
         [selectedModel]
     );
 
+    useEffect(() => {
+        try {
+            const raw = window.localStorage.getItem(RECENT_PROMPTS_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+                setRecentPrompts(parsed.filter((item) => typeof item === "string").slice(0, 12));
+            }
+        } catch {
+            // ignore localStorage parse issues
+        }
+    }, []);
+
+    function pushRecentPrompt(value: string) {
+        const clean = value.trim();
+        if (!clean) return;
+        setRecentPrompts((prev) => {
+            const next = [clean, ...prev.filter((item) => item !== clean)].slice(0, 12);
+            try {
+                window.localStorage.setItem(RECENT_PROMPTS_KEY, JSON.stringify(next));
+            } catch {
+                // ignore storage failures
+            }
+            return next;
+        });
+    }
+
+    async function handleSend() {
+        const clean = prompt.trim();
+        if (!clean) {
+            setError("Please enter a prompt.");
+            return;
+        }
+
+        setLoadingResponse(true);
+        setError(null);
+        try {
+            const res = await fetch("/api/ai-assistant/suggest", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    prompt: clean,
+                    mode: selectedModel,
+                }),
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const detail = typeof data?.detail === "string" ? data.detail : "Could not generate suggestion right now.";
+                throw new Error(detail);
+            }
+
+            setResponse({
+                reply: typeof data?.reply === "string" ? data.reply : "No response generated.",
+                suggestions: Array.isArray(data?.suggestions) ? data.suggestions.filter((s: unknown) => typeof s === "string") : [],
+                model: typeof data?.model === "string" ? data.model : null,
+                fallback: Boolean(data?.fallback),
+            });
+            pushRecentPrompt(clean);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not generate suggestion right now.");
+            setResponse(null);
+        } finally {
+            setLoadingResponse(false);
+        }
+    }
+
+    function handleNewChat() {
+        setPrompt("");
+        setResponse(null);
+        setError(null);
+    }
+
     if (!isAuthenticated) {
         return null;
     }
@@ -81,7 +161,7 @@ export default function AiAssistantPage() {
             <aside className={styles.leftPanel}>
                 <div className={styles.brand}>Trips2gether AI</div>
 
-                <button type="button" className={styles.primaryRailButton}>
+                <button type="button" className={styles.primaryRailButton} onClick={handleNewChat}>
                     + New chat
                 </button>
 
@@ -94,11 +174,20 @@ export default function AiAssistantPage() {
 
                 <div className={styles.historyTitle}>Recent</div>
                 <div className={styles.historyList}>
-                    {historyItems.map((item) => (
-                        <button key={item} type="button" className={styles.historyItem}>
-                            {item}
-                        </button>
-                    ))}
+                    {recentPrompts.length === 0 ? (
+                        <p className={styles.historyEmpty}>No recent prompts yet</p>
+                    ) : (
+                        recentPrompts.map((item) => (
+                            <button
+                                key={item}
+                                type="button"
+                                className={styles.historyItem}
+                                onClick={() => setPrompt(item)}
+                            >
+                                {item}
+                            </button>
+                        ))
+                    )}
                 </div>
             </aside>
 
@@ -151,12 +240,45 @@ export default function AiAssistantPage() {
                                 </select>
                             </label>
 
-                            <button type="button" className={styles.sendButton}>
-                                Start with {selectedModelName}
+                            <button type="button" className={styles.sendButton} onClick={handleSend} disabled={loadingResponse}>
+                                {loadingResponse ? "Thinking..." : `Start with ${selectedModelName}`}
                             </button>
                         </div>
                     </div>
                 </div>
+
+                <section className={styles.responseSection}>
+                    <div className={styles.sectionHeader}>
+                        <h2>Assistant response</h2>
+                    </div>
+
+                    {error && <div className={styles.responseError}>{error}</div>}
+
+                    {!error && !response && !loadingResponse && (
+                        <div className={styles.responsePlaceholder}>
+                            Ask for destination ideas, budget-friendly itineraries, route optimization, or activity recommendations.
+                        </div>
+                    )}
+
+                    {loadingResponse && <div className={styles.responsePlaceholder}>Generating suggestions...</div>}
+
+                    {response && !loadingResponse && (
+                        <article className={styles.responseCard}>
+                            <p className={styles.responseText}>{response.reply}</p>
+                            {response.suggestions.length > 0 && (
+                                <ul className={styles.responseSuggestions}>
+                                    {response.suggestions.map((item) => (
+                                        <li key={item}>{item}</li>
+                                    ))}
+                                </ul>
+                            )}
+                            <div className={styles.responseMeta}>
+                                {response.model ? `Model: ${response.model}` : "Model: unavailable"}
+                                {response.fallback ? " | Fallback response" : ""}
+                            </div>
+                        </article>
+                    )}
+                </section>
 
                 <section className={styles.modelsSection}>
                     <div className={styles.sectionHeader}>

@@ -963,6 +963,18 @@ class AiTripPlanOut(BaseModel):
     activities: list[AiTripRecommendationItemOut] = []
 
 
+class AiAssistantSuggestIn(BaseModel):
+    prompt: str = Field(min_length=1, max_length=3000)
+    mode: str = Field(default="advisor", min_length=1, max_length=64)
+
+
+class AiAssistantSuggestOut(BaseModel):
+    reply: str
+    suggestions: List[str] = []
+    model: Optional[str] = None
+    fallback: bool = False
+
+
 # -------------------------
 # Itinerary Schemas
 # -------------------------

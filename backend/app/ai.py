@@ -915,3 +915,112 @@ Rules:
     except Exception as e:
         print(f"[AI] generate_group_trip_plan error for group {group_id}: {e}")
         return fallback
+
+
+def generate_general_assistant_reply(prompt: str, mode: str = "advisor") -> dict[str, Any]:
+    """Generate a general-purpose travel assistant response from a free-form prompt."""
+    clean_prompt = (prompt or "").strip()
+    clean_mode = (mode or "advisor").strip().lower()
+
+    fallback = {
+        "reply": "I could not generate a live AI response right now. Here is a safe starting point: define budget, dates, destination options, and transport preferences first, then compare total trip costs and travel times before booking.",
+        "suggestions": [
+            "Share your budget range and dates",
+            "List must-have activities",
+            "Compare flight duration and total costs",
+        ],
+        "model": None,
+        "fallback": True,
+    }
+
+    if not clean_prompt:
+        fallback["reply"] = "Please enter a prompt so I can generate personalized travel suggestions."
+        return fallback
+
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        return fallback
+
+    mode_guide = {
+        "trip-optimizer": "Prioritize budget efficiency and practical sequencing.",
+        "group-vibe": "Prioritize group preference alignment and conflict reduction.",
+        "explorer": "Prioritize discovery and memorable experiences with realistic logistics.",
+        "advisor": "Provide concise, practical recommendations with clear trade-offs.",
+    }.get(clean_mode, "Provide concise, practical recommendations with clear trade-offs.")
+
+    system_prompt = (
+        "You are Trips2gether AI assistant. Provide practical, actionable travel guidance. "
+        f"Behavior mode: {mode_guide} "
+        "Respond as valid JSON only with shape: "
+        '{"reply":"...", "suggestions":["...", "...", "..."]}. '
+        "Keep reply to 3-6 sentences and suggestions to up to 4 bullets."
+    )
+
+    try:
+        requested_model = (CLAUDE_MODEL or "").strip()
+        candidate_models = []
+        if requested_model:
+            candidate_models.append(requested_model)
+        for model_name in CLAUDE_MODEL_FALLBACKS:
+            if model_name not in candidate_models:
+                candidate_models.append(model_name)
+
+        client = anthropic.Anthropic(api_key=api_key, timeout=35.0)
+        response = None
+        used_model = None
+        for model_name in candidate_models:
+            try:
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=900,
+                    messages=[
+                        {"role": "user", "content": f"{system_prompt}\n\nUser prompt:\n{clean_prompt}"},
+                    ],
+                )
+                used_model = model_name
+                break
+            except anthropic.NotFoundError:
+                continue
+            except Exception as e:
+                print(f"[AI] generate_general_assistant_reply failed for model {model_name}: {e}")
+                continue
+
+        if response is None:
+            return fallback
+
+        text_chunks = []
+        for block in getattr(response, "content", []) or []:
+            if getattr(block, "type", None) == "text" and getattr(block, "text", None):
+                text_chunks.append(block.text)
+        text = "\n".join(text_chunks).strip()
+        if not text:
+            return fallback
+
+        try:
+            parsed = _extract_json_object(text)
+        except Exception:
+            return {
+                "reply": text,
+                "suggestions": [],
+                "model": used_model,
+                "fallback": False,
+            }
+
+        reply = str(parsed.get("reply") or "").strip()
+        suggestions_raw = parsed.get("suggestions", []) if isinstance(parsed, dict) else []
+        suggestions: list[str] = []
+        if isinstance(suggestions_raw, list):
+            suggestions = [str(item).strip() for item in suggestions_raw if str(item).strip()][:4]
+
+        if not reply:
+            return fallback
+
+        return {
+            "reply": reply,
+            "suggestions": suggestions,
+            "model": used_model,
+            "fallback": False,
+        }
+    except Exception as e:
+        print(f"[AI] generate_general_assistant_reply error: {e}")
+        return fallback
