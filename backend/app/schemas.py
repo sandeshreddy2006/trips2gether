@@ -936,10 +936,18 @@ class AiTripPlanGenerateIn(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class AiRecommendationReasoningOut(BaseModel):
+    budget_fit: str
+    interest_fit: str
+    availability_travel_time_fit: str
+    fallback_used: bool = False
+
+
 class AiTripRecommendationItemOut(BaseModel):
     title: str
     summary: str
     reason: str
+    reasoning_summary: AiRecommendationReasoningOut | None = None
     estimated_cost: float | None = None
     currency: str | None = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
