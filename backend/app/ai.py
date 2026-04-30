@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from sqlalchemy.orm import Session
 import anthropic
+from typing import Any
 
 from . import models
 
@@ -565,4 +566,235 @@ Rules:
         }
     except Exception as e:
         print(f"[AI] get_poll_option_suggestions error for group {group_id}: {e}")
+        return fallback
+
+
+def _collect_group_trip_planning_input(group_id: int, constraints: dict[str, Any], db: Session) -> dict[str, Any]:
+    group = db.get(models.Group, group_id)
+    if not group:
+        return {}
+
+    members = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.group_id == group_id)
+        .all()
+    )
+
+    member_profiles: list[dict[str, Any]] = []
+    for member in members:
+        profile = (
+            db.query(models.Profile)
+            .filter(models.Profile.user_id == member.user_id)
+            .first()
+        )
+        user = db.get(models.User, member.user_id)
+        member_profiles.append({
+            "name": user.name if user else f"Member {member.user_id}",
+            "budget_min": profile.budget_min if profile else None,
+            "budget_max": profile.budget_max if profile else None,
+            "travel_mode": profile.travel_mode if profile else None,
+            "travel_pace": profile.travel_pace if profile else None,
+            "hotel_type": profile.hotel_type if profile else None,
+            "room_sharing": profile.room_sharing if profile else None,
+            "cuisine_preference": profile.cuisine_preference if profile else None,
+            "dietary_restrictions": profile.dietary_restrictions if profile else None,
+            "preferred_destination": profile.preferred_destination if profile else None,
+            "location": user.location if user else None,
+        })
+
+    shortlisted_destinations = (
+        db.query(models.GroupShortlistDestination)
+        .filter(models.GroupShortlistDestination.group_id == group_id)
+        .all()
+    )
+    shortlisted_flights = (
+        db.query(models.GroupShortlistFlight)
+        .filter(models.GroupShortlistFlight.group_id == group_id)
+        .all()
+    )
+    shortlisted_hotels = (
+        db.query(models.GroupShortlistHotel)
+        .filter(models.GroupShortlistHotel.group_id == group_id)
+        .all()
+    )
+
+    return {
+        "group": {
+            "id": group.id,
+            "name": group.name,
+            "status": group.status,
+            "description": group.description,
+            "member_count": len(members),
+        },
+        "constraints": constraints,
+        "member_preferences": member_profiles,
+        "shortlists": {
+            "destinations": [
+                {
+                    "name": item.name,
+                    "address": item.address,
+                    "rating": item.rating,
+                    "estimated_cost": item.estimated_cost,
+                    "currency": item.currency,
+                    "types": json.loads(item.destination_types_json or "[]"),
+                }
+                for item in shortlisted_destinations
+            ],
+            "flights": [
+                {
+                    "airline": item.airline,
+                    "price": item.price,
+                    "currency": item.currency,
+                    "duration": item.duration,
+                    "stops": item.stops,
+                    "departure_airport": item.departure_airport,
+                    "arrival_airport": item.arrival_airport,
+                    "departure_time": item.departure_time,
+                    "arrival_time": item.arrival_time,
+                }
+                for item in shortlisted_flights
+            ],
+            "hotels": [
+                {
+                    "name": item.name,
+                    "address": item.address,
+                    "rating": item.rating,
+                    "price_per_night": item.price_per_night,
+                    "total_price": item.total_price,
+                    "nights": item.nights,
+                    "currency": item.currency,
+                }
+                for item in shortlisted_hotels
+            ],
+        },
+    }
+
+
+def _normalize_plan_item(raw: dict[str, Any], fallback_title: str, default_currency: str) -> dict[str, Any]:
+    return {
+        "title": str(raw.get("title") or fallback_title).strip(),
+        "summary": str(raw.get("summary") or "").strip(),
+        "reason": str(raw.get("reason") or "Aligned with stated group preferences.").strip(),
+        "estimated_cost": raw.get("estimated_cost"),
+        "currency": str(raw.get("currency") or default_currency).strip(),
+        "metadata": raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {},
+    }
+
+
+def generate_group_trip_plan(group_id: int, constraints: dict[str, Any], db: Session) -> dict[str, Any]:
+    fallback = {
+        "ok": False,
+        "detail": "AI trip plan generation unavailable",
+        "plan": None,
+        "constraints": constraints,
+    }
+
+    planning_input = _collect_group_trip_planning_input(group_id, constraints, db)
+    if not planning_input:
+        fallback["detail"] = "Group not found"
+        return fallback
+
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        fallback["detail"] = "CLAUDE_API_KEY is not configured"
+        return fallback
+
+    payload_json = json.dumps(planning_input, indent=2, default=str)
+    prompt = f"""You are an expert group-trip planner.
+Given this planning input JSON, generate one complete group trip recommendation.
+
+Planning input:
+{payload_json}
+
+Return ONLY valid JSON with this exact shape:
+{{
+  "destination": {{
+    "title": "City / Region",
+    "summary": "Short practical overview",
+    "reason": "Why this destination fits the group",
+    "estimated_cost": 1200,
+    "currency": "USD",
+    "metadata": {{}}
+  }},
+  "flights": [{{"title":"", "summary":"", "reason":"", "estimated_cost":0, "currency":"USD", "metadata":{{}}}}],
+  "hotels": [{{"title":"", "summary":"", "reason":"", "estimated_cost":0, "currency":"USD", "metadata":{{}}}}],
+  "restaurants": [{{"title":"", "summary":"", "reason":"", "estimated_cost":0, "currency":"USD", "metadata":{{}}}}],
+  "activities": [{{"title":"", "summary":"", "reason":"", "estimated_cost":0, "currency":"USD", "metadata":{{}}}}]
+}}
+
+Rules:
+- Include 2-4 options for each list section.
+- Keep summaries concise (1 sentence).
+- Keep reasons concise and group-specific (1 sentence).
+- Keep output JSON-only, no markdown or prose.
+"""
+
+    try:
+        requested_model = (CLAUDE_MODEL or "").strip()
+        candidate_models = []
+        if requested_model:
+            candidate_models.append(requested_model)
+        for model_name in CLAUDE_MODEL_FALLBACKS:
+            if model_name not in candidate_models:
+                candidate_models.append(model_name)
+
+        client = anthropic.Anthropic(api_key=api_key, timeout=45.0)
+        response = None
+        for model_name in candidate_models:
+            try:
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=2200,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                break
+            except anthropic.NotFoundError:
+                continue
+            except Exception as e:
+                print(f"[AI] generate_group_trip_plan failed for model {model_name}: {e}")
+                continue
+
+        if response is None:
+            return fallback
+
+        text_chunks = []
+        for block in getattr(response, "content", []) or []:
+            if getattr(block, "type", None) == "text" and getattr(block, "text", None):
+                text_chunks.append(block.text)
+        text = "\n".join(text_chunks).strip()
+        if not text:
+            return fallback
+
+        parsed = _extract_json_object(text)
+        default_currency = str(constraints.get("budget_currency") or "USD")
+
+        destination = _normalize_plan_item(
+            parsed.get("destination", {}) if isinstance(parsed.get("destination"), dict) else {},
+            "Recommended Destination",
+            default_currency,
+        )
+
+        def parse_list(name: str) -> list[dict[str, Any]]:
+            raw_items = parsed.get(name, [])
+            if not isinstance(raw_items, list):
+                raw_items = []
+            normalized = [
+                _normalize_plan_item(item, f"Recommended {name[:-1].title()}", default_currency)
+                for item in raw_items
+                if isinstance(item, dict)
+            ]
+            return normalized[:4]
+
+        plan = {
+            "group_id": group_id,
+            "generated_at": datetime.utcnow().isoformat(),
+            "destination": destination,
+            "flights": parse_list("flights"),
+            "hotels": parse_list("hotels"),
+            "restaurants": parse_list("restaurants"),
+            "activities": parse_list("activities"),
+        }
+        return {"ok": True, "plan": plan, "constraints": constraints}
+    except Exception as e:
+        print(f"[AI] generate_group_trip_plan error for group {group_id}: {e}")
         return fallback

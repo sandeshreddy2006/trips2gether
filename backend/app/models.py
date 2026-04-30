@@ -94,6 +94,12 @@ class Group(Base):
         back_populates="group",
         cascade="all, delete-orphan",
     )
+    ai_plan_snapshot = relationship(
+        "GroupAiTripPlanSnapshot",
+        back_populates="group",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     creator = relationship("User", foreign_keys=[created_by])
 
 
@@ -386,6 +392,21 @@ class GroupShortlistHotel(Base):
     __table_args__ = (
         UniqueConstraint("group_id", "place_id", name="uq_group_shortlist_group_hotel_place"),
     )
+
+
+class GroupAiTripPlanSnapshot(Base):
+    __tablename__ = "group_ai_trip_plan_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    generated_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    constraints_json = Column(Text, nullable=False, default="{}")
+    plan_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    group = relationship("Group", back_populates="ai_plan_snapshot")
+    generator = relationship("User", foreign_keys=[generated_by])
 
 
 class Profile(Base):
