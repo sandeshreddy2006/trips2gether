@@ -1073,3 +1073,42 @@ class TripPaymentStatusOut(BaseModel):
     currency: str
     payment_status: str  # unpaid | paid | partial
 
+
+# Quick Jump / Global Search Schemas
+class QuickJumpGroupItem(BaseModel):
+    id: int
+    name: str
+    status: str
+    member_count: int
+
+
+class QuickJumpBookingItem(BaseModel):
+    id: int
+    booking_reference: str
+    status: str  # 'pending' | 'confirmed' | 'failed' | 'cancelled'
+    total_amount: str
+    currency: str
+
+
+class QuickJumpDestinationItem(BaseModel):
+    id: int
+    name: str
+    place_id: str
+    group_id: int
+    group_name: str
+    rating: Optional[float] = None
+
+
+class QuickJumpChatItem(BaseModel):
+    group_id: int
+    group_name: str
+    latest_message: str
+    unread_count: int = 0
+
+
+class QuickJumpResult(BaseModel):
+    groups: list[QuickJumpGroupItem] = []
+    bookings: list[QuickJumpBookingItem] = []
+    destinations: list[QuickJumpDestinationItem] = []
+    chats: list[QuickJumpChatItem] = []
+
