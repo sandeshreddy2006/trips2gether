@@ -127,6 +127,38 @@ type CostSummary = {
     members_breakdown: MemberCostBreakdown[];
 };
 
+type PollDecisionType = "destination" | "date" | "flight" | "hotel" | "activity" | "other";
+
+type GroupPollOption = {
+    id: number;
+    label: string;
+    position: number;
+    vote_count: number;
+    is_winner: boolean;
+};
+
+type GroupPoll = {
+    id: number;
+    group_id: number;
+    group_name: string | null;
+    question: string;
+    decision_type: PollDecisionType;
+    status: "active" | "closed";
+    allow_vote_update: boolean;
+    closes_at: string | null;
+    closed_at: string | null;
+    winner_option_id: number | null;
+    created_by: number;
+    created_by_name: string | null;
+    member_count: number;
+    total_votes: number;
+    voted_by_all: boolean;
+    user_vote_option_id: number | null;
+    options: GroupPollOption[];
+};
+
+type PollSection = "upcoming" | "previous";
+
 function getScoreColor(score: number): string {
     if (score >= 80) return "#2e6b55";
     if (score >= 60) return "#d2ab3f";
@@ -137,6 +169,47 @@ function formatStops(stops: number): string {
     if (stops === 0) return "Nonstop";
     if (stops === 1) return "1 stop";
     return `${stops} stops`;
+}
+
+function parseApiError(data: unknown, fallback: string): string {
+    if (typeof data === "string") return data;
+    if (data && typeof data === "object") {
+        const detail = (data as { detail?: unknown }).detail;
+        if (typeof detail === "string") return detail;
+    }
+    return fallback;
+}
+
+function getDefaultPollDeadlineInputValue(): string {
+    const twoDaysLater = new Date(Date.now() + (2 * 24 * 60 * 60 * 1000));
+    const year = twoDaysLater.getFullYear();
+    const month = String(twoDaysLater.getMonth() + 1).padStart(2, "0");
+    const day = String(twoDaysLater.getDate()).padStart(2, "0");
+    const hour = String(twoDaysLater.getHours()).padStart(2, "0");
+    const minute = String(twoDaysLater.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function formatPollDateLabel(value: string | null): string {
+    if (!value) return "No deadline";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "No deadline";
+
+    return date.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+}
+
+function getPollDecisionLabel(type: PollDecisionType): string {
+    if (type === "destination") return "Destination";
+    if (type === "date") return "Date";
+    if (type === "flight") return "Flight";
+    if (type === "hotel") return "Hotel";
+    if (type === "activity") return "Activity";
+    return "Other";
 }
 
 const FLIGHT_LOGO_FALLBACK = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='90' viewBox='0 0 120 90'><rect width='120' height='90' rx='12' fill='%23eef4f0'/><text x='60' y='53' text-anchor='middle' font-size='26' fill='%232e6b55'>✈</text></svg>";
@@ -164,6 +237,23 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
     const [costLoading, setCostLoading] = useState(false);
     const [paymentMessage, setPaymentMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [pollSection, setPollSection] = useState<PollSection>("upcoming");
+    const [pollsLoading, setPollsLoading] = useState(false);
+    const [creatingPoll, setCreatingPoll] = useState(false);
+    const [requestingSuggestions, setRequestingSuggestions] = useState(false);
+    const [upcomingPolls, setUpcomingPolls] = useState<GroupPoll[]>([]);
+    const [previousPolls, setPreviousPolls] = useState<GroupPoll[]>([]);
+    const [selectedOptionByPollId, setSelectedOptionByPollId] = useState<Record<number, number>>({});
+    const [submittingVoteByPollId, setSubmittingVoteByPollId] = useState<Record<number, boolean>>({});
+    const [endingPollById, setEndingPollById] = useState<Record<number, boolean>>({});
+    const [pollFeedback, setPollFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [pollForm, setPollForm] = useState({
+        question: "",
+        decisionType: "destination" as PollDecisionType,
+        closesAt: getDefaultPollDeadlineInputValue(),
+        optionsText: "",
+    });
+    const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
     const isOwner = group?.role === "owner";
 
     const memberUserIds = new Set(members.map((m) => m.user_id));
@@ -175,6 +265,7 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
     const heroUsesFlightCollage = !heroImage && flightShortlist.length > 0;
     const heroFlightLogos = flightShortlist.slice(0, 4);
     const heroBackgroundImage = heroImage || (heroUsesFlightCollage ? "" : "/trip-marseille.jpg");
+    const visiblePolls = pollSection === "upcoming" ? upcomingPolls : previousPolls;
 
     function getShortlistImage(
         item: { photo_reference: string | null; photo_url: string | null },
@@ -223,6 +314,209 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
             setCostSummary(null);
         } finally {
             setCostLoading(false);
+        }
+    }
+
+    async function fetchGroupPolls() {
+        setPollsLoading(true);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/polls`, {
+                credentials: "include",
+            });
+            const data = await res.json().catch(() => ({ upcoming: [], previous: [] }));
+            if (!res.ok) {
+                throw new Error(parseApiError(data, "Failed to load group polls"));
+            }
+
+            const nextUpcoming = Array.isArray(data.upcoming) ? data.upcoming : [];
+            const nextPrevious = Array.isArray(data.previous) ? data.previous : [];
+            setUpcomingPolls(nextUpcoming);
+            setPreviousPolls(nextPrevious);
+            setSelectedOptionByPollId((prev) => {
+                const next = { ...prev };
+                for (const poll of [...nextUpcoming, ...nextPrevious]) {
+                    if (poll.user_vote_option_id && !next[poll.id]) {
+                        next[poll.id] = poll.user_vote_option_id;
+                    }
+                }
+                return next;
+            });
+        } catch (err) {
+            setUpcomingPolls([]);
+            setPreviousPolls([]);
+            setPollFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to load group polls" });
+        } finally {
+            setPollsLoading(false);
+        }
+    }
+
+    async function handleCreatePoll(event: React.FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        const question = pollForm.question.trim();
+        const optionLabels = pollForm.optionsText
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        if (!question) {
+            setPollFeedback({ type: "error", text: "Poll question is required." });
+            return;
+        }
+        if (optionLabels.length < 2) {
+            setPollFeedback({ type: "error", text: "Add at least two options." });
+            return;
+        }
+
+        const closesAtDate = new Date(pollForm.closesAt);
+        if (Number.isNaN(closesAtDate.getTime()) || closesAtDate <= new Date()) {
+            setPollFeedback({ type: "error", text: "Set a future close date/time." });
+            return;
+        }
+
+        setCreatingPoll(true);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/polls`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    question,
+                    decision_type: pollForm.decisionType,
+                    closes_at: closesAtDate.toISOString(),
+                    allow_vote_update: false,
+                    options: optionLabels.map((label) => ({ label })),
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(parseApiError(data, "Failed to create poll"));
+            }
+
+            setPollForm({
+                question: "",
+                decisionType: "destination",
+                closesAt: getDefaultPollDeadlineInputValue(),
+                optionsText: "",
+            });
+            setAiSuggestions([]);
+            setPollSection("upcoming");
+            setPollFeedback({ type: "success", text: "Poll created." });
+            await fetchGroupPolls();
+        } catch (err) {
+            setPollFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to create poll" });
+        } finally {
+            setCreatingPoll(false);
+        }
+    }
+
+    async function handleRequestSuggestions() {
+        const question = pollForm.question.trim();
+        if (!question) {
+            setPollFeedback({ type: "error", text: "Enter a poll question before requesting AI suggestions." });
+            return;
+        }
+
+        const existingOptions = pollForm.optionsText
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        setRequestingSuggestions(true);
+        try {
+            const res = await fetch(`/api/groups/${groupId}/poll-suggestions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    question,
+                    decision_type: pollForm.decisionType,
+                    existing_options: existingOptions,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(parseApiError(data, "Failed to get AI suggestions"));
+            }
+
+            const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+            setAiSuggestions(suggestions);
+            if (suggestions.length === 0) {
+                setPollFeedback({ type: "error", text: "No suggestions returned. Try refining the question." });
+            } else {
+                setPollFeedback({ type: "success", text: "AI suggestions ready." });
+            }
+        } catch (err) {
+            setPollFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to get AI suggestions" });
+        } finally {
+            setRequestingSuggestions(false);
+        }
+    }
+
+    function handleAddSuggestionToForm(suggestion: string) {
+        const currentOptions = pollForm.optionsText
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        if (currentOptions.some((option) => option.toLowerCase() === suggestion.toLowerCase())) {
+            setPollFeedback({ type: "error", text: "That option is already in your poll form." });
+            return;
+        }
+
+        const nextOptions = [...currentOptions, suggestion];
+        setPollForm((prev) => ({
+            ...prev,
+            optionsText: nextOptions.join("\n"),
+        }));
+    }
+
+    async function handleVote(poll: GroupPoll) {
+        const selectedOptionId = selectedOptionByPollId[poll.id] || poll.user_vote_option_id;
+        if (!selectedOptionId) {
+            setPollFeedback({ type: "error", text: "Choose an option before voting." });
+            return;
+        }
+
+        setSubmittingVoteByPollId((prev) => ({ ...prev, [poll.id]: true }));
+        try {
+            const res = await fetch(`/api/groups/${groupId}/polls/${poll.id}/vote`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ option_id: selectedOptionId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(parseApiError(data, "Failed to submit vote"));
+            }
+
+            setPollFeedback({ type: "success", text: "Vote recorded." });
+            await fetchGroupPolls();
+        } catch (err) {
+            setPollFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to submit vote" });
+        } finally {
+            setSubmittingVoteByPollId((prev) => ({ ...prev, [poll.id]: false }));
+        }
+    }
+
+    async function handleEndPollEarly(poll: GroupPoll) {
+        setEndingPollById((prev) => ({ ...prev, [poll.id]: true }));
+        try {
+            const res = await fetch(`/api/groups/${groupId}/polls/${poll.id}/end`, {
+                method: "PATCH",
+                credentials: "include",
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(parseApiError(data, "Failed to end poll"));
+            }
+
+            setPollFeedback({ type: "success", text: "Poll closed." });
+            await fetchGroupPolls();
+        } catch (err) {
+            setPollFeedback({ type: "error", text: err instanceof Error ? err.message : "Failed to end poll" });
+        } finally {
+            setEndingPollById((prev) => ({ ...prev, [poll.id]: false }));
         }
     }
 
@@ -480,10 +774,33 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 setLoading(false);
                 fetchTripScore();
                 fetchCostSummary();
+                fetchGroupPolls();
             }
         }
         fetchData();
     }, [groupId]);
+
+    useEffect(() => {
+        const handlePollRealtime = (event: Event) => {
+            const customEvent = event as CustomEvent<{ type?: string; group_id?: number }>;
+            const payload = customEvent.detail;
+            if (!payload?.type || payload.group_id !== groupId) {
+                return;
+            }
+            void fetchGroupPolls();
+        };
+
+        window.addEventListener("poll-realtime", handlePollRealtime as EventListener);
+        return () => {
+            window.removeEventListener("poll-realtime", handlePollRealtime as EventListener);
+        };
+    }, [groupId]);
+
+    useEffect(() => {
+        if (!pollFeedback) return;
+        const timeout = window.setTimeout(() => setPollFeedback(null), 3800);
+        return () => window.clearTimeout(timeout);
+    }, [pollFeedback]);
 
     // Handle Stripe payment redirect return
     useEffect(() => {
@@ -622,6 +939,197 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                         <span>{destinationShortlist.length + restaurantShortlist.length} Activities</span>
                     </div>
                 </div>
+            </div>
+
+            <div className="group-shortlist-section group-poll-section">
+                <div className="group-poll-header">
+                    <h2 className="group-shortlist-title">Group Polls</h2>
+                    <div className="group-poll-tabs" role="tablist" aria-label="Poll timeline sections">
+                        <button
+                            className={`group-poll-tab ${pollSection === "upcoming" ? "is-active" : ""}`}
+                            type="button"
+                            onClick={() => setPollSection("upcoming")}
+                        >
+                            Active ({upcomingPolls.length})
+                        </button>
+                        <button
+                            className={`group-poll-tab ${pollSection === "previous" ? "is-active" : ""}`}
+                            type="button"
+                            onClick={() => setPollSection("previous")}
+                        >
+                            Closed ({previousPolls.length})
+                        </button>
+                    </div>
+                </div>
+
+                {pollFeedback && (
+                    <div className={`group-poll-feedback group-poll-feedback-${pollFeedback.type}`}>
+                        {pollFeedback.text}
+                    </div>
+                )}
+
+                <form className="group-poll-create-form" onSubmit={handleCreatePoll}>
+                    <h3>Create A Poll</h3>
+                    <label htmlFor="poll-question">Question</label>
+                    <input
+                        id="poll-question"
+                        type="text"
+                        value={pollForm.question}
+                        onChange={(event) => setPollForm((prev) => ({ ...prev, question: event.target.value }))}
+                        placeholder="Where should we go this summer?"
+                        maxLength={1000}
+                        required
+                    />
+
+                    <div className="group-poll-create-grid">
+                        <div>
+                            <label htmlFor="poll-decision-type">Option Type</label>
+                            <select
+                                id="poll-decision-type"
+                                value={pollForm.decisionType}
+                                onChange={(event) => {
+                                    setPollForm((prev) => ({ ...prev, decisionType: event.target.value as PollDecisionType }));
+                                    setAiSuggestions([]);
+                                }}
+                            >
+                                <option value="destination">Destination</option>
+                                <option value="date">Date</option>
+                                <option value="flight">Flight</option>
+                                <option value="hotel">Hotel</option>
+                                <option value="activity">Activity</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="poll-closes-at">Close Date/Time</label>
+                            <input
+                                id="poll-closes-at"
+                                type="datetime-local"
+                                value={pollForm.closesAt}
+                                onChange={(event) => setPollForm((prev) => ({ ...prev, closesAt: event.target.value }))}
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    <label htmlFor="poll-options">Options (one per line, minimum two)</label>
+                    <textarea
+                        id="poll-options"
+                        value={pollForm.optionsText}
+                        onChange={(event) => setPollForm((prev) => ({ ...prev, optionsText: event.target.value }))}
+                        placeholder={`Paris\nTokyo\nLisbon`}
+                        rows={5}
+                    />
+
+                    <div className="group-poll-ai-row">
+                        <button
+                            type="button"
+                            className="group-itinerary-btn"
+                            onClick={handleRequestSuggestions}
+                            disabled={requestingSuggestions}
+                        >
+                            {requestingSuggestions ? "Generating Suggestions..." : "Get AI Suggestions"}
+                        </button>
+                        <p>Suggestions are based on group shortlist data and member preferences.</p>
+                    </div>
+
+                    {aiSuggestions.length > 0 && (
+                        <div className="group-poll-suggestions">
+                            <h4>AI Suggestions</h4>
+                            <div className="group-poll-suggestion-list">
+                                {aiSuggestions.map((suggestion) => (
+                                    <button
+                                        key={suggestion}
+                                        type="button"
+                                        className="group-poll-suggestion-chip"
+                                        onClick={() => handleAddSuggestionToForm(suggestion)}
+                                    >
+                                        + {suggestion}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <button className="group-save-btn" type="submit" disabled={creatingPoll}>
+                        {creatingPoll ? "Creating Poll..." : "Create Poll"}
+                    </button>
+                </form>
+
+                {pollsLoading ? (
+                    <p className="group-shortlist-empty">Loading polls...</p>
+                ) : visiblePolls.length === 0 ? (
+                    <p className="group-shortlist-empty">
+                        {pollSection === "upcoming" ? "No active polls yet." : "No closed polls yet."}
+                    </p>
+                ) : (
+                    <div className="group-poll-list">
+                        {visiblePolls.map((poll) => {
+                            const isClosed = poll.status === "closed";
+                            const selectedOptionId = selectedOptionByPollId[poll.id] || poll.user_vote_option_id;
+
+                            return (
+                                <div key={poll.id} className="group-poll-card">
+                                    <div className="group-poll-card-header">
+                                        <div>
+                                            <h3>{poll.question}</h3>
+                                            <p>
+                                                {getPollDecisionLabel(poll.decision_type)} . {poll.total_votes}/{poll.member_count} votes .
+                                                {" "}
+                                                {isClosed
+                                                    ? `Closed ${formatPollDateLabel(poll.closed_at)}`
+                                                    : `Closes ${formatPollDateLabel(poll.closes_at)}`}
+                                            </p>
+                                        </div>
+                                        {poll.created_by === user?.id && !isClosed && (
+                                            <button
+                                                type="button"
+                                                className="group-poll-close-btn"
+                                                onClick={() => handleEndPollEarly(poll)}
+                                                disabled={Boolean(endingPollById[poll.id])}
+                                            >
+                                                {endingPollById[poll.id] ? "Closing..." : "Close Poll"}
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div className="group-poll-options">
+                                        {poll.options.map((option) => (
+                                            <label
+                                                key={option.id}
+                                                className={`group-poll-option ${option.is_winner ? "is-winner" : ""}`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name={`poll-${poll.id}`}
+                                                    value={option.id}
+                                                    checked={selectedOptionId === option.id}
+                                                    disabled={isClosed}
+                                                    onChange={() => {
+                                                        setSelectedOptionByPollId((prev) => ({ ...prev, [poll.id]: option.id }));
+                                                    }}
+                                                />
+                                                <span className="group-poll-option-label">{option.label}</span>
+                                                <span className="group-poll-option-count">{option.vote_count}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+
+                                    {!isClosed && (
+                                        <button
+                                            type="button"
+                                            className="group-save-btn"
+                                            onClick={() => handleVote(poll)}
+                                            disabled={Boolean(submittingVoteByPollId[poll.id])}
+                                        >
+                                            {submittingVoteByPollId[poll.id] ? "Submitting..." : "Submit Vote"}
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
 
             <div className="group-members-section">

@@ -211,7 +211,7 @@ class PollOptionCreateIn(BaseModel):
 
 class GroupPollCreateIn(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
-    decision_type: Literal["destination", "flight", "hotel", "activity", "other"] = "other"
+    decision_type: Literal["destination", "date", "flight", "hotel", "activity", "other"] = "other"
     closes_at: datetime
     allow_vote_update: bool = True
     options: list[PollOptionCreateIn] = Field(min_length=2, max_length=12)
@@ -219,6 +219,12 @@ class GroupPollCreateIn(BaseModel):
 
 class GroupPollVoteIn(BaseModel):
     option_id: int
+
+
+class GroupPollSuggestionIn(BaseModel):
+    decision_type: Literal["destination", "date", "flight", "hotel", "activity", "other"] = "other"
+    question: str = Field(min_length=1, max_length=1000)
+    existing_options: list[str] = Field(default_factory=list, max_length=12)
 
 
 class GroupNotificationOut(BaseModel):

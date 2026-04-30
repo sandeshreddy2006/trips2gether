@@ -419,3 +419,150 @@ If you cannot estimate, return "0"."""
     except Exception as e:
         print(f"[AI] estimate_item_cost error: {e}")
         return None
+
+
+def _normalize_suggestion_items(values: list[str], existing: set[str], limit: int) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set(existing)
+
+    for value in values:
+        item = " ".join(str(value).strip().split())
+        key = item.casefold()
+        if not item or key in seen:
+            continue
+        normalized.append(item)
+        seen.add(key)
+        if len(normalized) >= limit:
+            break
+
+    return normalized
+
+
+def get_poll_option_suggestions(
+    group_id: int,
+    decision_type: str,
+    question: str,
+    existing_options: list[str],
+    db: Session,
+    max_suggestions: int = 6,
+) -> dict:
+    """Return AI-generated poll option suggestions based on group context."""
+    existing_clean = [" ".join((option or "").strip().split()) for option in (existing_options or [])]
+    existing_clean = [option for option in existing_clean if option]
+    existing_set = {option.casefold() for option in existing_clean}
+
+    fallback = {
+        "suggestions": [],
+        "fallback": True,
+        "reason": "Suggestions unavailable",
+    }
+
+    context = _collect_group_context(group_id, db)
+    if not context:
+        fallback["reason"] = "Group context unavailable"
+        return fallback
+
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        fallback["reason"] = "CLAUDE_API_KEY not configured"
+        return fallback
+
+    shortlist_destinations = [item.get("name") for item in context.get("shortlisted_destinations", []) if item.get("name")]
+    shortlist_hotels = [item.get("name") for item in context.get("shortlisted_hotels", []) if item.get("name")]
+    shortlist_flights = [item.get("airline") for item in context.get("shortlisted_flights", []) if item.get("airline")]
+
+    member_preferences: list[str] = []
+    for profile in context.get("member_profiles", []):
+        hints: list[str] = []
+        if profile.get("preferred_destination"):
+            hints.append(f"destination={profile.get('preferred_destination')}")
+        if profile.get("travel_mode"):
+            hints.append(f"style={profile.get('travel_mode')}")
+        if profile.get("budget_min") is not None or profile.get("budget_max") is not None:
+            hints.append(f"budget={profile.get('budget_min')}-{profile.get('budget_max')}")
+        if hints:
+            member_preferences.append(", ".join(hints))
+
+    prompt_payload = {
+        "group_name": context.get("group_name"),
+        "decision_type": decision_type,
+        "question": question,
+        "existing_options": existing_clean,
+        "shortlisted_destinations": shortlist_destinations[:15],
+        "shortlisted_hotels": shortlist_hotels[:15],
+        "shortlisted_flights": shortlist_flights[:15],
+        "member_preference_hints": member_preferences[:12],
+    }
+
+    prompt = f"""You are helping a travel group create poll options.
+Generate concise, realistic poll options aligned to the provided context.
+
+Context JSON:
+{json.dumps(prompt_payload, indent=2, default=str)}
+
+Rules:
+1. Return ONLY valid JSON.
+2. JSON shape: {{"suggestions": ["Option 1", "Option 2", ...]}}
+3. Return 4 to 8 suggestions.
+4. Do not repeat any existing option.
+5. Keep each suggestion short and user-friendly.
+6. For date polls, use ISO-like readable format such as "2026-06-14".
+"""
+
+    try:
+        requested_model = (CLAUDE_MODEL or "").strip()
+        candidate_models = []
+        if requested_model:
+            candidate_models.append(requested_model)
+        for model_name in CLAUDE_MODEL_FALLBACKS:
+            if model_name not in candidate_models:
+                candidate_models.append(model_name)
+
+        client = anthropic.Anthropic(api_key=api_key, timeout=20.0)
+        response = None
+
+        for model_name in candidate_models:
+            try:
+                response = client.messages.create(
+                    model=model_name,
+                    max_tokens=400,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                break
+            except anthropic.NotFoundError:
+                continue
+            except Exception as e:
+                print(f"[AI] Poll suggestions call failed for model {model_name}: {e}")
+                continue
+
+        if response is None:
+            return fallback
+
+        text_chunks = []
+        for block in getattr(response, "content", []) or []:
+            if getattr(block, "type", None) == "text" and getattr(block, "text", None):
+                text_chunks.append(block.text)
+        text = "\n".join(text_chunks).strip()
+        if not text:
+            return fallback
+
+        suggestions: list[str] = []
+        try:
+            parsed = _extract_json_object(text)
+            raw_items = parsed.get("suggestions", []) if isinstance(parsed, dict) else []
+            if isinstance(raw_items, list):
+                suggestions = [str(item) for item in raw_items]
+        except Exception:
+            # Best-effort fallback for plain-text bullets.
+            lines = [line.strip("- *\t ") for line in text.splitlines()]
+            suggestions = [line for line in lines if line]
+
+        final_suggestions = _normalize_suggestion_items(suggestions, existing_set, max_suggestions)
+        return {
+            "suggestions": final_suggestions,
+            "fallback": False,
+            "reason": None,
+        }
+    except Exception as e:
+        print(f"[AI] get_poll_option_suggestions error for group {group_id}: {e}")
+        return fallback
