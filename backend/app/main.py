@@ -60,6 +60,7 @@ from .schemas import (
     TripSuccessScoreResponse,
     GroupPollCreateIn,
     GroupPollVoteIn,
+    GroupPollSuggestionIn,
     GroupNotificationOut,
     GroupNotificationListOut,
     NotificationOut,
@@ -2871,6 +2872,92 @@ async def create_group_poll(
             group_name=group.name,
             member_count=_get_group_member_count(group.id, db),
         ),
+    }
+
+
+@app.get("/groups/{group_id}/polls", response_model=dict)
+def list_group_polls(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """List active and closed polls for a specific group the caller belongs to."""
+    current_user = get_current_user_info(request, db)
+    group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    finalized_polls, finalized_notifications = _finalize_due_polls_for_groups([group_id], db)
+    for poll in finalized_polls:
+        _publish_poll_event_sync(poll.group_id, _build_poll_event_payload("poll.closed", poll, db))
+    if finalized_notifications:
+        _broadcast_poll_notifications(finalized_notifications)
+
+    member_count = _get_group_member_count(group_id, db)
+    upcoming_polls = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.group_id == group_id,
+            models.GroupPoll.status == "active",
+        )
+        .order_by(models.GroupPoll.closes_at.asc(), models.GroupPoll.created_at.desc())
+        .all()
+    )
+    previous_polls = (
+        db.query(models.GroupPoll)
+        .filter(
+            models.GroupPoll.group_id == group_id,
+            models.GroupPoll.status == "closed",
+        )
+        .order_by(models.GroupPoll.closed_at.desc(), models.GroupPoll.created_at.desc())
+        .all()
+    )
+
+    return {
+        "upcoming": [
+            _serialize_poll(
+                poll,
+                current_user.id,
+                db,
+                group_name=group.name,
+                member_count=member_count,
+            )
+            for poll in upcoming_polls
+        ],
+        "previous": [
+            _serialize_poll(
+                poll,
+                current_user.id,
+                db,
+                group_name=group.name,
+                member_count=member_count,
+            )
+            for poll in previous_polls
+        ],
+    }
+
+
+@app.post("/groups/{group_id}/poll-suggestions", response_model=dict)
+def get_group_poll_suggestions(
+    group_id: int,
+    body: GroupPollSuggestionIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Generate AI suggestions for poll options using group context and shortlist data."""
+    from .ai import get_poll_option_suggestions as _get_poll_option_suggestions
+
+    current_user = get_current_user_info(request, db)
+    _group, _membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    suggestions_result = _get_poll_option_suggestions(
+        group_id=group_id,
+        decision_type=body.decision_type,
+        question=body.question,
+        existing_options=body.existing_options,
+        db=db,
+    )
+    suggestions = suggestions_result.get("suggestions", [])
+
+    return {
+        "ok": True,
+        "suggestions": suggestions,
+        "fallback": bool(suggestions_result.get("fallback", False)),
+        "reason": suggestions_result.get("reason"),
     }
 
 
