@@ -79,6 +79,37 @@ class FriendRequestListOut(BaseModel):
     outgoing: list[FriendOut]
 
 
+class UserSearchResultOut(BaseModel):
+    id: int
+    name: str
+    avatar_url: str | None = None
+    friend_status: Literal["self", "none", "pending", "accepted"] = "none"
+
+
+class UserSearchListOut(BaseModel):
+    users: list[UserSearchResultOut]
+
+
+class ProfileViewOut(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    avatar_url: str | None = None
+    bio: str | None = None
+    visibility: Literal["public", "friends_only", "private"] = "public"
+    friend_status: Literal["self", "none", "pending", "accepted"] = "none"
+    can_view: bool
+    budget_min: int | None = None
+    budget_max: int | None = None
+    travel_mode: str | None = None
+    preferred_destination: str | None = None
+    travel_pace: str | None = None
+    hotel_type: str | None = None
+    room_sharing: str | None = None
+    cuisine_preference: str | None = None
+    dietary_restrictions: str | None = None
+
+
 class GroupCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
@@ -422,6 +453,7 @@ class ProfileOut(BaseModel):
     username: str
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
+    visibility: Literal["public", "friends_only", "private"] = "public"
     budget_min: Optional[int] = None
     budget_max: Optional[int] = None
     travel_mode: Optional[str] = None
@@ -443,6 +475,7 @@ class ProfileUpdate(BaseModel):
     username: Optional[Annotated[str, StringConstraints(min_length=1, max_length=100)]] = None
     email: Optional[str] = None
     bio: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
+    visibility: Optional[Literal["public", "friends_only", "private"]] = None
     budget_min: Optional[int] = Field(None, ge=0, description="Minimum budget must be non-negative")
     budget_max: Optional[int] = Field(None, ge=0, description="Maximum budget must be non-negative")
     travel_mode: Optional[str] = None
