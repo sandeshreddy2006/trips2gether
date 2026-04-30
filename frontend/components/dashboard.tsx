@@ -47,6 +47,34 @@ type Destination = {
     business_status?: string;
 };
 
+type HotelDeal = {
+    place_id: string;
+    name: string;
+    address?: string | null;
+    rating?: number | null;
+    user_ratings_total?: number | null;
+    price_per_night?: number | null;
+    total_price?: number | null;
+    currency: string;
+    nights?: number | null;
+    photo_url?: string | null;
+    photo_reference?: string | null;
+};
+
+type FlightDeal = {
+    id: string;
+    airline: string;
+    price: number;
+    currency: string;
+    duration: string;
+    stops: number;
+    departure_airport: string;
+    arrival_airport: string;
+    departure_time?: string | null;
+    arrival_time?: string | null;
+    logo_url?: string | null;
+};
+
 type Booking = {
     id: number;
     order_id: string;
@@ -79,6 +107,32 @@ type ArchivedTripHistory = {
     starts_at: string | null;
     ends_at: string | null;
     archived_at: string | null;
+};
+
+type PreviousTripSummary = {
+    id: string;
+    title: string;
+    destination: string;
+    dates: string;
+    groupSize: string;
+    status: string;
+    actionLabel: string;
+    actionPath: string;
+    sortDate: string | null;
+    estimatedCost: number | null;
+    currency: string;
+    costNote: string;
+};
+
+type ComparableItem = {
+    id: string;
+    label: string;
+    category: "Previous Trip" | "Destination" | "Hotel" | "Flight";
+    primary: string;
+    secondary: string;
+    estimatedCost: number | null;
+    currency: string;
+    costNote: string;
 };
 
 type PollSection = "upcoming" | "previous";
@@ -144,6 +198,29 @@ function parseApiError(data: unknown, fallback: string): string {
     return fallback;
 }
 
+function formatDashboardDate(value: string | null): string {
+    if (!value) return "Date unavailable";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Date unavailable";
+
+    return date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
+}
+
+function formatDashboardDateRange(start: string | null, end: string | null): string {
+    if (!start && !end) return "Dates unavailable";
+    if (start && end) return `${formatDashboardDate(start)} - ${formatDashboardDate(end)}`;
+    return formatDashboardDate(start || end);
+}
+
+function formatDashboardMoney(amount: number | null, currency = "USD"): string {
+    if (amount == null || Number.isNaN(amount)) return "Estimate unavailable";
+    return `${currency} ${amount.toFixed(2)}`;
+}
+
 function getDefaultPollDeadlineInputValue(): string {
     const twoDaysLater = new Date(Date.now() + (2 * 24 * 60 * 60 * 1000));
     const year = twoDaysLater.getFullYear();
@@ -152,6 +229,12 @@ function getDefaultPollDeadlineInputValue(): string {
     const hour = String(twoDaysLater.getHours()).padStart(2, "0");
     const minute = String(twoDaysLater.getMinutes()).padStart(2, "0");
     return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function getFutureDateISO(daysFromNow: number): string {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toISOString().split("T")[0];
 }
 
 // Helper function to get the image URL (using proxy for Safari compatibility)
@@ -178,6 +261,12 @@ export default function Dashboard() {
     const [popularDestinations, setPopularDestinations] = useState<Destination[]>([]);
     const [loadingDestinations, setLoadingDestinations] = useState(true);
     const [trendingError, setTrendingError] = useState<string | null>(null);
+    const [hotelDeals, setHotelDeals] = useState<HotelDeal[]>([]);
+    const [loadingHotelDeals, setLoadingHotelDeals] = useState(true);
+    const [hotelDealsError, setHotelDealsError] = useState<string | null>(null);
+    const [flightDeals, setFlightDeals] = useState<FlightDeal[]>([]);
+    const [loadingFlightDeals, setLoadingFlightDeals] = useState(true);
+    const [flightDealsError, setFlightDealsError] = useState<string | null>(null);
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loadingBookings, setLoadingBookings] = useState(true);
     const [inboxItems, setInboxItems] = useState<InboxNotification[]>([]);
@@ -197,6 +286,7 @@ export default function Dashboard() {
     const [submittingPollVotes, setSubmittingPollVotes] = useState<Record<number, boolean>>({});
     const [selectedGroupByBookingId, setSelectedGroupByBookingId] = useState<Record<number, string>>({});
     const [shortlistingBookingIds, setShortlistingBookingIds] = useState<Record<number, boolean>>({});
+    const [selectedComparisonIds, setSelectedComparisonIds] = useState<string[]>([]);
     const [pollForm, setPollForm] = useState({
         groupId: "",
         question: "",
@@ -343,8 +433,81 @@ export default function Dashboard() {
         fetchDestinations();
     }, []);
 
+    useEffect(() => {
+        const fetchHotelDeals = async () => {
+            const destination = popularDestinations[0]?.name || "Paris";
+            try {
+                setLoadingHotelDeals(true);
+                setHotelDealsError(null);
+
+                const response = await fetch("/api/hotels/search", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        destination,
+                        check_in: getFutureDateISO(45),
+                        check_out: getFutureDateISO(48),
+                        guests: 2,
+                        rooms: 1,
+                        sort_by: "rating_desc",
+                    }),
+                });
+                const data = await response.json().catch(() => ({ results: [] }));
+                if (!response.ok) {
+                    throw new Error(parseApiError(data, "Hotel ideas are unavailable right now."));
+                }
+
+                setHotelDeals(Array.isArray(data.results) ? data.results.slice(0, 3) : []);
+            } catch (error) {
+                setHotelDeals([]);
+                setHotelDealsError(error instanceof Error ? error.message.replaceAll("deals", "ideas") : "Hotel ideas are unavailable right now.");
+            } finally {
+                setLoadingHotelDeals(false);
+            }
+        };
+
+        if (!loadingDestinations) {
+            void fetchHotelDeals();
+        }
+    }, [loadingDestinations, popularDestinations]);
+
+    useEffect(() => {
+        const fetchFlightDeals = async () => {
+            try {
+                setLoadingFlightDeals(true);
+                setFlightDealsError(null);
+
+                const response = await fetch("/api/flights/search", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        origin: "JFK",
+                        destination: "CDG",
+                        depart_date: getFutureDateISO(45),
+                        return_date: getFutureDateISO(52),
+                        travelers: 1,
+                    }),
+                });
+                const data = await response.json().catch(() => ({ results: [] }));
+                if (!response.ok) {
+                    throw new Error(parseApiError(data, "Airline ideas are unavailable right now."));
+                }
+
+                setFlightDeals(Array.isArray(data.results) ? data.results.slice(0, 3) : []);
+            } catch (error) {
+                setFlightDeals([]);
+                setFlightDealsError(error instanceof Error ? error.message.replaceAll("deals", "ideas") : "Airline ideas are unavailable right now.");
+            } finally {
+                setLoadingFlightDeals(false);
+            }
+        };
+
+        void fetchFlightDeals();
+    }, []);
+
     const featuredDestination = popularDestinations[0] ?? null;
     const trendingCards = popularDestinations.slice(1, 4);
+    const destinationDeals = popularDestinations.slice(0, 3);
 
     const now = useMemo(() => new Date(), []);
 
@@ -385,6 +548,144 @@ export default function Dashboard() {
         : selectedTripSection === "active"
             ? activeTrips
             : previousTrips;
+
+    const previousTripSummaries = useMemo<PreviousTripSummary[]>(() => {
+        const archivedItems = archivedHistory.map((item) => ({
+            id: `history-${item.id}`,
+            title: item.title || item.group_name,
+            destination: item.group_name,
+            dates: formatDashboardDateRange(item.starts_at, item.ends_at),
+            groupSize: "Group size unavailable",
+            status: "archived",
+            actionLabel: "View Itinerary",
+            actionPath: `/group/${item.group_id}/itinerary?historyId=${item.id}`,
+            sortDate: item.archived_at || item.ends_at || item.starts_at,
+            estimatedCost: null,
+            currency: "USD",
+            costNote: "Archived itinerary cost varies",
+        }));
+
+        const groupItems = previousTrips.map((group) => ({
+            id: `group-${group.id}`,
+            title: group.name,
+            destination: group.description || "Group trip",
+            dates: formatDashboardDateRange(group.trip_start_at, group.trip_end_at),
+            groupSize: `${group.member_count} ${group.member_count === 1 ? "member" : "members"}`,
+            status: normalizeGroupStatus(group.status),
+            actionLabel: "Open Group",
+            actionPath: `/group/${group.id}`,
+            sortDate: group.trip_end_at || group.trip_start_at || group.created_at,
+            estimatedCost: null,
+            currency: "USD",
+            costNote: "Group trip cost varies by itinerary",
+        }));
+
+        const bookingItems = bookings.map((booking) => {
+            const bookingAmount = Number(booking.total_amount);
+            return {
+                id: `booking-${booking.id}`,
+                title: `Flight booking ${booking.booking_reference || booking.order_id}`,
+                destination: "Booked flight",
+                dates: `Booked ${formatDashboardDate(booking.created_at)}`,
+                groupSize: "Solo booking",
+                status: booking.payment_status,
+                actionLabel: "View Booking",
+                actionPath: "/bookings/history",
+                sortDate: booking.created_at,
+                estimatedCost: Number.isNaN(bookingAmount) ? null : bookingAmount,
+                currency: booking.currency,
+                costNote: "Confirmed flight booking",
+            };
+        });
+
+        return [...archivedItems, ...groupItems, ...bookingItems]
+            .sort((a, b) => {
+                const aTime = a.sortDate ? new Date(a.sortDate).getTime() : 0;
+                const bTime = b.sortDate ? new Date(b.sortDate).getTime() : 0;
+                return bTime - aTime;
+            })
+            .slice(0, 6);
+    }, [archivedHistory, bookings, previousTrips]);
+
+    const comparisonOptions = useMemo<ComparableItem[]>(() => {
+        const previousTripOptions = previousTripSummaries.map((trip) => ({
+            id: trip.id,
+            label: trip.title,
+            category: "Previous Trip" as const,
+            primary: trip.destination,
+            secondary: `${trip.dates} • ${trip.groupSize}`,
+            estimatedCost: trip.estimatedCost,
+            currency: trip.currency,
+            costNote: trip.costNote,
+        }));
+
+        const destinationOptions = destinationDeals.map((destination) => ({
+            id: `destination-${destination.place_id}`,
+            label: destination.name,
+            category: "Destination" as const,
+            primary: destination.address || "Popular destination",
+            secondary: destination.rating != null ? `${destination.rating.toFixed(1)} rating` : "No rating yet",
+            estimatedCost: null,
+            currency: "USD",
+            costNote: "Destination cost varies",
+        }));
+
+        const hotelOptions = hotelDeals.map((hotel) => {
+            const estimatedCost = hotel.total_price ?? (
+                hotel.price_per_night != null && hotel.nights != null
+                    ? hotel.price_per_night * hotel.nights
+                    : hotel.price_per_night ?? null
+            );
+
+            return {
+                id: `hotel-${hotel.place_id}`,
+                label: hotel.name,
+                category: "Hotel" as const,
+                primary: hotel.address || "Hotel idea",
+                secondary: hotel.rating != null ? `${hotel.rating.toFixed(1)} rating` : "No rating yet",
+                estimatedCost,
+                currency: hotel.currency,
+                costNote: hotel.total_price != null ? "Estimated stay total" : "Nightly estimate",
+            };
+        });
+
+        const flightOptions = flightDeals.map((flight) => ({
+            id: `flight-${flight.id}`,
+            label: `${flight.departure_airport} to ${flight.arrival_airport}`,
+            category: "Flight" as const,
+            primary: flight.airline,
+            secondary: `${flight.duration} • ${flight.stops === 0 ? "Nonstop" : `${flight.stops} stops`}`,
+            estimatedCost: flight.price,
+            currency: flight.currency,
+            costNote: "Flight offer price",
+        }));
+
+        return [...previousTripOptions, ...destinationOptions, ...hotelOptions, ...flightOptions];
+    }, [destinationDeals, flightDeals, hotelDeals, previousTripSummaries]);
+
+    const selectedComparisonItems = useMemo(() => {
+        return selectedComparisonIds
+            .map((id) => comparisonOptions.find((item) => item.id === id))
+            .filter((item): item is ComparableItem => Boolean(item));
+    }, [comparisonOptions, selectedComparisonIds]);
+
+    const comparisonTotal = selectedComparisonItems.reduce((total, item) => {
+        return item.estimatedCost == null ? total : total + item.estimatedCost;
+    }, 0);
+    const comparisonCurrencies = Array.from(
+        new Set(selectedComparisonItems.filter((item) => item.estimatedCost != null).map((item) => item.currency))
+    );
+    const comparisonTotalCurrency = comparisonCurrencies.length === 1 ? comparisonCurrencies[0] : "USD";
+    const comparisonTotalLabel = comparisonCurrencies.length > 1 ? "Total Known Estimate (mixed currencies)" : "Total Known Estimate";
+
+    const toggleComparisonItem = (itemId: string) => {
+        setSelectedComparisonIds((prev) => {
+            if (prev.includes(itemId)) {
+                return prev.filter((id) => id !== itemId);
+            }
+            return [...prev, itemId].slice(-4);
+        });
+    };
 
     const handlePlanTrip = () => {
         if (groups.length === 0) {
@@ -799,6 +1100,240 @@ export default function Dashboard() {
                             </div>
                         </div>
                     )}
+
+                    <section className="previous-summary-section">
+                        <div className="previous-summary-header">
+                            <div>
+                                <p className="previous-summary-kicker">Travel History</p>
+                                <h3 className="previous-summary-title">Previous Trips</h3>
+                            </div>
+                            <span className="previous-summary-count">
+                                {previousTripSummaries.length} {previousTripSummaries.length === 1 ? "item" : "items"}
+                            </span>
+                        </div>
+
+                        {loadingBookings ? (
+                            <div className="trip-section-empty">Loading previous trips...</div>
+                        ) : previousTripSummaries.length === 0 ? (
+                            <div className="trip-section-empty">
+                                No previous bookings or group trips yet. Completed plans and flight bookings will appear here.
+                            </div>
+                        ) : (
+                            <div className="previous-summary-grid">
+                                {previousTripSummaries.map((trip) => (
+                                    <article key={trip.id} className="previous-summary-card">
+                                        <div className="previous-summary-main">
+                                            <span className="previous-summary-label">Destination</span>
+                                            <h4>{trip.title}</h4>
+                                            <p>{trip.destination}</p>
+                                        </div>
+                                        <div className="previous-summary-meta">
+                                            <span>{trip.dates}</span>
+                                            <span>{trip.groupSize}</span>
+                                            <span className={`previous-status status-${trip.status.toLowerCase().replaceAll("_", "-")}`}>
+                                                {trip.status.replaceAll("_", " ")}
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="previous-summary-action"
+                                            onClick={() => router.push(trip.actionPath)}
+                                        >
+                                            {trip.actionLabel}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`compare-toggle ${selectedComparisonIds.includes(trip.id) ? "selected" : ""}`}
+                                            onClick={() => toggleComparisonItem(trip.id)}
+                                        >
+                                            {selectedComparisonIds.includes(trip.id) ? "Selected" : "Compare"}
+                                        </button>
+                                    </article>
+                                ))}
+                            </div>
+                        )}
+                    </section>
+
+                    <section className="dashboard-deals-section">
+                        <div className="previous-summary-header">
+                            <div>
+                                <p className="previous-summary-kicker">Trip Ideas</p>
+                                <h3 className="previous-summary-title">Popular Destinations, Hotels, and Flights</h3>
+                            </div>
+                        </div>
+
+                        <div className="dashboard-deals-grid">
+                            <div className="deal-column">
+                                <div className="deal-column-header">
+                                    <h4>Popular Destinations</h4>
+                                    <button type="button" onClick={() => handleDestinationClick(destinationDeals[0] || null)}>Explore</button>
+                                </div>
+                                {loadingDestinations ? (
+                                    <div className="deal-empty">Loading destinations...</div>
+                                ) : destinationDeals.length === 0 ? (
+                                    <div className="deal-empty">{trendingError || "No popular destinations available right now."}</div>
+                                ) : (
+                                    <div className="deal-card-list">
+                                        {destinationDeals.map((destination) => (
+                                            <article
+                                                key={destination.place_id}
+                                                className="deal-card"
+                                                onClick={() => handleDestinationClick(destination)}
+                                            >
+                                                <div
+                                                    className="deal-card-image"
+                                                    style={{ backgroundImage: `url('${getImageUrl(destination)}')` }}
+                                                />
+                                                <div className="deal-card-body">
+                                                    <h5>{destination.name}</h5>
+                                                    <p>{destination.address || "Trending trip idea"}</p>
+                                                    <div className="deal-card-meta">
+                                                        <span>{destination.rating != null ? `${destination.rating.toFixed(1)} rating` : "No rating yet"}</span>
+                                                        <span>Cost varies</span>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className={`compare-toggle deal-compare-toggle ${selectedComparisonIds.includes(`destination-${destination.place_id}`) ? "selected" : ""}`}
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        toggleComparisonItem(`destination-${destination.place_id}`);
+                                                    }}
+                                                >
+                                                    {selectedComparisonIds.includes(`destination-${destination.place_id}`) ? "Selected" : "Compare"}
+                                                </button>
+                                            </article>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="deal-column">
+                                <div className="deal-column-header">
+                                    <h4>Hotel Ideas</h4>
+                                    <button type="button" onClick={() => router.push("/hotels")}>Explore</button>
+                                </div>
+                                {loadingHotelDeals ? (
+                                    <div className="deal-empty">Loading hotel ideas...</div>
+                                ) : hotelDeals.length === 0 ? (
+                                    <div className="deal-empty">{hotelDealsError || "No hotel ideas available right now."}</div>
+                                ) : (
+                                    <div className="deal-card-list">
+                                        {hotelDeals.map((hotel) => (
+                                            <article key={hotel.place_id} className="deal-card">
+                                                <div
+                                                    className="deal-card-image"
+                                                    style={{
+                                                        backgroundImage: `url('${hotel.photo_reference
+                                                            ? `/api/destinations/image?photo_reference=${encodeURIComponent(hotel.photo_reference)}&width=500&height=320`
+                                                            : hotel.photo_url || "/trip-marseille.jpg"}')`,
+                                                    }}
+                                                />
+                                                <div className="deal-card-body">
+                                                    <h5>{hotel.name}</h5>
+                                                    <p>{hotel.address || "Top-rated stay"}</p>
+                                                    <div className="deal-card-meta">
+                                                        <span>{hotel.rating != null ? `${hotel.rating.toFixed(1)} rating` : "No rating yet"}</span>
+                                                        <span>
+                                                            {hotel.price_per_night != null
+                                                                ? `${hotel.currency} ${hotel.price_per_night.toFixed(0)} / night`
+                                                                : "Price varies"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className={`compare-toggle deal-compare-toggle ${selectedComparisonIds.includes(`hotel-${hotel.place_id}`) ? "selected" : ""}`}
+                                                    onClick={() => toggleComparisonItem(`hotel-${hotel.place_id}`)}
+                                                >
+                                                    {selectedComparisonIds.includes(`hotel-${hotel.place_id}`) ? "Selected" : "Compare"}
+                                                </button>
+                                            </article>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="deal-column">
+                                <div className="deal-column-header">
+                                    <h4>Airline Ideas</h4>
+                                    <button type="button" onClick={() => router.push("/bookings")}>Search</button>
+                                </div>
+                                {loadingFlightDeals ? (
+                                    <div className="deal-empty">Loading airline ideas...</div>
+                                ) : flightDeals.length === 0 ? (
+                                    <div className="deal-empty">{flightDealsError || "No airline ideas available right now."}</div>
+                                ) : (
+                                    <div className="deal-card-list">
+                                        {flightDeals.map((flight) => (
+                                            <article key={flight.id} className="flight-deal-card">
+                                                <div className="flight-deal-route">
+                                                    <strong>{flight.departure_airport} to {flight.arrival_airport}</strong>
+                                                    <span>{flight.airline}</span>
+                                                </div>
+                                                <div className="deal-card-meta">
+                                                    <span>{flight.duration}</span>
+                                                    <span>{flight.stops === 0 ? "Nonstop" : `${flight.stops} ${flight.stops === 1 ? "stop" : "stops"}`}</span>
+                                                </div>
+                                                <div className="flight-deal-price">
+                                                    {flight.currency} {flight.price.toFixed(2)}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className={`compare-toggle ${selectedComparisonIds.includes(`flight-${flight.id}`) ? "selected" : ""}`}
+                                                    onClick={() => toggleComparisonItem(`flight-${flight.id}`)}
+                                                >
+                                                    {selectedComparisonIds.includes(`flight-${flight.id}`) ? "Selected" : "Compare"}
+                                                </button>
+                                            </article>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="cost-comparison-section">
+                        <div className="previous-summary-header">
+                            <div>
+                                <p className="previous-summary-kicker">Cost Planning</p>
+                                <h3 className="previous-summary-title">Cost Comparison</h3>
+                            </div>
+                            <span className="previous-summary-count">
+                                {selectedComparisonItems.length} selected
+                            </span>
+                        </div>
+
+                        {selectedComparisonItems.length === 0 ? (
+                            <div className="trip-section-empty">
+                                Select previous trips or trip ideas to compare flights, hotels, and estimated total cost.
+                            </div>
+                        ) : (
+                            <>
+                                <div className="comparison-grid">
+                                    {selectedComparisonItems.map((item) => (
+                                        <article key={item.id} className="comparison-card">
+                                            <div className="comparison-card-topline">
+                                                <span>{item.category}</span>
+                                                <button type="button" onClick={() => toggleComparisonItem(item.id)}>Remove</button>
+                                            </div>
+                                            <h4>{item.label}</h4>
+                                            <p>{item.primary}</p>
+                                            <p>{item.secondary}</p>
+                                            <div className="comparison-cost">
+                                                {formatDashboardMoney(item.estimatedCost, item.currency)}
+                                            </div>
+                                            <span className="comparison-note">{item.costNote}</span>
+                                        </article>
+                                    ))}
+                                </div>
+                                <div className="comparison-total-row">
+                                    <span>{comparisonTotalLabel}</span>
+                                    <strong>{formatDashboardMoney(comparisonTotal, comparisonTotalCurrency)}</strong>
+                                </div>
+                            </>
+                        )}
+                    </section>
 
                     {/* Trip Cards */}
                     {featuredDestination && (

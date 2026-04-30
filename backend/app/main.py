@@ -2049,6 +2049,7 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
 
     group_ids = [m.group_id for m in memberships]
     role_map = {m.group_id: m.role for m in memberships}
+    joined_at_map = {m.group_id: m.joined_at for m in memberships}
 
     groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
 
@@ -2090,6 +2091,7 @@ def list_my_groups(request: Request, db: Session = Depends(get_db)):
                 status=g.status,
                 created_by=g.created_by,
                 created_at=g.created_at,
+                joined_at=joined_at_map.get(g.id),
                 member_count=member_counts.get(g.id, 0),
                 role=role_map.get(g.id),
                 trip_item_count=len(group_items),

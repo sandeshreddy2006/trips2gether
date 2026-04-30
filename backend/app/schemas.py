@@ -100,6 +100,7 @@ class GroupOut(BaseModel):
     status: str = "planning"
     created_by: int
     created_at: datetime | None = None
+    joined_at: datetime | None = None
     member_count: int = 0
     role: str | None = None
     trip_item_count: int = 0

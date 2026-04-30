@@ -436,6 +436,206 @@
     margin-bottom: 0;
 }
 
+.travel-history-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.travel-history-section {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.travel-history-subheader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.travel-history-subheader h3 {
+    margin: 0 0 6px 0;
+    color: #1a1a1a;
+    font-size: 17px;
+}
+
+.travel-history-subheader p {
+    margin: 0;
+    color: #667085;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.travel-history-count {
+    flex-shrink: 0;
+    border: 1px solid #cfe5d8;
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: #f1f8f4;
+    color: #2E6B55;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.booking-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.booking-history-card {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(120px, 1fr));
+    gap: 16px;
+    border: 1px solid #e6efea;
+    border-radius: 12px;
+    padding: 16px;
+    background: #fbfdfc;
+}
+
+.booking-history-main,
+.booking-history-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.booking-history-label {
+    color: #667085;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.booking-history-reference,
+.booking-history-detail strong {
+    color: #1f2937;
+    font-size: 15px;
+}
+
+.booking-history-order {
+    color: #6b7280;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.booking-status-pill {
+    align-self: flex-start;
+    border-radius: 999px;
+    background: #e8f5ee;
+    color: #246148;
+    padding: 5px 9px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.booking-status-pill.status-paid,
+.booking-status-pill.status-confirmed,
+.booking-status-pill.status-active {
+    background: #e8f5ee;
+    color: #246148;
+}
+
+.booking-status-pill.status-pending,
+.booking-status-pill.status-planning,
+.booking-status-pill.status-upcoming {
+    background: #fff7e6;
+    color: #9a5b00;
+}
+
+.booking-status-pill.status-failed,
+.booking-status-pill.status-cancelled,
+.booking-status-pill.status-canceled {
+    background: #fef3f2;
+    color: #b42318;
+}
+
+.booking-status-pill.status-archived,
+.booking-status-pill.status-unknown {
+    background: #f2f4f7;
+    color: #475467;
+}
+
+.travel-history-empty {
+    border: 1px dashed #cfe5d8;
+    border-radius: 12px;
+    background: #f8fcfa;
+    padding: 28px;
+    text-align: center;
+}
+
+.travel-history-empty h3 {
+    margin: 0 0 8px 0;
+    color: #1f2937;
+    font-size: 18px;
+}
+
+.travel-history-empty p {
+    margin: 0;
+    color: #667085;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.group-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.group-history-card {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(100px, 1fr)) auto;
+    gap: 16px;
+    align-items: center;
+    border: 1px solid #e6efea;
+    border-radius: 12px;
+    padding: 16px;
+    background: #ffffff;
+}
+
+.group-history-main,
+.group-history-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.group-history-main strong,
+.group-history-detail strong {
+    color: #1f2937;
+    font-size: 15px;
+}
+
+.group-history-description {
+    color: #6b7280;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.group-history-link {
+    justify-self: end;
+    border: 1px solid #2E6B55;
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #2E6B55;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.group-history-link:hover {
+    background: #f1f8f4;
+}
+
 .photos-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -489,6 +689,64 @@
     font-weight: 700;
     color: #2E6B55;
     margin: 0 0 16px 0;
+}
+
+.recent-activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.recent-activity-item {
+    border: 1px solid #e6efea;
+    border-radius: 10px;
+    padding: 12px;
+    background: #fbfdfc;
+}
+
+.recent-activity-topline {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.recent-activity-type {
+    color: #2E6B55;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.recent-activity-date {
+    color: #667085;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.recent-activity-item strong {
+    display: block;
+    color: #1f2937;
+    font-size: 13px;
+    line-height: 1.4;
+    margin-bottom: 4px;
+}
+
+.recent-activity-item span:last-child {
+    color: #667085;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.recent-activity-error {
+    color: #b42318;
+    background: #fef3f2;
+    border: 1px solid #fecdca;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    margin: 0;
 }
 
 .placeholder-text {
@@ -749,6 +1007,20 @@
         right: 16px;
         max-width: 300px;
     }
+
+    .travel-history-subheader {
+        flex-direction: column;
+    }
+
+    .booking-history-card,
+    .group-history-card {
+        grid-template-columns: 1fr;
+    }
+
+    .group-history-link {
+        justify-self: stretch;
+        text-align: center;
+    }
 }
 
 @media (max-width: 480px) {
@@ -820,6 +1092,7 @@
     .wallet-topup-btn {
         width: 100%;
     }
+
 }
 
 /* Modern Form Styling */
