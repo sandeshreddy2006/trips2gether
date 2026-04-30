@@ -103,6 +103,7 @@ from .schemas import (
     TripPaymentOut,
     TripPaymentCheckoutOut,
     TripPaymentStatusOut,
+    QuickJumpResult,
 )
 from .auth import (
     hash_password,
@@ -2512,6 +2513,141 @@ def list_dashboard_active_chats(request: Request, db: Session = Depends(get_db))
 
     summaries.sort(key=lambda item: item["latest_message_at"], reverse=True)
     return {"items": summaries}
+
+
+@app.get("/search/quick-jump", response_model=QuickJumpResult)
+def quick_jump_search(query: str = "", request: Request = None, db: Session = Depends(get_db)):
+    """
+    Global quick-jump search returning groups, bookings, destinations, and chats.
+    Filters by query (min 2 chars) or returns recent items if query is empty.
+    """
+    current_user = get_current_user_info(request, db)
+    query = query.strip().lower()
+    
+    # Get user's group memberships
+    memberships = db.query(models.GroupMember).filter(
+        models.GroupMember.user_id == current_user.id
+    ).all()
+    
+    if not memberships:
+        return QuickJumpResult()
+    
+    group_ids = [m.group_id for m in memberships]
+    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    group_map = {g.id: g for g in groups}
+    
+    # == GROUPS ==
+    groups_result = []
+    for group in groups:
+        # Filter by query if provided
+        if query and query not in group.name.lower():
+            continue
+        
+        member_count = len(group.members) if group.members else 0
+        groups_result.append({
+            "id": group.id,
+            "name": group.name,
+            "status": group.status,
+            "member_count": member_count,
+        })
+    
+    # Sort groups by name; limit to 5 most recent
+    groups_result.sort(key=lambda x: x["name"].lower())
+    groups_result = groups_result[:5]
+    
+    # == BOOKINGS ==
+    bookings_result = []
+    profile = db.query(models.Profile).filter(
+        models.Profile.user_id == current_user.id
+    ).first()
+    
+    if profile:
+        bookings = db.query(models.Booking).filter(
+            models.Booking.profile_id == profile.id
+        ).order_by(models.Booking.created_at.desc()).all()
+        
+        for booking in bookings:
+            if query and query not in booking.booking_reference.lower():
+                continue
+            
+            bookings_result.append({
+                "id": booking.id,
+                "booking_reference": booking.booking_reference,
+                "status": booking.payment_status,
+                "total_amount": booking.total_amount,
+                "currency": booking.currency,
+            })
+        
+        bookings_result = bookings_result[:5]
+    
+    # == DESTINATIONS (Shortlisted) ==
+    destinations_result = []
+    shortlisted_dests = db.query(models.GroupShortlistDestination).filter(
+        models.GroupShortlistDestination.group_id.in_(group_ids)
+    ).all()
+    
+    for dest in shortlisted_dests:
+        if query and query not in dest.name.lower():
+            continue
+        
+        group = group_map.get(dest.group_id)
+        if not group:
+            continue
+        
+        destinations_result.append({
+            "id": dest.id,
+            "name": dest.name,
+            "place_id": dest.place_id,
+            "group_id": dest.group_id,
+            "group_name": group.name,
+            "rating": dest.rating,
+        })
+    
+    destinations_result = destinations_result[:5]
+    
+    # == CHATS ==
+    chats_result = []
+    messages = db.query(models.GroupChatMessage).filter(
+        models.GroupChatMessage.group_id.in_(group_ids)
+    ).order_by(models.GroupChatMessage.created_at.desc()).all()
+    
+    chats_by_group = {}
+    for msg in messages:
+        if msg.group_id not in chats_by_group:
+            chats_by_group[msg.group_id] = msg
+    
+    for group_id, latest_msg in list(chats_by_group.items())[:5]:
+        group = group_map.get(group_id)
+        if not group:
+            continue
+        
+        # For query filter, search in group name or message preview
+        if query:
+            if query not in group.name.lower() and query not in latest_msg.body.lower():
+                continue
+        
+        # Count unread messages for this group
+        membership = next((m for m in memberships if m.group_id == group_id), None)
+        unread_count = 0
+        if membership and membership.last_chat_read_at:
+            unread_count = db.query(models.GroupChatMessage).filter(
+                models.GroupChatMessage.group_id == group_id,
+                models.GroupChatMessage.created_at > membership.last_chat_read_at
+            ).count()
+        
+        chats_result.append({
+            "group_id": group_id,
+            "group_name": group.name,
+            "latest_message": latest_msg.body[:100],  # Truncate to 100 chars
+            "unread_count": unread_count,
+        })
+    
+    return QuickJumpResult(
+        groups=groups_result,
+        bookings=bookings_result,
+        destinations=destinations_result,
+        chats=chats_result,
+    )
 
 
 @app.get("/groups/{group_id}/chat/messages", response_model=GroupChatThreadOut)

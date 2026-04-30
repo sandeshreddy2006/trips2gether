@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { useAuth } from "./AuthContext";
-import Search from "../components/Search";
+import QuickJump from "../components/QuickJump";
 import SignInModal from "../components/SignInModal";
 import SignUpModal from "../components/SignUpModal";
 import NotificationBell from "../components/NotificationBell";
@@ -87,7 +87,7 @@ export default function AppLayout({
                 <div className="header-center">
                     <div className="search-container">
                         <div className="search-inner">
-                            <Search placeholder="Search for destinations, flights or plans" />
+                            <QuickJump />
                         </div>
                     </div>
                 </div>
