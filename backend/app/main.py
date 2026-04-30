@@ -4977,8 +4977,9 @@ def list_admin_reports(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
+    # join user to get reporter email and name (models.User has `name`, not first_name/last_name)
     query = (
-        db.query(models.UserReport, models.User.email, models.User.first_name, models.User.last_name)
+        db.query(models.UserReport, models.User.email, models.User.name)
         .outerjoin(models.User, models.User.id == models.UserReport.user_id)
     )
 
@@ -4999,7 +5000,8 @@ def list_admin_reports(
 
     rows = query.order_by(models.UserReport.created_at.desc()).all()
     items = []
-    for report, email, first_name, last_name in rows:
+    for report, email, name in rows:
+        reporter_name = name or ""
         items.append({
             "id": report.id,
             "user_id": report.user_id,
@@ -5011,7 +5013,7 @@ def list_admin_reports(
             "created_at": report.created_at,
             "updated_at": report.updated_at,
             "reporter_email": email,
-            "reporter_name": " ".join(part for part in [first_name, last_name] if part),
+            "reporter_name": reporter_name,
         })
 
     return {"ok": True, "items": items}
