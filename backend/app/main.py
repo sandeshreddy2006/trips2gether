@@ -29,6 +29,13 @@ from .schemas import (
     GroupMemberOut,
     GroupMemberListOut,
     GroupUpdateRoleIn,
+    DashboardCurrentPlanListOut,
+    DashboardCurrentPlanOut,
+    DashboardChatSummaryListOut,
+    DashboardChatSummaryOut,
+    GroupChatMessageCreateIn,
+    GroupChatMessageOut,
+    GroupChatThreadOut,
     GroupShortlistCreateIn,
     GroupShortlistItemOut,
     GroupShortlistListOut,
@@ -237,6 +244,21 @@ def _ensure_notifications_columns_and_table() -> None:
 
 
 _ensure_notifications_columns_and_table()
+
+
+def _ensure_group_chat_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("group_members")}
+    except Exception:
+        return
+
+    if "last_chat_read_at" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE group_members ADD COLUMN last_chat_read_at DATETIME"))
+
+
+_ensure_group_chat_columns()
 
 
 def _ensure_trip_plan_history_table() -> None:
@@ -454,6 +476,104 @@ def _build_itinerary_payload(group: models.Group, plan: models.TripPlan, db: Ses
     if warnings:
         payload["warnings"] = warnings
     return payload
+
+
+def _derive_trip_window_from_items(items: list[models.ItineraryItem]) -> tuple[datetime | None, datetime | None]:
+    if not items:
+        return None, None
+    starts_at = min(item.start_at for item in items)
+    ends_at = max((item.end_at or item.start_at) for item in items)
+    return starts_at, ends_at
+
+
+def _clip_text(value: str, limit: int = 160) -> str:
+    cleaned = " ".join(value.split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(limit - 1, 1)].rstrip() + "…"
+
+
+def _serialize_chat_message(message: models.GroupChatMessage) -> dict:
+    sender_name = message.sender.name if message.sender else "A member"
+    return {
+        "id": message.id,
+        "group_id": message.group_id,
+        "sender_id": message.sender_id,
+        "sender_name": sender_name,
+        "body": message.body,
+        "created_at": message.created_at.isoformat() if message.created_at else None,
+        "updated_at": message.updated_at.isoformat() if message.updated_at else None,
+    }
+
+
+def _compute_group_chat_unread_count(
+    messages: list[models.GroupChatMessage],
+    last_read_at: datetime | None,
+    current_user_id: int,
+) -> int:
+    unread_count = 0
+    for message in messages:
+        if message.sender_id == current_user_id:
+            continue
+        if last_read_at is not None and message.created_at and message.created_at <= last_read_at:
+            continue
+        unread_count += 1
+    return unread_count
+
+
+def _build_dashboard_current_plan_item(
+    group: models.Group,
+    plan: models.TripPlan | None,
+    items: list[models.ItineraryItem],
+) -> dict | None:
+    status = group.status.lower() if group.status else "planning"
+    if status == "archived":
+        return None
+
+    if not items:
+        return None
+
+    starts_at, ends_at = _derive_trip_window_from_items(items)
+
+    title = plan.title if plan and plan.title else f"{group.name} Itinerary"
+    return {
+        "id": plan.id if plan else group.id,
+        "group_id": group.id,
+        "group_name": group.name,
+        "title": title,
+        "description": plan.description if plan else group.description,
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "status": status,
+        "item_count": len(items),
+        "action_path": f"/group/{group.id}/itinerary",
+    }
+
+
+def _build_dashboard_chat_summary_item(
+    group: models.Group,
+    messages: list[models.GroupChatMessage],
+    current_user_id: int,
+    last_read_at: datetime | None,
+) -> dict | None:
+    if not messages:
+        return None
+
+    latest = messages[0]
+    latest_at = latest.created_at or latest.updated_at
+    if latest_at is None:
+        return None
+
+    unread_count = _compute_group_chat_unread_count(messages, last_read_at, current_user_id)
+    return {
+        "group_id": group.id,
+        "group_name": group.name,
+        "latest_message": _clip_text(latest.body),
+        "latest_message_at": latest_at,
+        "unread_count": unread_count,
+        "latest_sender_name": latest.sender.name if latest.sender else None,
+        "action_path": f"/group/{group.id}/chat",
+    }
 
 
 def _has_time_conflict(start_at: datetime, end_at: datetime | None, other_start: datetime, other_end: datetime | None) -> bool:
@@ -2160,6 +2280,173 @@ def get_group_detail(group_id: int, request: Request, db: Session = Depends(get_
         "created_at": group.created_at.isoformat() if group.created_at else None,
         "member_count": member_count,
         "role": my_membership.role,
+    }
+
+
+@app.get("/dashboard/current-plans", response_model=DashboardCurrentPlanListOut)
+def list_dashboard_current_plans(request: Request, db: Session = Depends(get_db)):
+    """List the current user's active and upcoming group trip plans."""
+    current_user = get_current_user_info(request, db)
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+    if not memberships:
+        return {"items": []}
+
+    group_ids = [membership.group_id for membership in memberships]
+    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    if not groups:
+        return {"items": []}
+
+    items = (
+        db.query(models.ItineraryItem)
+        .join(models.TripPlan, models.ItineraryItem.trip_plan_id == models.TripPlan.id)
+        .filter(models.TripPlan.group_id.in_(group_ids))
+        .all()
+    )
+    items_by_group_id: dict[int, list[models.ItineraryItem]] = {}
+    for item in items:
+        group_id = item.trip_plan.group_id if item.trip_plan else None
+        if group_id is None:
+            continue
+        items_by_group_id.setdefault(group_id, []).append(item)
+
+    summaries: list[dict] = []
+    for group in groups:
+        summary = _build_dashboard_current_plan_item(
+            group,
+            group.trip_plan,
+            items_by_group_id.get(group.id, []),
+        )
+        if summary is not None:
+            summaries.append(summary)
+
+    summaries.sort(
+        key=lambda item: (
+            item["starts_at"] is None,
+            item["starts_at"] or datetime.max,
+            item["title"].lower(),
+        )
+    )
+    return {"items": summaries}
+
+
+@app.get("/dashboard/active-chats", response_model=DashboardChatSummaryListOut)
+def list_dashboard_active_chats(request: Request, db: Session = Depends(get_db)):
+    """List the current user's active group chat summaries."""
+    current_user = get_current_user_info(request, db)
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+    if not memberships:
+        return {"items": []}
+
+    group_ids = [membership.group_id for membership in memberships]
+    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    if not groups:
+        return {"items": []}
+
+    group_map = {group.id: group for group in groups}
+    messages = (
+        db.query(models.GroupChatMessage)
+        .filter(models.GroupChatMessage.group_id.in_(group_ids))
+        .order_by(
+            models.GroupChatMessage.created_at.desc(),
+            models.GroupChatMessage.id.desc(),
+        )
+        .all()
+    )
+    messages_by_group: dict[int, list[models.GroupChatMessage]] = {}
+    for message in messages:
+        messages_by_group.setdefault(message.group_id, []).append(message)
+
+    read_map = {membership.group_id: membership.last_chat_read_at for membership in memberships}
+    summaries: list[dict] = []
+    for membership in memberships:
+        group = group_map.get(membership.group_id)
+        if not group:
+            continue
+
+        summary = _build_dashboard_chat_summary_item(
+            group,
+            messages_by_group.get(group.id, []),
+            current_user.id,
+            read_map.get(group.id),
+        )
+        if summary is not None:
+            summaries.append(summary)
+
+    summaries.sort(key=lambda item: item["latest_message_at"], reverse=True)
+    return {"items": summaries}
+
+
+@app.get("/groups/{group_id}/chat/messages", response_model=GroupChatThreadOut)
+def list_group_chat_messages(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Load a group's chat thread and mark it read for the current user."""
+    current_user = get_current_user_info(request, db)
+    group, membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    messages = (
+        db.query(models.GroupChatMessage)
+        .filter(models.GroupChatMessage.group_id == group_id)
+        .order_by(
+            models.GroupChatMessage.created_at.asc(),
+            models.GroupChatMessage.id.asc(),
+        )
+        .all()
+    )
+
+    membership.last_chat_read_at = datetime.now()
+    db.commit()
+
+    return {
+        "group_id": group.id,
+        "group_name": group.name,
+        "unread_count": 0,
+        "messages": [_serialize_chat_message(message) for message in messages],
+    }
+
+
+@app.post("/groups/{group_id}/chat/messages", response_model=dict)
+def create_group_chat_message(
+    group_id: int,
+    body: GroupChatMessageCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Send a new message to a group's chat thread."""
+    current_user = get_current_user_info(request, db)
+    group, membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    message_body = body.body.strip()
+    if not message_body:
+        raise HTTPException(status_code=400, detail="Message body cannot be empty")
+
+    message = models.GroupChatMessage(
+        group_id=group.id,
+        sender_id=current_user.id,
+        body=message_body,
+    )
+    db.add(message)
+    membership.last_chat_read_at = datetime.now()
+    db.commit()
+    db.refresh(message)
+
+    return {
+        "ok": True,
+        "message": {
+            "id": message.id,
+            "group_id": message.group_id,
+            "sender_id": current_user.id,
+            "sender_name": current_user.name,
+            "body": message.body,
+            "created_at": message.created_at.isoformat() if message.created_at else None,
+            "updated_at": message.updated_at.isoformat() if message.updated_at else None,
+        },
     }
 
 

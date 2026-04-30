@@ -97,6 +97,29 @@ type InboxNotification = {
     created_at: string;
 };
 
+type CurrentPlanSummary = {
+    id: number;
+    group_id: number;
+    group_name: string;
+    title: string;
+    description: string | null;
+    starts_at: string | null;
+    ends_at: string | null;
+    status: string;
+    item_count: number;
+    action_path: string;
+};
+
+type ActiveChatSummary = {
+    group_id: number;
+    group_name: string;
+    latest_message: string;
+    latest_message_at: string;
+    unread_count: number;
+    latest_sender_name: string | null;
+    action_path: string;
+};
+
 type ArchivedTripHistory = {
     id: number;
     group_id: number;
@@ -269,6 +292,10 @@ export default function Dashboard() {
     const [flightDealsError, setFlightDealsError] = useState<string | null>(null);
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [loadingBookings, setLoadingBookings] = useState(true);
+    const [currentPlans, setCurrentPlans] = useState<CurrentPlanSummary[]>([]);
+    const [loadingCurrentPlans, setLoadingCurrentPlans] = useState(true);
+    const [activeChats, setActiveChats] = useState<ActiveChatSummary[]>([]);
+    const [loadingActiveChats, setLoadingActiveChats] = useState(true);
     const [inboxItems, setInboxItems] = useState<InboxNotification[]>([]);
     const [loadingInbox, setLoadingInbox] = useState(true);
     const [archivedHistory, setArchivedHistory] = useState<ArchivedTripHistory[]>([]);
@@ -346,6 +373,42 @@ export default function Dashboard() {
         }
     }, []);
 
+    const loadCurrentPlans = useCallback(async () => {
+        try {
+            setLoadingCurrentPlans(true);
+            const response = await fetch("/api/dashboard/current-plans", { credentials: "include" });
+            const data = await response.json().catch(() => ({ items: [] }));
+
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to load current plans"));
+            }
+
+            setCurrentPlans(Array.isArray(data.items) ? data.items : []);
+        } catch {
+            setCurrentPlans([]);
+        } finally {
+            setLoadingCurrentPlans(false);
+        }
+    }, []);
+
+    const loadActiveChats = useCallback(async () => {
+        try {
+            setLoadingActiveChats(true);
+            const response = await fetch("/api/dashboard/active-chats", { credentials: "include" });
+            const data = await response.json().catch(() => ({ items: [] }));
+
+            if (!response.ok) {
+                throw new Error(parseApiError(data, "Failed to load active chats"));
+            }
+
+            setActiveChats(Array.isArray(data.items) ? data.items : []);
+        } catch {
+            setActiveChats([]);
+        } finally {
+            setLoadingActiveChats(false);
+        }
+    }, []);
+
     const handleDestinationClick = (destination: Destination | null) => {
         if (!destination) return;
         // Save destination data to sessionStorage
@@ -377,9 +440,11 @@ export default function Dashboard() {
             .then((data) => setArchivedHistory(Array.isArray(data.items) ? data.items : []))
             .catch(() => { setArchivedHistory([]); });
 
+        void loadCurrentPlans();
+        void loadActiveChats();
         void loadDashboardPolls();
         void loadInbox();
-    }, [loadDashboardPolls, loadInbox]);
+    }, [loadActiveChats, loadCurrentPlans, loadDashboardPolls, loadInbox]);
 
     useEffect(() => {
         const loadBookings = async () => {
@@ -1556,6 +1621,106 @@ export default function Dashboard() {
 
                 {/* Right Sidebar */}
                 <aside className="dashboard-sidebar">
+                    <div className="dashboard-widget current-plans-widget">
+                        <div className="sidebar-header-row">
+                            <h3 className="sidebar-title">Current Plans</h3>
+                            <button type="button" className="sidebar-refresh-btn" onClick={() => void loadCurrentPlans()}>
+                                Refresh
+                            </button>
+                        </div>
+
+                        {loadingCurrentPlans ? (
+                            <p className="suggested-fallback">Loading current plans...</p>
+                        ) : currentPlans.length === 0 ? (
+                            <p className="suggested-fallback">No upcoming plans yet. Your next scheduled trip will appear here.</p>
+                        ) : (
+                            <div className="dashboard-summary-list">
+                                {currentPlans.map((plan) => (
+                                    <article
+                                        key={plan.id}
+                                        className="dashboard-summary-card dashboard-plan-card"
+                                        onClick={() => router.push(plan.action_path)}
+                                        style={{ cursor: "pointer" }}
+                                    >
+                                        <div className="dashboard-summary-main">
+                                            <span className="dashboard-summary-kicker">{plan.group_name}</span>
+                                            <h4>{plan.title}</h4>
+                                            <p>{plan.starts_at ? formatDashboardDate(plan.starts_at) : "Start date unavailable"}</p>
+                                        </div>
+                                        <div className="dashboard-summary-meta">
+                                            <span className={`active-group-status status-${normalizeGroupStatus(plan.status)}`}>
+                                                {normalizeGroupStatus(plan.status)}
+                                            </span>
+                                            <span>{plan.item_count} {plan.item_count === 1 ? "item" : "items"}</span>
+                                            {plan.ends_at && <span>Ends {formatDashboardDate(plan.ends_at)}</span>}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="group-plan-btn"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                router.push(plan.action_path);
+                                            }}
+                                        >
+                                            Open Itinerary
+                                        </button>
+                                    </article>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="dashboard-widget active-chats-widget">
+                        <div className="sidebar-header-row">
+                            <h3 className="sidebar-title">Active Chats</h3>
+                            <button type="button" className="sidebar-refresh-btn" onClick={() => void loadActiveChats()}>
+                                Refresh
+                            </button>
+                        </div>
+
+                        {loadingActiveChats ? (
+                            <p className="suggested-fallback">Loading active chats...</p>
+                        ) : activeChats.length === 0 ? (
+                            <p className="suggested-fallback">No chat activity yet. Start a conversation with your group.</p>
+                        ) : (
+                            <div className="dashboard-summary-list">
+                                {activeChats.map((chat) => (
+                                    <article
+                                        key={chat.group_id}
+                                        className="dashboard-summary-card dashboard-chat-card"
+                                        onClick={() => router.push(chat.action_path)}
+                                        style={{ cursor: "pointer" }}
+                                    >
+                                        <div className="dashboard-summary-main">
+                                            <div className="chat-summary-topline">
+                                                <h4 className="dashboard-chat-name">{chat.group_name}</h4>
+                                                {chat.unread_count > 0 && (
+                                                    <span className="chat-unread-indicator" title={`${chat.unread_count} unread message${chat.unread_count === 1 ? "" : "s"}`}>
+                                                        {chat.unread_count}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p>{chat.latest_sender_name ? `${chat.latest_sender_name}: ${chat.latest_message}` : chat.latest_message}</p>
+                                        </div>
+                                        <div className="dashboard-summary-meta">
+                                            <span>{new Date(chat.latest_message_at).toLocaleString()}</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="group-open-btn"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                router.push(chat.action_path);
+                                            }}
+                                        >
+                                            Open Chat
+                                        </button>
+                                    </article>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     {/* Suggested Trips */}
                     <div className="suggested-section">
                         <h3 className="sidebar-title">Trending Destinations</h3>

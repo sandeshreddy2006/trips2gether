@@ -105,6 +105,7 @@ class GroupMember(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     role = Column(String(20), nullable=False, default="member")
     joined_at = Column(DateTime, server_default=func.now())
+    last_chat_read_at = Column(DateTime, nullable=True)
 
     group = relationship("Group", back_populates="members")
     user = relationship("User")
@@ -174,6 +175,20 @@ class TripPlanHistory(Base):
     items_json = Column(Text, nullable=False, default="[]")
 
     group = relationship("Group")
+
+
+class GroupChatMessage(Base):
+    __tablename__ = "group_chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    group = relationship("Group")
+    sender = relationship("User", foreign_keys=[sender_id])
 
 
 class GroupPoll(Base):

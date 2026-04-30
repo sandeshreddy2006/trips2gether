@@ -112,6 +112,58 @@ class GroupListOut(BaseModel):
     groups: list[GroupOut]
 
 
+class DashboardCurrentPlanOut(BaseModel):
+    id: int
+    group_id: int
+    group_name: str
+    title: str
+    description: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    status: str
+    item_count: int = 0
+    action_path: str
+
+
+class DashboardCurrentPlanListOut(BaseModel):
+    items: list[DashboardCurrentPlanOut]
+
+
+class DashboardChatSummaryOut(BaseModel):
+    group_id: int
+    group_name: str
+    latest_message: str
+    latest_message_at: datetime
+    unread_count: int = 0
+    latest_sender_name: str | None = None
+    action_path: str
+
+
+class DashboardChatSummaryListOut(BaseModel):
+    items: list[DashboardChatSummaryOut]
+
+
+class GroupChatMessageCreateIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class GroupChatMessageOut(BaseModel):
+    id: int
+    group_id: int
+    sender_id: int
+    sender_name: str
+    body: str
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class GroupChatThreadOut(BaseModel):
+    group_id: int
+    group_name: str
+    unread_count: int = 0
+    messages: list[GroupChatMessageOut]
+
+
 class GroupUpdateIn(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
