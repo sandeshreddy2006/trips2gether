@@ -795,6 +795,102 @@ def _normalize_plan_item(
     }
 
 
+def _build_fallback_trip_plan(
+    group_id: int,
+    planning_input: dict[str, Any],
+    constraints: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a deterministic, non-AI plan so users still get recommendations if AI output is malformed."""
+    default_currency = str(constraints.get("budget_currency") or "USD")
+    shortlists = planning_input.get("shortlists") if isinstance(planning_input.get("shortlists"), dict) else {}
+    destinations = shortlists.get("destinations") if isinstance(shortlists.get("destinations"), list) else []
+    flights = shortlists.get("flights") if isinstance(shortlists.get("flights"), list) else []
+    hotels = shortlists.get("hotels") if isinstance(shortlists.get("hotels"), list) else []
+
+    if destinations:
+        d0 = destinations[0] if isinstance(destinations[0], dict) else {}
+        destination_raw = {
+            "title": str(d0.get("name") or "Recommended Destination"),
+            "summary": "Selected from your existing shortlist and current trip constraints.",
+            "reason": "This option was selected from your current shortlist and aligned against your latest dates and budget constraints.",
+            "estimated_cost": d0.get("estimated_cost"),
+            "currency": str(d0.get("currency") or default_currency),
+            "metadata": {"source": "fallback-shortlist"},
+        }
+    else:
+        destination_raw = {
+            "title": "Recommended Destination",
+            "summary": "Generated from your latest group constraints.",
+            "reason": "No destination shortlist was available, so this placeholder uses your latest dates, budget, and preferences.",
+            "estimated_cost": None,
+            "currency": default_currency,
+            "metadata": {"source": "fallback-constraints"},
+        }
+
+    destination = _normalize_plan_item(
+        destination_raw,
+        "Recommended Destination",
+        default_currency,
+        constraints,
+        planning_input,
+    )
+
+    def _fallback_items(rows: list[Any], section: str) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for idx, row in enumerate(rows[:4]):
+            data = row if isinstance(row, dict) else {}
+            if section == "flights":
+                title = str(data.get("airline") or f"Recommended Flight {idx + 1}")
+                cost = data.get("price")
+                metadata = {
+                    "duration": data.get("duration"),
+                    "stops": data.get("stops"),
+                    "departure_airport": data.get("departure_airport"),
+                    "arrival_airport": data.get("arrival_airport"),
+                    "source": "fallback-shortlist",
+                }
+                summary = "Selected from your current flight shortlist with practical routing in mind."
+            elif section == "hotels":
+                title = str(data.get("name") or f"Recommended Hotel {idx + 1}")
+                cost = data.get("total_price") if data.get("total_price") is not None else data.get("price_per_night")
+                metadata = {
+                    "rating": data.get("rating"),
+                    "nights": data.get("nights"),
+                    "address": data.get("address"),
+                    "source": "fallback-shortlist",
+                }
+                summary = "Selected from your current hotel shortlist with budget and convenience considered."
+            else:
+                title = f"Recommended {section[:-1].title()} {idx + 1}"
+                cost = None
+                metadata = {"source": "fallback"}
+                summary = "Generated from your latest group constraints."
+
+            item_raw = {
+                "title": title,
+                "summary": summary,
+                "reason": "Generated from the latest group constraints because the AI response format was unavailable.",
+                "estimated_cost": cost,
+                "currency": str(data.get("currency") or default_currency),
+                "metadata": metadata,
+            }
+            normalized.append(
+                _normalize_plan_item(item_raw, f"Recommended {section[:-1].title()}", default_currency, constraints, planning_input)
+            )
+        return normalized
+
+    plan = {
+        "group_id": group_id,
+        "generated_at": datetime.utcnow().isoformat(),
+        "destination": destination,
+        "flights": _fallback_items(flights, "flights"),
+        "hotels": _fallback_items(hotels, "hotels"),
+        "restaurants": _fallback_items(destinations, "restaurants"),
+        "activities": _fallback_items(destinations, "activities"),
+    }
+    return plan
+
+
 def generate_group_trip_plan(group_id: int, constraints: dict[str, Any], db: Session) -> dict[str, Any]:
     fallback = {
         "ok": False,
@@ -870,7 +966,12 @@ Rules:
                 continue
 
         if response is None:
-            return fallback
+            return {
+                "ok": True,
+                "plan": _build_fallback_trip_plan(group_id, planning_input, constraints),
+                "constraints": constraints,
+                "detail": "AI model unavailable; used deterministic fallback plan.",
+            }
 
         text_chunks = []
         for block in getattr(response, "content", []) or []:
@@ -878,9 +979,23 @@ Rules:
                 text_chunks.append(block.text)
         text = "\n".join(text_chunks).strip()
         if not text:
-            return fallback
+            return {
+                "ok": True,
+                "plan": _build_fallback_trip_plan(group_id, planning_input, constraints),
+                "constraints": constraints,
+                "detail": "AI returned empty content; used deterministic fallback plan.",
+            }
 
-        parsed = _extract_json_object(text)
+        try:
+            parsed = _extract_json_object(text)
+        except Exception as parse_error:
+            print(f"[AI] generate_group_trip_plan parse error for group {group_id}: {parse_error}")
+            return {
+                "ok": True,
+                "plan": _build_fallback_trip_plan(group_id, planning_input, constraints),
+                "constraints": constraints,
+                "detail": "AI returned malformed JSON; used deterministic fallback plan.",
+            }
         default_currency = str(constraints.get("budget_currency") or "USD")
 
         destination = _normalize_plan_item(
@@ -914,7 +1029,12 @@ Rules:
         return {"ok": True, "plan": plan, "constraints": constraints}
     except Exception as e:
         print(f"[AI] generate_group_trip_plan error for group {group_id}: {e}")
-        return fallback
+        return {
+            "ok": True,
+            "plan": _build_fallback_trip_plan(group_id, planning_input, constraints),
+            "constraints": constraints,
+            "detail": "AI generation failed; used deterministic fallback plan.",
+        }
 
 
 def generate_general_assistant_reply(prompt: str, mode: str = "advisor") -> dict[str, Any]:
