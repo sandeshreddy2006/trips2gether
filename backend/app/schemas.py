@@ -143,6 +143,58 @@ class GroupListOut(BaseModel):
     groups: list[GroupOut]
 
 
+class DashboardCurrentPlanOut(BaseModel):
+    id: int
+    group_id: int
+    group_name: str
+    title: str
+    description: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    status: str
+    item_count: int = 0
+    action_path: str
+
+
+class DashboardCurrentPlanListOut(BaseModel):
+    items: list[DashboardCurrentPlanOut]
+
+
+class DashboardChatSummaryOut(BaseModel):
+    group_id: int
+    group_name: str
+    latest_message: str
+    latest_message_at: datetime
+    unread_count: int = 0
+    latest_sender_name: str | None = None
+    action_path: str
+
+
+class DashboardChatSummaryListOut(BaseModel):
+    items: list[DashboardChatSummaryOut]
+
+
+class GroupChatMessageCreateIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class GroupChatMessageOut(BaseModel):
+    id: int
+    group_id: int
+    sender_id: int
+    sender_name: str
+    body: str
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class GroupChatThreadOut(BaseModel):
+    group_id: int
+    group_name: str
+    unread_count: int = 0
+    messages: list[GroupChatMessageOut]
+
+
 class GroupUpdateIn(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
@@ -172,17 +224,96 @@ class GroupPollVoteIn(BaseModel):
 class GroupNotificationOut(BaseModel):
     id: int
     user_id: int
-    group_id: int
+    group_id: int | None = None
     poll_id: int | None = None
     notification_type: str
     title: str
     body: str
     payload: Dict[str, Any] = Field(default_factory=dict)
+    is_read: bool = False
     created_at: datetime
 
 
 class GroupNotificationListOut(BaseModel):
     items: list[GroupNotificationOut]
+
+
+class NotificationOut(BaseModel):
+    id: int
+    user_id: int
+    notification_type: str
+    title: str
+    body: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    is_read: bool = False
+    created_at: datetime
+
+
+class NotificationListOut(BaseModel):
+    items: list[NotificationOut]
+
+
+# User report schemas
+class ReportCreateIn(BaseModel):
+    report_type: Literal["bug", "data_error", "feedback"] = "bug"
+    title: str | None = Field(None, max_length=255)
+    description: str = Field(..., min_length=5)
+
+
+class ReportOut(BaseModel):
+    id: int
+    user_id: int
+    report_type: str
+    title: str | None = None
+    description: str
+    status: str
+    created_at: datetime
+
+
+class ReportListOut(BaseModel):
+    items: list[ReportOut]
+
+
+class AdminReportFilterIn(BaseModel):
+    status: str | None = None
+    report_type: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+
+
+class AdminReportStatusUpdateIn(BaseModel):
+    new_status: Literal["open", "in_progress", "resolved"] = Field(...)
+
+
+class AdminReportNoteIn(BaseModel):
+    note_text: str = Field(..., min_length=1, max_length=1000)
+
+
+class AdminReportUpdateIn(BaseModel):
+    status: Literal["open", "in_progress", "resolved"] = Field(...)
+    admin_notes: str | None = Field(None, max_length=1000)
+
+
+class AdminReportOut(BaseModel):
+    id: int
+    user_id: int
+    report_type: str
+    title: str | None = None
+    description: str
+    status: str
+    admin_notes: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+    reporter_name: str
+    reporter_email: str
+
+    class Config:
+        from_attributes = True
+
+
+class AdminReportListOut(BaseModel):
+    items: list[AdminReportOut]
+    total: int
 
 
 class GroupAddMembersIn(BaseModel):

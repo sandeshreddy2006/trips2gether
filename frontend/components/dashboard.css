@@ -138,6 +138,19 @@
     box-shadow: 0 8px 20px rgba(45, 122, 74, 0.2);
 }
 
+.help-feedback-btn {
+    background: rgba(24, 108, 80, 0.12);
+    border-color: rgba(24, 108, 80, 0.38);
+    color: #0E3F2E;
+    font-weight: 700;
+}
+
+.help-feedback-btn:hover {
+    background: rgba(24, 108, 80, 0.2);
+    border-color: rgba(24, 108, 80, 0.58);
+    color: #0E3F2E;
+}
+
 .create-poll-btn:hover,
 .search-flights-btn:hover,
 .explore-hotels-btn:hover,
@@ -172,6 +185,18 @@
 .my-groups-btn:hover {
     background: rgba(46, 107, 85, 0.2);
     color: #1a1a1a;
+}
+
+.admin-btn {
+    background: linear-gradient(135deg, #b02a2a 0%, #e63b3b 100%);
+    color: #fff;
+    border-color: rgba(180, 42, 42, 0.6);
+    box-shadow: 0 8px 18px rgba(230, 59, 59, 0.18);
+}
+
+.admin-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(230, 59, 59, 0.22);
 }
 
 /* Dashboard Grid */
@@ -1237,6 +1262,120 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
+}
+
+.dashboard-widget {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.sidebar-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.sidebar-refresh-btn {
+    border: 1px solid rgba(46, 107, 85, 0.24);
+    background: rgba(46, 107, 85, 0.08);
+    color: #2e6b55;
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.sidebar-refresh-btn:hover {
+    background: rgba(46, 107, 85, 0.15);
+}
+
+.dashboard-summary-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.dashboard-summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    border-radius: 12px;
+    padding: 1rem;
+    border: 1px solid rgba(46, 107, 85, 0.12);
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdfb 100%);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-summary-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-summary-main h4,
+.dashboard-chat-name {
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 0.98rem;
+    font-weight: 700;
+}
+
+.dashboard-summary-kicker {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(46, 107, 85, 0.1);
+    color: #2e6b55;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 0.4rem;
+}
+
+.dashboard-summary-main p {
+    margin: 0.35rem 0 0 0;
+    color: #4d6459;
+    font-size: 0.85rem;
+    line-height: 1.35;
+}
+
+.dashboard-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.72rem;
+    color: #4d6459;
+}
+
+.chat-summary-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.chat-unread-indicator {
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: #ff4d4f;
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 4px rgba(255, 77, 79, 0.12);
 }
 
 .sidebar-title {

@@ -583,6 +583,12 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                             >
                                 View Itinerary
                             </button>
+                            <button
+                                className="group-itinerary-btn"
+                                onClick={() => router.push(`/group/${groupId}/chat`)}
+                            >
+                                View Chat
+                            </button>
                         </div>
                     </>
                 )}

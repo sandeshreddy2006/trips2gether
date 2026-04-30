@@ -4,6 +4,7 @@ import { useAuth } from "./AuthContext";
 import Search from "../components/Search";
 import SignInModal from "../components/SignInModal";
 import SignUpModal from "../components/SignUpModal";
+import NotificationBell from "../components/NotificationBell";
 import { useRouter } from "next/navigation";
 import "../components/homepage.css";
 
@@ -95,6 +96,7 @@ export default function AppLayout({
                     <div className="auth">
                         {isAuthenticated && user ? (
                             <div className="profile-dropdown-container">
+                                <NotificationBell />
                                 <button
                                     className="profile-btn"
                                     onClick={() =>
@@ -193,6 +195,15 @@ export default function AppLayout({
                                 />
                                 <span className="profile-sidebar-name">{user.name}</span>
                             </button>
+                        </div>
+                    )}
+
+                    {isAuthenticated && user?.is_admin && (
+                        <div className="nav-section">
+                            <a href="/admin/reports" className="nav-item">
+                                <img src="/bookings.svg" alt="Admin Dashboard" className="nav-icon" />
+                                <span>Admin Dashboard</span>
+                            </a>
                         </div>
                     )}
 

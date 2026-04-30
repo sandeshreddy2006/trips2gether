@@ -424,8 +424,11 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
     const { user } = useAuth();
     const searchParams = useSearchParams();
     const historyIdParam = searchParams.get("historyId");
+    const itemIdParam = searchParams.get("itemId");
     const parsedHistoryId = historyIdParam ? Number(historyIdParam) : null;
+    const parsedItemId = itemIdParam ? Number(itemIdParam) : null;
     const historyId = parsedHistoryId && Number.isFinite(parsedHistoryId) ? parsedHistoryId : null;
+    const itemId = parsedItemId && Number.isFinite(parsedItemId) ? parsedItemId : null;
     const isArchivedSnapshotView = historyId !== null;
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -568,6 +571,15 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
             }
         };
     }, [groupId, historyId, isArchivedSnapshotView]);
+
+    useEffect(() => {
+        if (loading || itemId === null) return;
+
+        const target = document.getElementById(`timeline-item-${itemId}`);
+        if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }, [itemId, loading, items.length]);
 
     function updateFormField<K extends keyof FormState>(field: K, value: FormState[K]) {
         setForm((prev) => ({ ...prev, [field]: value }));
@@ -1217,7 +1229,8 @@ export default function ItineraryPlanner({ groupId }: { groupId: number }) {
                                             return (
                                                 <article
                                                     key={`${item.id}-${dayKey}-${entry.segment}`}
-                                                    className={`timeline-card${editingItem?.id === item.id ? " timeline-card-active" : ""}`}
+                                                    id={entry.segment === "single" || entry.segment === "start" ? `timeline-item-${item.id}` : undefined}
+                                                    className={`timeline-card${editingItem?.id === item.id ? " timeline-card-active" : ""}${itemId === item.id ? " timeline-card-focused" : ""}`}
                                                 >
                                                     <div className="timeline-marker">
                                                         <span>{ITEM_ICONS[item.item_type]}</span>

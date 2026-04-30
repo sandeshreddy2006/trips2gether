@@ -31,6 +31,13 @@ from .schemas import (
     GroupMemberOut,
     GroupMemberListOut,
     GroupUpdateRoleIn,
+    DashboardCurrentPlanListOut,
+    DashboardCurrentPlanOut,
+    DashboardChatSummaryListOut,
+    DashboardChatSummaryOut,
+    GroupChatMessageCreateIn,
+    GroupChatMessageOut,
+    GroupChatThreadOut,
     GroupShortlistCreateIn,
     GroupShortlistItemOut,
     GroupShortlistListOut,
@@ -55,6 +62,15 @@ from .schemas import (
     GroupPollVoteIn,
     GroupNotificationOut,
     GroupNotificationListOut,
+    NotificationOut,
+    NotificationListOut,
+    ReportCreateIn,
+    ReportOut,
+    ReportListOut,
+    AdminReportOut,
+    AdminReportFilterIn,
+    AdminReportStatusUpdateIn,
+    AdminReportNoteIn,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -167,6 +183,23 @@ def _ensure_trip_plan_shared_notes_column() -> None:
 _ensure_trip_plan_shared_notes_column()
 
 
+def _ensure_user_reports_admin_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("user_reports")}
+    except Exception:
+        return
+
+    with engine.begin() as connection:
+        if "admin_notes" not in columns:
+            connection.execute(text("ALTER TABLE user_reports ADD COLUMN admin_notes TEXT"))
+        if "updated_at" not in columns:
+            connection.execute(text("ALTER TABLE user_reports ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"))
+
+
+_ensure_user_reports_admin_columns()
+
+
 def _ensure_group_shortlist_cost_columns() -> None:
     inspector = inspect(engine)
     try:
@@ -197,6 +230,50 @@ def _ensure_profile_visibility_column() -> None:
 
 
 _ensure_profile_visibility_column()
+def _ensure_notifications_columns_and_table() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("group_notifications")}
+    except Exception:
+        columns = set()
+
+    with engine.begin() as connection:
+        if "is_read" not in columns:
+            try:
+                connection.execute(text("ALTER TABLE group_notifications ADD COLUMN is_read BOOLEAN NOT NULL DEFAULT 0"))
+            except Exception:
+                # best-effort; continue
+                pass
+
+    # Ensure the personal notifications table exists
+    try:
+        has_table = inspector.has_table("notifications")
+    except Exception:
+        has_table = False
+
+    if not has_table:
+        try:
+            models.Notification.__table__.create(bind=engine, checkfirst=True)
+        except Exception:
+            pass
+
+
+_ensure_notifications_columns_and_table()
+
+
+def _ensure_group_chat_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("group_members")}
+    except Exception:
+        return
+
+    if "last_chat_read_at" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE group_members ADD COLUMN last_chat_read_at DATETIME"))
+
+
+_ensure_group_chat_columns()
 
 
 def _ensure_trip_plan_history_table() -> None:
@@ -211,6 +288,23 @@ def _ensure_trip_plan_history_table() -> None:
 
 
 _ensure_trip_plan_history_table()
+
+
+def _ensure_user_reports_table() -> None:
+    inspector = inspect(engine)
+    try:
+        has_table = inspector.has_table("user_reports")
+    except Exception:
+        has_table = False
+
+    if not has_table:
+        try:
+            models.UserReport.__table__.create(bind=engine, checkfirst=True)
+        except Exception:
+            pass
+
+
+_ensure_user_reports_table()
 
 
 app = FastAPI(title="trips2gether API")
@@ -397,6 +491,104 @@ def _build_itinerary_payload(group: models.Group, plan: models.TripPlan, db: Ses
     if warnings:
         payload["warnings"] = warnings
     return payload
+
+
+def _derive_trip_window_from_items(items: list[models.ItineraryItem]) -> tuple[datetime | None, datetime | None]:
+    if not items:
+        return None, None
+    starts_at = min(item.start_at for item in items)
+    ends_at = max((item.end_at or item.start_at) for item in items)
+    return starts_at, ends_at
+
+
+def _clip_text(value: str, limit: int = 160) -> str:
+    cleaned = " ".join(value.split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(limit - 1, 1)].rstrip() + "…"
+
+
+def _serialize_chat_message(message: models.GroupChatMessage) -> dict:
+    sender_name = message.sender.name if message.sender else "A member"
+    return {
+        "id": message.id,
+        "group_id": message.group_id,
+        "sender_id": message.sender_id,
+        "sender_name": sender_name,
+        "body": message.body,
+        "created_at": message.created_at.isoformat() if message.created_at else None,
+        "updated_at": message.updated_at.isoformat() if message.updated_at else None,
+    }
+
+
+def _compute_group_chat_unread_count(
+    messages: list[models.GroupChatMessage],
+    last_read_at: datetime | None,
+    current_user_id: int,
+) -> int:
+    unread_count = 0
+    for message in messages:
+        if message.sender_id == current_user_id:
+            continue
+        if last_read_at is not None and message.created_at and message.created_at <= last_read_at:
+            continue
+        unread_count += 1
+    return unread_count
+
+
+def _build_dashboard_current_plan_item(
+    group: models.Group,
+    plan: models.TripPlan | None,
+    items: list[models.ItineraryItem],
+) -> dict | None:
+    status = group.status.lower() if group.status else "planning"
+    if status == "archived":
+        return None
+
+    if not items:
+        return None
+
+    starts_at, ends_at = _derive_trip_window_from_items(items)
+
+    title = plan.title if plan and plan.title else f"{group.name} Itinerary"
+    return {
+        "id": plan.id if plan else group.id,
+        "group_id": group.id,
+        "group_name": group.name,
+        "title": title,
+        "description": plan.description if plan else group.description,
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "status": status,
+        "item_count": len(items),
+        "action_path": f"/group/{group.id}/itinerary",
+    }
+
+
+def _build_dashboard_chat_summary_item(
+    group: models.Group,
+    messages: list[models.GroupChatMessage],
+    current_user_id: int,
+    last_read_at: datetime | None,
+) -> dict | None:
+    if not messages:
+        return None
+
+    latest = messages[0]
+    latest_at = latest.created_at or latest.updated_at
+    if latest_at is None:
+        return None
+
+    unread_count = _compute_group_chat_unread_count(messages, last_read_at, current_user_id)
+    return {
+        "group_id": group.id,
+        "group_name": group.name,
+        "latest_message": _clip_text(latest.body),
+        "latest_message_at": latest_at,
+        "unread_count": unread_count,
+        "latest_sender_name": latest.sender.name if latest.sender else None,
+        "action_path": f"/group/{group.id}/chat",
+    }
 
 
 def _has_time_conflict(start_at: datetime, end_at: datetime | None, other_start: datetime, other_end: datetime | None) -> bool:
@@ -1265,6 +1457,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
         "id": user.id,
         "email": user.email,
         "name": user.name,
+        "is_admin": user.is_admin,
         "location": user.location,
         "latitude": user.latitude,
         "longitude": user.longitude,
@@ -2025,6 +2218,7 @@ def _serialize_notification(notification: models.GroupNotification) -> dict:
         "title": notification.title,
         "body": notification.body,
         "payload": payload,
+        "is_read": bool(getattr(notification, "is_read", False)),
         "created_at": notification.created_at.isoformat() if notification.created_at else None,
     }
 
@@ -2216,6 +2410,173 @@ def get_group_detail(group_id: int, request: Request, db: Session = Depends(get_
         "created_at": group.created_at.isoformat() if group.created_at else None,
         "member_count": member_count,
         "role": my_membership.role,
+    }
+
+
+@app.get("/dashboard/current-plans", response_model=DashboardCurrentPlanListOut)
+def list_dashboard_current_plans(request: Request, db: Session = Depends(get_db)):
+    """List the current user's active and upcoming group trip plans."""
+    current_user = get_current_user_info(request, db)
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+    if not memberships:
+        return {"items": []}
+
+    group_ids = [membership.group_id for membership in memberships]
+    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    if not groups:
+        return {"items": []}
+
+    items = (
+        db.query(models.ItineraryItem)
+        .join(models.TripPlan, models.ItineraryItem.trip_plan_id == models.TripPlan.id)
+        .filter(models.TripPlan.group_id.in_(group_ids))
+        .all()
+    )
+    items_by_group_id: dict[int, list[models.ItineraryItem]] = {}
+    for item in items:
+        group_id = item.trip_plan.group_id if item.trip_plan else None
+        if group_id is None:
+            continue
+        items_by_group_id.setdefault(group_id, []).append(item)
+
+    summaries: list[dict] = []
+    for group in groups:
+        summary = _build_dashboard_current_plan_item(
+            group,
+            group.trip_plan,
+            items_by_group_id.get(group.id, []),
+        )
+        if summary is not None:
+            summaries.append(summary)
+
+    summaries.sort(
+        key=lambda item: (
+            item["starts_at"] is None,
+            item["starts_at"] or datetime.max,
+            item["title"].lower(),
+        )
+    )
+    return {"items": summaries}
+
+
+@app.get("/dashboard/active-chats", response_model=DashboardChatSummaryListOut)
+def list_dashboard_active_chats(request: Request, db: Session = Depends(get_db)):
+    """List the current user's active group chat summaries."""
+    current_user = get_current_user_info(request, db)
+    memberships = (
+        db.query(models.GroupMember)
+        .filter(models.GroupMember.user_id == current_user.id)
+        .all()
+    )
+    if not memberships:
+        return {"items": []}
+
+    group_ids = [membership.group_id for membership in memberships]
+    groups = db.query(models.Group).filter(models.Group.id.in_(group_ids)).all()
+    if not groups:
+        return {"items": []}
+
+    group_map = {group.id: group for group in groups}
+    messages = (
+        db.query(models.GroupChatMessage)
+        .filter(models.GroupChatMessage.group_id.in_(group_ids))
+        .order_by(
+            models.GroupChatMessage.created_at.desc(),
+            models.GroupChatMessage.id.desc(),
+        )
+        .all()
+    )
+    messages_by_group: dict[int, list[models.GroupChatMessage]] = {}
+    for message in messages:
+        messages_by_group.setdefault(message.group_id, []).append(message)
+
+    read_map = {membership.group_id: membership.last_chat_read_at for membership in memberships}
+    summaries: list[dict] = []
+    for membership in memberships:
+        group = group_map.get(membership.group_id)
+        if not group:
+            continue
+
+        summary = _build_dashboard_chat_summary_item(
+            group,
+            messages_by_group.get(group.id, []),
+            current_user.id,
+            read_map.get(group.id),
+        )
+        if summary is not None:
+            summaries.append(summary)
+
+    summaries.sort(key=lambda item: item["latest_message_at"], reverse=True)
+    return {"items": summaries}
+
+
+@app.get("/groups/{group_id}/chat/messages", response_model=GroupChatThreadOut)
+def list_group_chat_messages(group_id: int, request: Request, db: Session = Depends(get_db)):
+    """Load a group's chat thread and mark it read for the current user."""
+    current_user = get_current_user_info(request, db)
+    group, membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    messages = (
+        db.query(models.GroupChatMessage)
+        .filter(models.GroupChatMessage.group_id == group_id)
+        .order_by(
+            models.GroupChatMessage.created_at.asc(),
+            models.GroupChatMessage.id.asc(),
+        )
+        .all()
+    )
+
+    membership.last_chat_read_at = datetime.now()
+    db.commit()
+
+    return {
+        "group_id": group.id,
+        "group_name": group.name,
+        "unread_count": 0,
+        "messages": [_serialize_chat_message(message) for message in messages],
+    }
+
+
+@app.post("/groups/{group_id}/chat/messages", response_model=dict)
+def create_group_chat_message(
+    group_id: int,
+    body: GroupChatMessageCreateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Send a new message to a group's chat thread."""
+    current_user = get_current_user_info(request, db)
+    group, membership = _get_group_and_membership(group_id, current_user.id, db)
+
+    message_body = body.body.strip()
+    if not message_body:
+        raise HTTPException(status_code=400, detail="Message body cannot be empty")
+
+    message = models.GroupChatMessage(
+        group_id=group.id,
+        sender_id=current_user.id,
+        body=message_body,
+    )
+    db.add(message)
+    membership.last_chat_read_at = datetime.now()
+    db.commit()
+    db.refresh(message)
+
+    return {
+        "ok": True,
+        "message": {
+            "id": message.id,
+            "group_id": message.group_id,
+            "sender_id": current_user.id,
+            "sender_name": current_user.name,
+            "body": message.body,
+            "created_at": message.created_at.isoformat() if message.created_at else None,
+            "updated_at": message.updated_at.isoformat() if message.updated_at else None,
+        },
     }
 
 
@@ -2631,6 +2992,94 @@ def delete_poll_notification(notification_id: int, request: Request, db: Session
     return {"ok": True, "message": "Notification removed"}
 
 
+@app.patch("/poll-notifications/{notification_id}/read", response_model=dict)
+def mark_poll_notification_read(notification_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notification = (
+        db.query(models.GroupNotification)
+        .filter(
+            models.GroupNotification.id == notification_id,
+            models.GroupNotification.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    notification.is_read = True
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/notifications", response_model=NotificationListOut)
+def list_personal_notifications(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notes = (
+        db.query(models.Notification)
+        .filter(models.Notification.user_id == current_user.id)
+        .order_by(models.Notification.created_at.desc())
+        .all()
+    )
+
+    items = []
+    for n in notes:
+        payload = {}
+        try:
+            payload = json.loads(n.payload_json or "{}")
+            if not isinstance(payload, dict):
+                payload = {}
+        except Exception:
+            payload = {}
+
+        items.append({
+            "id": n.id,
+            "user_id": n.user_id,
+            "notification_type": n.notification_type,
+            "title": n.title,
+            "body": n.body,
+            "payload": payload,
+            "is_read": bool(n.is_read),
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+        })
+
+    return {"items": items}
+
+
+@app.patch("/notifications/{notification_id}/read", response_model=dict)
+def mark_personal_notification_read(notification_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    notification = (
+        db.query(models.Notification)
+        .filter(
+            models.Notification.id == notification_id,
+            models.Notification.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    notification.is_read = True
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/notifications/unread-count", response_model=dict)
+def get_unread_notifications_count(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user_info(request, db)
+    personal_unread = (
+        db.query(func.count(models.Notification.id))
+        .filter(models.Notification.user_id == current_user.id, models.Notification.is_read == False)
+        .scalar()
+    ) or 0
+    group_unread = (
+        db.query(func.count(models.GroupNotification.id))
+        .filter(models.GroupNotification.user_id == current_user.id, models.GroupNotification.is_read == False)
+        .scalar()
+    ) or 0
+    return {"unread_count": int(personal_unread) + int(group_unread)}
+
+
 @app.get("/groups/{group_id}/members", response_model=GroupMemberListOut)
 def list_group_members(group_id: int, request: Request, db: Session = Depends(get_db)):
     """List all members of a group. Caller must be a member."""
@@ -2752,6 +3201,31 @@ def add_group_members(
         added.append(uid)
 
     db.commit()
+
+    # Create notifications for newly added members
+    if added:
+        notifications: list[models.GroupNotification] = []
+        inviter_name = current_user.name if current_user else "A member"
+        for uid in added:
+            title = f"You've been added to {group.name}"
+            body = f"{inviter_name} added you to the group {group.name}."
+            payload = {"group_id": group.id, "added_by": current_user.id}
+            n = models.GroupNotification(
+                user_id=uid,
+                group_id=group.id,
+                poll_id=None,
+                notification_type="group.invite",
+                title=title,
+                body=body,
+                payload_json=json.dumps(payload),
+            )
+            db.add(n)
+            notifications.append(n)
+
+        db.commit()
+        # Broadcast real-time notification events for the group
+        if notifications:
+            _broadcast_poll_notifications(notifications)
 
     return {
         "ok": True,
@@ -3430,6 +3904,37 @@ def add_itinerary_item(
     db.commit()
     db.refresh(item)
 
+    # Notify group members about the new itinerary item
+    try:
+        members = (
+            db.query(models.GroupMember)
+            .filter(models.GroupMember.group_id == group_id)
+            .all()
+        )
+        created_notifications: list[models.GroupNotification] = []
+        for member in members:
+            if member.user_id == current_user.id:
+                continue
+            title = f"Itinerary updated in {group.name}"
+            body = f"{current_user.name} added '{item.title}' to the itinerary."
+            payload = {"group_id": group.id, "trip_plan_id": plan.id, "item_id": item.id}
+            n = models.GroupNotification(
+                user_id=member.user_id,
+                group_id=group.id,
+                poll_id=None,
+                notification_type="itinerary.added",
+                title=title,
+                body=body,
+                payload_json=json.dumps(payload),
+            )
+            db.add(n)
+            created_notifications.append(n)
+        db.commit()
+        if created_notifications:
+            _broadcast_poll_notifications(created_notifications)
+    except Exception:
+        db.rollback()
+
     warnings = _build_time_conflict_warnings(plan.id, item.id, item.start_at, item.end_at, db)
 
     payload = _build_itinerary_payload(group, plan, db, warnings)
@@ -3679,6 +4184,37 @@ def update_itinerary_item(
 
     db.commit()
     db.refresh(item)
+
+    # Notify other group members about the itinerary update
+    try:
+        members = (
+            db.query(models.GroupMember)
+            .filter(models.GroupMember.group_id == group_id)
+            .all()
+        )
+        created_notifications: list[models.GroupNotification] = []
+        for member in members:
+            if member.user_id == current_user.id:
+                continue
+            title = f"Itinerary updated in {group.name}"
+            body = f"{current_user.name} updated '{item.title}' in the itinerary."
+            payload = {"group_id": group.id, "trip_plan_id": plan.id, "item_id": item.id}
+            n = models.GroupNotification(
+                user_id=member.user_id,
+                group_id=group.id,
+                poll_id=None,
+                notification_type="itinerary.updated",
+                title=title,
+                body=body,
+                payload_json=json.dumps(payload),
+            )
+            db.add(n)
+            created_notifications.append(n)
+        db.commit()
+        if created_notifications:
+            _broadcast_poll_notifications(created_notifications)
+    except Exception:
+        db.rollback()
 
     warnings = _build_time_conflict_warnings(plan.id, item.id, item.start_at, item.end_at, db)
     payload = _build_itinerary_payload(group, plan, db, warnings)
@@ -4014,6 +4550,246 @@ def create_profile(request: Request, db: Session = Depends(get_db)):
     db.refresh(new_profile)
     
     return new_profile
+
+
+@app.post("/reports", response_model=dict)
+def create_report(body: ReportCreateIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Create a user report (bug, data error, feedback) and alert the dev team."""
+    current_user = get_current_user_info(request, db)
+
+    report_type = (body.report_type or "bug").strip()
+    description = (body.description or "").strip()
+    title = (body.title or "").strip() if body.title else None
+
+    if not description:
+        raise HTTPException(status_code=400, detail="Description is required")
+
+    report = models.UserReport(
+        user_id=current_user.id,
+        report_type=report_type,
+        title=title,
+        description=description,
+        status="open",
+    )
+    db.add(report)
+    db.flush()
+    db.commit()
+    db.refresh(report)
+
+    # Prepare payload for background alert
+    payload = {
+        "id": report.id,
+        "user_id": report.user_id,
+        "report_type": report.report_type,
+        "title": report.title,
+        "description": report.description,
+        "status": report.status,
+        "created_at": str(report.created_at),
+    }
+
+    background_tasks.add_task(_send_report_alert, payload)
+
+    return {"ok": True, "report": payload}
+
+
+@app.get("/reports", response_model=dict)
+def list_reports(request: Request, db: Session = Depends(get_db)):
+    """List reports for the current authenticated user."""
+    user = get_current_user_info(request, db)
+    items = (
+        db.query(models.UserReport)
+        .filter(models.UserReport.user_id == user.id)
+        .order_by(models.UserReport.created_at.desc())
+        .all()
+    )
+
+    out = []
+    for it in items:
+        out.append({
+            "id": it.id,
+            "user_id": it.user_id,
+            "report_type": it.report_type,
+            "title": it.title,
+            "description": it.description,
+            "status": it.status,
+            "created_at": it.created_at,
+        })
+
+    return {"ok": True, "items": out}
+
+
+def _send_report_alert(payload: dict) -> None:
+    """Background helper to notify dev team about a new user report.
+
+    Uses SMTP credentials from env vars if available; otherwise logs to console.
+    """
+    try:
+        dev_recipient = os.getenv("DEV_REPORT_RECIPIENT") or os.getenv("SMTP_EMAIL")
+        sender = os.getenv("SMTP_EMAIL")
+        sender_password = os.getenv("SMTP_PASSWORD")
+
+        subject = f"[User Report] {payload.get('report_type')} - id:{payload.get('id')}"
+        body = f"<p>A new user report was submitted:</p>"
+        body += f"<ul>"
+        body += f"<li><strong>Report ID:</strong> {payload.get('id')}</li>"
+        body += f"<li><strong>User ID:</strong> {payload.get('user_id')}</li>"
+        body += f"<li><strong>Type:</strong> {payload.get('report_type')}</li>"
+        if payload.get('title'):
+            body += f"<li><strong>Title:</strong> {payload.get('title')}</li>"
+        body += f"<li><strong>Description:</strong> {payload.get('description')}</li>"
+        body += f"<li><strong>Created At:</strong> {payload.get('created_at')}</li>"
+        body += f"</ul>"
+
+        if sender and sender_password and dev_recipient:
+            try:
+                send_email(sender, sender_password, dev_recipient, subject, body)
+                print(f"[Report Alert] Email sent to {dev_recipient} for report {payload.get('id')}")
+            except Exception as e:
+                print(f"[Report Alert] Failed to send email: {e}")
+
+
+        else:
+            print("[Report Alert] SMTP credentials or recipient not configured. Report payload:", payload)
+    except Exception as e:
+        print(f"[Report Alert] Unexpected error: {e}")
+
+
+@app.get("/admin/reports", response_model=dict)
+def list_admin_reports(
+    request: Request,
+    db: Session = Depends(get_db),
+    status: str | None = None,
+    report_type: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """List all user reports for admins with optional filters."""
+    current_user = get_current_user_info(request, db)
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    query = (
+        db.query(models.UserReport, models.User.email, models.User.first_name, models.User.last_name)
+        .outerjoin(models.User, models.User.id == models.UserReport.user_id)
+    )
+
+    if status:
+        query = query.filter(models.UserReport.status == status)
+    if report_type:
+        query = query.filter(models.UserReport.report_type == report_type)
+    if date_from:
+        try:
+            query = query.filter(models.UserReport.created_at >= datetime.fromisoformat(date_from))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_from format")
+    if date_to:
+        try:
+            query = query.filter(models.UserReport.created_at <= datetime.fromisoformat(date_to))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_to format")
+
+    rows = query.order_by(models.UserReport.created_at.desc()).all()
+    items = []
+    for report, email, first_name, last_name in rows:
+        items.append({
+            "id": report.id,
+            "user_id": report.user_id,
+            "report_type": report.report_type,
+            "title": report.title,
+            "description": report.description,
+            "status": report.status,
+            "admin_notes": report.admin_notes,
+            "created_at": report.created_at,
+            "updated_at": report.updated_at,
+            "reporter_email": email,
+            "reporter_name": " ".join(part for part in [first_name, last_name] if part),
+        })
+
+    return {"ok": True, "items": items}
+
+
+@app.patch("/admin/reports/{report_id}/status", response_model=dict)
+def update_admin_report_status(
+    report_id: int,
+    body: AdminReportStatusUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Update a report's status (admin only)."""
+    current_user = get_current_user_info(request, db)
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    report = db.get(models.UserReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    allowed_statuses = {"open", "in_progress", "resolved"}
+    if body.new_status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Invalid report status")
+
+    report.status = body.new_status
+    report.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(report)
+
+    return {
+        "ok": True,
+        "report": {
+            "id": report.id,
+            "user_id": report.user_id,
+            "report_type": report.report_type,
+            "title": report.title,
+            "description": report.description,
+            "status": report.status,
+            "admin_notes": report.admin_notes,
+            "created_at": report.created_at,
+            "updated_at": report.updated_at,
+        },
+    }
+
+
+@app.post("/admin/reports/{report_id}/notes", response_model=dict)
+def add_admin_report_note(
+    report_id: int,
+    body: AdminReportNoteIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Append an internal note to a report (admin only)."""
+    current_user = get_current_user_info(request, db)
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    report = db.get(models.UserReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    note_text = (body.note_text or "").strip()
+    if not note_text:
+        raise HTTPException(status_code=400, detail="Note text is required")
+
+    author_name = " ".join(part for part in [current_user.first_name, current_user.last_name] if part) or "Admin"
+    note_line = f"[{datetime.utcnow().isoformat()}] {author_name}: {note_text}"
+    report.admin_notes = f"{report.admin_notes}\n{note_line}".strip() if report.admin_notes else note_line
+    report.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(report)
+
+    return {
+        "ok": True,
+        "report": {
+            "id": report.id,
+            "user_id": report.user_id,
+            "report_type": report.report_type,
+            "title": report.title,
+            "description": report.description,
+            "status": report.status,
+            "admin_notes": report.admin_notes,
+            "created_at": report.created_at,
+            "updated_at": report.updated_at,
+        },
+    }
 
 
 @app.put("/profile/update", response_model=ProfileOut)
@@ -4860,6 +5636,23 @@ def create_booking(body: BookingCreateIn, request: Request, background_tasks: Ba
         db.commit()
         db.refresh(booking)
 
+        # Create a personal notification for the booking confirmation
+        try:
+            notif_payload = {
+                "order_id": order_id,
+                "booking_reference": booking_reference,
+            }
+            pnotif = models.Notification(
+                user_id=current_user.id,
+                notification_type="booking.confirmation",
+                title=f"Booking confirmed - {booking_reference or order_id}",
+                body=f"Your booking {booking_reference or order_id} is confirmed.",
+                payload_json=json.dumps(notif_payload),
+            )
+            db.add(pnotif)
+            db.commit()
+        except Exception:
+            db.rollback()
         try:
             formatted_time = datetime.utcnow().strftime("%B %d, %Y at %I:%M %p UTC")
             booking_pdf = generate_booking_confirmation_pdf(

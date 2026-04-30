@@ -105,6 +105,7 @@ class GroupMember(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     role = Column(String(20), nullable=False, default="member")
     joined_at = Column(DateTime, server_default=func.now())
+    last_chat_read_at = Column(DateTime, nullable=True)
 
     group = relationship("Group", back_populates="members")
     user = relationship("User")
@@ -174,6 +175,20 @@ class TripPlanHistory(Base):
     items_json = Column(Text, nullable=False, default="[]")
 
     group = relationship("Group")
+
+
+class GroupChatMessage(Base):
+    __tablename__ = "group_chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    group = relationship("Group")
+    sender = relationship("User", foreign_keys=[sender_id])
 
 
 class GroupPoll(Base):
@@ -248,11 +263,43 @@ class GroupNotification(Base):
     title = Column(String(255), nullable=False)
     body = Column(Text, nullable=False)
     payload_json = Column(Text, nullable=False, default="{}")
+    is_read = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     user = relationship("User", foreign_keys=[user_id])
     group = relationship("Group")
     poll = relationship("GroupPoll")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    notification_type = Column(String(32), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    payload_json = Column(Text, nullable=False, default="{}")
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class UserReport(Base):
+    __tablename__ = "user_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    report_type = Column(String(32), nullable=False, index=True)  # e.g., bug, data_error, feedback
+    title = Column(String(255), nullable=True)
+    description = Column(Text, nullable=False)
+    status = Column(String(32), nullable=False, default="open", index=True)
+    admin_notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class GroupShortlistDestination(Base):
