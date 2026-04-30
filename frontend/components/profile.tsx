@@ -12,6 +12,59 @@ type Friend = {
     status: string;
 };
 
+type ProfileVisibility = "public" | "friends_only" | "private";
+type FriendStatus = "self" | "none" | "pending" | "accepted";
+
+type UserSearchResult = {
+    id: number;
+    name: string;
+    avatar_url?: string | null;
+    friend_status: FriendStatus;
+};
+
+type ProfileView = {
+    id: number;
+    user_id: number;
+    username: string;
+    avatar_url?: string | null;
+    bio?: string | null;
+    visibility: ProfileVisibility;
+    friend_status: FriendStatus;
+    can_view: boolean;
+    budget_min?: number | null;
+    budget_max?: number | null;
+    travel_mode?: string | null;
+    preferred_destination?: string | null;
+    travel_pace?: string | null;
+    hotel_type?: string | null;
+    room_sharing?: string | null;
+    cuisine_preference?: string | null;
+    dietary_restrictions?: string | null;
+};
+
+type ProfileData = {
+    username: string;
+    email: string;
+    avatar_url: string;
+    bio: string;
+    budget_min: number;
+    budget_max: number;
+    wallet_balance: number;
+    travel_mode: string;
+    preferred_destination: string;
+    travel_pace: string;
+    hotel_type: string;
+    room_sharing: string;
+    cuisine_preference: string;
+    dietary_restrictions: string;
+    visibility: ProfileVisibility;
+};
+
+type ApiMessage = {
+    detail?: string;
+    message?: string;
+};
+
 type TravelBooking = {
     id: number;
     order_id: string;
@@ -54,6 +107,14 @@ export default function Profile() {
     const [addFriendBusy, setAddFriendBusy] = useState(false);
     const [removeFriendId, setRemoveFriendId] = useState<number | null>(null);
     const [requestActionUserId, setRequestActionUserId] = useState<number | null>(null);
+    const [userSearchQuery, setUserSearchQuery] = useState("");
+    const [userSearchResults, setUserSearchResults] = useState<UserSearchResult[]>([]);
+    const [userSearchLoading, setUserSearchLoading] = useState(false);
+    const [userSearchHasSearched, setUserSearchHasSearched] = useState(false);
+    const [userSearchError, setUserSearchError] = useState<string | null>(null);
+    const [viewedProfile, setViewedProfile] = useState<ProfileView | null>(null);
+    const [profileLookupLoading, setProfileLookupLoading] = useState<number | null>(null);
+    const [profileLookupError, setProfileLookupError] = useState<string | null>(null);
     const [showFaceSetup, setShowFaceSetup] = useState(false);
     const [faceVerificationEnabled, setFaceVerificationEnabled] = useState(false);
     const [faceVerificationLoading, setFaceVerificationLoading] = useState(false);
@@ -117,6 +178,71 @@ export default function Profile() {
 
     async function refreshFriendsTab(keepFeedback = true) {
         await Promise.all([loadFriends(keepFeedback), loadFriendRequests(keepFeedback)]);
+    }
+
+    async function handleUserSearch() {
+        const query = userSearchQuery.trim();
+        if (!query) {
+            setUserSearchResults([]);
+            setUserSearchHasSearched(false);
+            setUserSearchError("Enter a username or email to search");
+            return;
+        }
+
+        setUserSearchLoading(true);
+        setUserSearchError(null);
+        setProfileLookupError(null);
+        try {
+            const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`, {
+                credentials: "include",
+            });
+            if (!res.ok) {
+                let msg = "Failed to search users";
+                try {
+                    const data = await res.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+
+            const data = await res.json();
+            setUserSearchResults(Array.isArray(data.users) ? data.users : []);
+            setUserSearchHasSearched(true);
+        } catch (err) {
+            setUserSearchError(err instanceof Error ? err.message : "Failed to search users");
+            setUserSearchHasSearched(false);
+        } finally {
+            setUserSearchLoading(false);
+        }
+    }
+
+    async function handleViewUserProfile(userId: number) {
+        setProfileLookupLoading(userId);
+        setProfileLookupError(null);
+        try {
+            const res = await fetch(`/api/users/${userId}/profile`, {
+                credentials: "include",
+            });
+            if (!res.ok) {
+                let msg = "Failed to load profile";
+                try {
+                    const data = await res.json();
+                    msg = data.detail || data.message || msg;
+                } catch (_) {
+                    // keep default message
+                }
+                throw new Error(msg);
+            }
+
+            const data = await res.json();
+            setViewedProfile(data);
+        } catch (err) {
+            setProfileLookupError(err instanceof Error ? err.message : "Failed to load profile");
+        } finally {
+            setProfileLookupLoading(null);
+        }
     }
 
     const loadTravelHistory = useCallback(async () => {
@@ -193,7 +319,7 @@ export default function Profile() {
                 credentials: "include",
                 body: JSON.stringify({ identifier }),
             });
-            let payload: any = null;
+            let payload: ApiMessage | null = null;
             try {
                 payload = await res.json();
             } catch (_) {
@@ -299,7 +425,7 @@ export default function Profile() {
     const [isEditingAvatar, setIsEditingAvatar] = useState(false);
 
     // Mock profile data - replace with API call once endpoints are ready
-    const [profile, setProfile] = useState({
+    const [profile, setProfile] = useState<ProfileData>({
         username: user?.name || "User",
         email: user?.email || "",
         avatar_url: "/UserIcon.svg",
@@ -314,6 +440,7 @@ export default function Profile() {
         room_sharing: "Open",
         cuisine_preference: "Italian, Asian, Mediterranean",
         dietary_restrictions: "Vegetarian friendly",
+        visibility: "public" as ProfileVisibility,
     });
 
     const [editData, setEditData] = useState({ ...profile });
@@ -412,10 +539,10 @@ export default function Profile() {
                     );
                 }
                 setTimeout(() => setSuccessMessage(null), 3000);
-            } catch (error: any) {
+            } catch (error: unknown) {
                 const message = error instanceof SyntaxError
                     ? "Backend returned a non-JSON error. Check backend logs and retry."
-                    : error.message || "Failed to confirm checkout payment";
+                    : error instanceof Error ? error.message : "Failed to confirm checkout payment";
                 setWalletError(message);
             } finally {
                 setWalletTopUpLoading(false);
@@ -497,7 +624,7 @@ export default function Profile() {
 
         try {
             // Determine which section is being edited and only send those fields
-            const fieldsToUpdate: any = {};
+            const fieldsToUpdate: Partial<ProfileData> = {};
 
             if (editingSection === "overview") {
                 // Validate username
@@ -556,6 +683,8 @@ export default function Profile() {
             } else if (editingSection === "dining") {
                 fieldsToUpdate.cuisine_preference = editData.cuisine_preference;
                 fieldsToUpdate.dietary_restrictions = editData.dietary_restrictions;
+            } else if (editingSection === "privacy") {
+                fieldsToUpdate.visibility = editData.visibility;
             }
 
             const response = await fetch("/api/profile/update", {
@@ -578,8 +707,8 @@ export default function Profile() {
             setSuccessMessage("Changes saved successfully!");
             // Auto-clear success message after 3 seconds
             setTimeout(() => setSuccessMessage(null), 3000);
-        } catch (error: any) {
-            setSaveError(error.message || "Failed to save changes");
+        } catch (error: unknown) {
+            setSaveError(error instanceof Error ? error.message : "Failed to save changes");
             console.error("Error saving profile:", error);
         } finally {
             setIsSaving(false);
@@ -615,10 +744,10 @@ export default function Profile() {
             }
 
             window.location.href = data.checkout_url;
-        } catch (error: any) {
+        } catch (error: unknown) {
             const message = error instanceof SyntaxError
                 ? "Backend returned a non-JSON error. Check the backend logs and restart the server."
-                : error.message || "Failed to top up wallet";
+                : error instanceof Error ? error.message : "Failed to top up wallet";
             setWalletError(message);
         } finally {
             setWalletTopUpLoading(false);
@@ -683,8 +812,8 @@ export default function Profile() {
                 const data = await response.json();
                 setProfile({ ...profile, avatar_url: data.avatar_url });
                 setIsEditingAvatar(false);
-            } catch (error: any) {
-                setSaveError(error.message || "Failed to upload avatar");
+            } catch (error: unknown) {
+                setSaveError(error instanceof Error ? error.message : "Failed to upload avatar");
                 console.error("Error uploading avatar:", error);
             } finally {
                 setIsUploadingAvatar(false);
@@ -733,6 +862,26 @@ export default function Profile() {
             .replace(/^-|-$/g, "");
 
         return `booking-status-pill status-${normalizedStatus || "unknown"}`;
+    };
+
+    const formatVisibilityLabel = (visibility: ProfileVisibility) => {
+        if (visibility === "friends_only") {
+            return "Friends only";
+        }
+        return visibility.charAt(0).toUpperCase() + visibility.slice(1);
+    };
+
+    const formatFriendStatus = (status: FriendStatus) => {
+        if (status === "accepted") {
+            return "Friend";
+        }
+        if (status === "pending") {
+            return "Request pending";
+        }
+        if (status === "self") {
+            return "You";
+        }
+        return "Not friends";
     };
 
     const recentActivities = [
@@ -1036,6 +1185,70 @@ export default function Profile() {
 
                     {activeTab === "preferences" && (
                         <>
+                            <div className="profile-card">
+                                <div className="section-header">
+                                    <h2>Profile Visibility</h2>
+                                    {editingSection !== "privacy" && (
+                                        <a href="#" className="edit-link" onClick={(e) => {
+                                            e.preventDefault();
+                                            handleEditStart("privacy");
+                                        }}>Edit</a>
+                                    )}
+                                </div>
+                                {editingSection === "privacy" ? (
+                                    <div className="about-content edit-form">
+                                        <div className="form-group">
+                                            <label className="form-label">Who can view your travel profile?</label>
+                                            <select
+                                                value={editData.visibility || "public"}
+                                                onChange={(e) => handleInputChange("visibility", e.target.value)}
+                                                className="form-input"
+                                            >
+                                                <option value="public">Public - anyone can view it</option>
+                                                <option value="friends_only">Friends only - accepted friends can view it</option>
+                                                <option value="private">Private - only you can view it</option>
+                                            </select>
+                                            <small className="form-hint">
+                                                This controls what other users see when they open your profile from search.
+                                            </small>
+                                        </div>
+                                        {saveError && <div className="form-error">{saveError}</div>}
+                                        <div className="form-actions">
+                                            <button
+                                                onClick={handleEditSave}
+                                                disabled={isSaving}
+                                                className="btn btn-primary"
+                                            >
+                                                {isSaving ? "Saving..." : "Save Changes"}
+                                            </button>
+                                            <button
+                                                onClick={handleEditCancel}
+                                                disabled={isSaving}
+                                                className="btn btn-secondary"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="about-content">
+                                        <div className="about-item">
+                                            <span className="about-label">Visibility:</span>
+                                            <span className="about-value">
+                                                {formatVisibilityLabel((profile.visibility || "public") as ProfileVisibility)}
+                                            </span>
+                                        </div>
+                                        <p className="privacy-helper">
+                                            {profile.visibility === "private"
+                                                ? "Only you can view your full profile."
+                                                : profile.visibility === "friends_only"
+                                                    ? "Only accepted friends can view your full profile."
+                                                    : "Anyone who finds you in search can view your full profile."}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="profile-card">
                                 <div className="section-header">
                                     <h2>Travel Preferences</h2>
@@ -1436,6 +1649,69 @@ export default function Profile() {
 
                             {friendsError && <p className="friends-error">{friendsError}</p>}
                             {friendsNotice && <p className="friends-notice">{friendsNotice}</p>}
+                            {profileLookupError && <p className="friends-error">{profileLookupError}</p>}
+
+                            <div className="user-search-panel">
+                                <div className="user-search-copy">
+                                    <h3>Find Travelers</h3>
+                                    <p>Search for a user, open their profile, and see only what their visibility setting allows.</p>
+                                </div>
+                                <div className="user-search-form">
+                                    <input
+                                        className="friends-modal-input user-search-input"
+                                        type="text"
+                                        placeholder="Search by username or email"
+                                        value={userSearchQuery}
+                                        onChange={(e) => {
+                                            setUserSearchQuery(e.target.value);
+                                            setUserSearchHasSearched(false);
+                                            if (userSearchError) setUserSearchError(null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && !userSearchLoading) {
+                                                void handleUserSearch();
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        className="friends-modal-submit user-search-submit"
+                                        onClick={handleUserSearch}
+                                        disabled={userSearchLoading}
+                                    >
+                                        {userSearchLoading ? "Searching..." : "Search"}
+                                    </button>
+                                </div>
+                                {userSearchError && <p className="friends-error user-search-message">{userSearchError}</p>}
+                                {userSearchResults.length > 0 && (
+                                    <div className="user-search-results">
+                                        {userSearchResults.map((result) => (
+                                            <div key={result.id} className="friend-row search-result-row">
+                                                <div className="friend-main">
+                                                    <img
+                                                        src={result.avatar_url || "/UserIcon.svg"}
+                                                        alt={result.name}
+                                                        className="friend-avatar"
+                                                    />
+                                                    <div className="friend-meta">
+                                                        <span className="friend-name">{result.name}</span>
+                                                        <span className="friend-sub">{formatFriendStatus(result.friend_status)}</span>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    className="accept-friend-btn"
+                                                    onClick={() => handleViewUserProfile(result.id)}
+                                                    disabled={profileLookupLoading === result.id}
+                                                >
+                                                    {profileLookupLoading === result.id ? "Opening..." : "View Profile"}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {!userSearchLoading && userSearchHasSearched && userSearchResults.length === 0 && !userSearchError && (
+                                    <p className="placeholder-text search-empty-state">No matching users found.</p>
+                                )}
+                            </div>
 
                             {incomingRequests.length > 0 && (
                                 <div className="friend-requests-group">
@@ -1525,13 +1801,22 @@ export default function Profile() {
                                                     <span className="friend-sub">{friend.email}</span>
                                                 </div>
                                             </div>
-                                            <button
-                                                className="remove-friend-btn"
-                                                onClick={() => handleRemoveFriend(friend.id)}
-                                                disabled={removeFriendId === friend.id}
-                                            >
-                                                {removeFriendId === friend.id ? "Removing..." : "Remove"}
-                                            </button>
+                                            <div className="friend-actions">
+                                                <button
+                                                    className="accept-friend-btn"
+                                                    onClick={() => handleViewUserProfile(friend.id)}
+                                                    disabled={profileLookupLoading === friend.id}
+                                                >
+                                                    {profileLookupLoading === friend.id ? "Opening..." : "View Profile"}
+                                                </button>
+                                                <button
+                                                    className="remove-friend-btn"
+                                                    onClick={() => handleRemoveFriend(friend.id)}
+                                                    disabled={removeFriendId === friend.id}
+                                                >
+                                                    {removeFriendId === friend.id ? "Removing..." : "Remove"}
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -1654,6 +1939,81 @@ export default function Profile() {
                         <button className="friends-modal-submit" onClick={handleAddFriend} disabled={addFriendBusy}>
                             {addFriendBusy ? "Adding..." : "Add Friend"}
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {viewedProfile && (
+                <div className="friends-modal-overlay" role="dialog" aria-modal="true">
+                    <div className="friends-modal profile-view-modal">
+                        <div className="friends-modal-header">
+                            <h3>{viewedProfile.username}</h3>
+                            <button className="friends-modal-close" onClick={() => setViewedProfile(null)} aria-label="Close">
+                                &times;
+                            </button>
+                        </div>
+                        <div className="profile-view-header">
+                            <img
+                                src={viewedProfile.avatar_url || "/UserIcon.svg"}
+                                alt={viewedProfile.username}
+                                className="profile-view-avatar"
+                            />
+                            <div>
+                                <p className="profile-view-status">{formatFriendStatus(viewedProfile.friend_status)}</p>
+                                <p className="profile-view-visibility">
+                                    Visibility: {formatVisibilityLabel(viewedProfile.visibility)}
+                                </p>
+                            </div>
+                        </div>
+
+                        {!viewedProfile.can_view ? (
+                            <div className="restricted-profile-message">
+                                This traveler has limited their profile visibility. Send or accept a friend request to view more if their profile is friends-only.
+                            </div>
+                        ) : (
+                            <div className="profile-view-details">
+                                <div className="profile-view-section">
+                                    <span className="profile-view-label">Bio</span>
+                                    <p>{viewedProfile.bio || "No bio added yet."}</p>
+                                </div>
+                                <div className="profile-view-grid">
+                                    <div>
+                                        <span className="profile-view-label">Budget</span>
+                                        <p>
+                                            ${viewedProfile.budget_min ?? "?"} - ${viewedProfile.budget_max ?? "?"}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <span className="profile-view-label">Travel Mode</span>
+                                        <p>{viewedProfile.travel_mode || "Not specified"}</p>
+                                    </div>
+                                    <div>
+                                        <span className="profile-view-label">Preferred Destination</span>
+                                        <p>{viewedProfile.preferred_destination || "Not specified"}</p>
+                                    </div>
+                                    <div>
+                                        <span className="profile-view-label">Travel Pace</span>
+                                        <p>{viewedProfile.travel_pace || "Not specified"}</p>
+                                    </div>
+                                    <div>
+                                        <span className="profile-view-label">Hotel Type</span>
+                                        <p>{viewedProfile.hotel_type || "Not specified"}</p>
+                                    </div>
+                                    <div>
+                                        <span className="profile-view-label">Room Sharing</span>
+                                        <p>{viewedProfile.room_sharing || "Not specified"}</p>
+                                    </div>
+                                    <div>
+                                        <span className="profile-view-label">Cuisine</span>
+                                        <p>{viewedProfile.cuisine_preference || "Not specified"}</p>
+                                    </div>
+                                    <div>
+                                        <span className="profile-view-label">Dietary Restrictions</span>
+                                        <p>{viewedProfile.dietary_restrictions || "Not specified"}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
