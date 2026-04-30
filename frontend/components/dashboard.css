@@ -138,6 +138,19 @@
     box-shadow: 0 8px 20px rgba(45, 122, 74, 0.2);
 }
 
+.help-feedback-btn {
+    background: rgba(24, 108, 80, 0.12);
+    border-color: rgba(24, 108, 80, 0.38);
+    color: #0E3F2E;
+    font-weight: 700;
+}
+
+.help-feedback-btn:hover {
+    background: rgba(24, 108, 80, 0.2);
+    border-color: rgba(24, 108, 80, 0.58);
+    color: #0E3F2E;
+}
+
 .create-poll-btn:hover,
 .search-flights-btn:hover,
 .explore-hotels-btn:hover,

@@ -954,6 +954,9 @@ export default function Dashboard() {
                     <button className="action-btn dashboard-btn">
                         Dashboard
                     </button>
+                    <button className="action-btn help-feedback-btn" onClick={() => router.push("/help") }>
+                        Help & Feedback
+                    </button>
                     <button className="action-btn my-groups-btn" onClick={handleViewGroups}>
                         My Groups
                     </button>

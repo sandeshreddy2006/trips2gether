@@ -3,12 +3,12 @@
 .notification-btn:hover{opacity:0.7}
 .notification-icon{width:28px;height:28px;color:#FFC107}
 .notification-badge{position:absolute;top:4px;right:4px;background:#ff4d4f;color:#fff;border-radius:12px;padding:2px 6px;font-size:12px}
-.notification-dropdown{position:absolute;right:0;top:36px;width:320px;background:#fff;border:1px solid #e6e6e6;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,0.08);z-index:40}
-.notification-header{padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600}
-.notification-loading,.notification-empty{padding:12px;color:#666}
+.notification-dropdown{position:absolute;right:0;top:36px;width:320px;background:#fff;border:1px solid rgba(46,107,85,0.18);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,0.08);z-index:40}
+.notification-header{padding:8px 12px;border-bottom:1px solid rgba(46,107,85,0.12);font-weight:700;color:#0E3F2E}
+.notification-loading,.notification-empty{padding:12px;color:#186C50}
 .notification-list{list-style:none;margin:0;padding:0;max-height:360px;overflow:auto}
-.notification-item{padding:10px 12px;border-bottom:1px solid #f6f6f6;cursor:pointer}
-.notification-item.unread{background:#f7fbff}
-.notification-title{font-weight:600}
-.notification-body{font-size:13px;color:#444;margin-top:4px}
-.notification-time{font-size:11px;color:#888;margin-top:6px}
+.notification-item{padding:10px 12px;border-bottom:1px solid #f4f7f4;cursor:pointer}
+.notification-item.unread{background:#f3fbf7}
+.notification-title{font-weight:700;color:#0E3F2E}
+.notification-body{font-size:13px;color:#186C50;margin-top:4px}
+.notification-time{font-size:11px;color:#2E6B55;margin-top:6px}

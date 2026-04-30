@@ -86,7 +86,9 @@ export default function NotificationBell() {
     try {
       if (item.group_id) {
         await fetch(`/api/poll-notifications/${item.id}/read`, { method: "PATCH", credentials: "include" });
-        if (item.payload && item.payload.group_id) {
+        if (item.payload && item.payload.item_id && item.payload.group_id) {
+          router.push(`/group/${item.payload.group_id}/itinerary?itemId=${item.payload.item_id}`);
+        } else if (item.payload && item.payload.group_id) {
           router.push(`/group/${item.payload.group_id}`);
         } else {
           router.push(`/group/${String(item.group_id)}`);
