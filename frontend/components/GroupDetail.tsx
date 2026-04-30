@@ -101,12 +101,6 @@ type AiPlanItem = {
     title: string;
     summary: string;
     reason: string;
-    reasoning_summary?: {
-        budget_fit?: string;
-        interest_fit?: string;
-        availability_travel_time_fit?: string;
-        fallback_used?: boolean;
-    };
     estimated_cost?: number | null;
     currency?: string | null;
     metadata?: Record<string, unknown>;
@@ -1075,12 +1069,6 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                 {items.map((item, index) => {
                     const saveKey = `${section}-${index}-${item.title}`;
                     const canSave = section === "destination" || section === "flight" || section === "hotel";
-                    const reasoning = item.reasoning_summary;
-                    const hasFullReasoning = Boolean(
-                        reasoning?.budget_fit?.trim()
-                        && reasoning?.interest_fit?.trim()
-                        && reasoning?.availability_travel_time_fit?.trim(),
-                    );
                     return (
                         <article key={saveKey} className="group-ai-plan-card">
                             <div className="group-ai-plan-card-main">
@@ -1096,23 +1084,6 @@ export default function GroupDetail({ groupId }: { groupId: number }) {
                                 <details>
                                     <summary>Why this recommendation?</summary>
                                     <p>{item.reason}</p>
-                                    {hasFullReasoning ? (
-                                        <ul className="group-ai-reason-list">
-                                            <li>
-                                                <strong>Budget:</strong> {reasoning?.budget_fit}
-                                            </li>
-                                            <li>
-                                                <strong>Interests:</strong> {reasoning?.interest_fit}
-                                            </li>
-                                            <li>
-                                                <strong>Availability and travel time:</strong> {reasoning?.availability_travel_time_fit}
-                                            </li>
-                                        </ul>
-                                    ) : (
-                                        <p className="group-ai-reason-fallback">
-                                            Detailed reasoning is temporarily unavailable. This recommendation is still shown using the latest group data.
-                                        </p>
-                                    )}
                                 </details>
                                 {canSave && (
                                     <button

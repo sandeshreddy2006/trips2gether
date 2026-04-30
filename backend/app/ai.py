@@ -680,103 +680,6 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def _build_reasoning_summary(
-    raw: dict[str, Any],
-    constraints: dict[str, Any],
-    planning_input: dict[str, Any],
-    default_currency: str,
-) -> dict[str, Any]:
-    """Ensure every recommendation has budget, interest, and availability/travel-time reasoning."""
-    raw_reasoning = raw.get("reasoning_summary") if isinstance(raw.get("reasoning_summary"), dict) else {}
-
-    budget = _to_float(constraints.get("budget"))
-    member_count = int((planning_input.get("group") or {}).get("member_count") or 1)
-    per_person_budget = (budget / member_count) if budget and member_count > 0 else None
-
-    item_cost = _to_float(raw.get("estimated_cost"))
-    currency = str(raw.get("currency") or default_currency).strip() or "USD"
-
-    ai_budget_fit = str(raw_reasoning.get("budget_fit") or "").strip()
-    if ai_budget_fit:
-        budget_fit = ai_budget_fit
-        budget_fallback_used = False
-    elif item_cost is not None and per_person_budget is not None:
-        if item_cost <= per_person_budget:
-            budget_fit = (
-                f"Estimated at {currency} {item_cost:.2f}, which fits within the per-person budget target of "
-                f"{currency} {per_person_budget:.2f}."
-            )
-        else:
-            budget_fit = (
-                f"Estimated at {currency} {item_cost:.2f}; this may exceed the per-person budget target of "
-                f"{currency} {per_person_budget:.2f}, so trade-offs may be needed."
-            )
-        budget_fallback_used = True
-    elif budget is not None:
-        budget_fit = f"Evaluated against the current group budget of {currency} {budget:.2f}."
-        budget_fallback_used = True
-    else:
-        budget_fit = "Budget-fit reasoning is temporarily unavailable; generated from latest group constraints."
-        budget_fallback_used = True
-
-    member_preferences = planning_input.get("member_preferences") or []
-    preference_tokens: list[str] = []
-    for pref in member_preferences[:4]:
-        if not isinstance(pref, dict):
-            continue
-        for key in ["travel_mode", "travel_pace", "hotel_type", "cuisine_preference", "preferred_destination"]:
-            value = pref.get(key)
-            if value:
-                preference_tokens.append(str(value))
-        if len(preference_tokens) >= 3:
-            break
-
-    ai_interest_fit = str(raw_reasoning.get("interest_fit") or "").strip()
-    if ai_interest_fit:
-        interest_fit = ai_interest_fit
-        interest_fallback_used = False
-    elif preference_tokens:
-        interest_fit = f"Aligned with shared preferences such as {', '.join(preference_tokens[:3])}."
-        interest_fallback_used = True
-    else:
-        interest_fit = "Interest-fit reasoning is temporarily unavailable; generated from latest member preference data."
-        interest_fallback_used = True
-
-    ai_availability_fit = str(raw_reasoning.get("availability_travel_time_fit") or "").strip()
-    if ai_availability_fit:
-        availability_fit = ai_availability_fit
-        availability_fallback_used = False
-    else:
-        start_date = str(constraints.get("start_date") or "").strip()
-        end_date = str(constraints.get("end_date") or "").strip()
-        metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
-        duration = str(metadata.get("duration") or raw.get("duration") or "").strip()
-        stops = metadata.get("stops") if metadata.get("stops") is not None else raw.get("stops")
-
-        pieces: list[str] = []
-        if start_date and end_date:
-            pieces.append(f"Fits the selected date window ({start_date} to {end_date})")
-        elif start_date:
-            pieces.append(f"Fits the selected start date ({start_date})")
-        if duration:
-            pieces.append(f"with travel duration around {duration}")
-        if stops is not None:
-            pieces.append(f"and approximately {stops} stop(s)")
-
-        if pieces:
-            availability_fit = " ".join(pieces) + "."
-        else:
-            availability_fit = "Availability/travel-time reasoning is temporarily unavailable; generated from latest schedule constraints."
-        availability_fallback_used = True
-
-    return {
-        "budget_fit": budget_fit,
-        "interest_fit": interest_fit,
-        "availability_travel_time_fit": availability_fit,
-        "fallback_used": budget_fallback_used or interest_fallback_used or availability_fallback_used,
-    }
-
-
 def _normalize_plan_item(
     raw: dict[str, Any],
     fallback_title: str,
@@ -791,7 +694,6 @@ def _normalize_plan_item(
         "estimated_cost": raw.get("estimated_cost"),
         "currency": str(raw.get("currency") or default_currency).strip(),
         "metadata": raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {},
-        "reasoning_summary": _build_reasoning_summary(raw, constraints, planning_input, default_currency),
     }
 
 
