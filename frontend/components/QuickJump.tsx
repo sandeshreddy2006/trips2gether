@@ -42,7 +42,7 @@ interface QuickJumpResults {
     chats: QuickJumpChat[];
 }
 
-type ResultItem = 
+type ResultItem =
     | { type: "group"; data: QuickJumpGroup }
     | { type: "booking"; data: QuickJumpBooking }
     | { type: "destination"; data: QuickJumpDestination }
@@ -61,11 +61,11 @@ export default function QuickJump() {
     // Flatten results into a single list for keyboard navigation
     const flattenedResults: ResultItem[] = results
         ? [
-              ...results.groups.map(g => ({ type: "group" as const, data: g })),
-              ...results.bookings.map(b => ({ type: "booking" as const, data: b })),
-              ...results.destinations.map(d => ({ type: "destination" as const, data: d })),
-              ...results.chats.map(c => ({ type: "chat" as const, data: c })),
-          ]
+            ...results.groups.map(g => ({ type: "group" as const, data: g })),
+            ...results.bookings.map(b => ({ type: "booking" as const, data: b })),
+            ...results.destinations.map(d => ({ type: "destination" as const, data: d })),
+            ...results.chats.map(c => ({ type: "chat" as const, data: c })),
+        ]
         : [];
 
     // Fetch quick-jump results
@@ -147,8 +147,12 @@ export default function QuickJump() {
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (!isOpen) {
             if (e.key === "Enter") {
-                setIsOpen(true);
-                setSelectedIndex(-1);
+                if (query.trim().length >= 2) {
+                    router.push(`/explore?query=${encodeURIComponent(query.trim())}`);
+                } else {
+                    setIsOpen(true);
+                    setSelectedIndex(-1);
+                }
             }
             return;
         }
@@ -170,6 +174,9 @@ export default function QuickJump() {
                 e.preventDefault();
                 if (selectedIndex >= 0 && flattenedResults[selectedIndex]) {
                     navigateToResult(flattenedResults[selectedIndex]);
+                } else if (query.trim().length >= 2) {
+                    router.push(`/explore?query=${encodeURIComponent(query.trim())}`);
+                    setIsOpen(false);
                 }
                 break;
             case "Escape":
@@ -261,6 +268,44 @@ export default function QuickJump() {
                                     ? "No results found"
                                     : "Focus to see recent items"}
                             </p>
+                            {query && query.length >= 2 && (
+                                <div
+                                    className="quick-jump-result-item"
+                                    onClick={() => {
+                                        router.push(`/explore?query=${encodeURIComponent(query.trim())}`);
+                                        setIsOpen(false);
+                                    }}
+                                    role="option"
+                                    aria-selected={false}
+                                >
+                                    <div className="result-icon">🔎</div>
+                                    <div className="result-content">
+                                        <div className="result-title">Search all destinations for "{query}"</div>
+                                        <div className="result-meta">Open destination explorer</div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {hasResults && query && query.length >= 2 && (
+                        <div className="quick-jump-section">
+                            <div className="quick-jump-section-title">Explore</div>
+                            <div
+                                className="quick-jump-result-item"
+                                onClick={() => {
+                                    router.push(`/explore?query=${encodeURIComponent(query.trim())}`);
+                                    setIsOpen(false);
+                                }}
+                                role="option"
+                                aria-selected={false}
+                            >
+                                <div className="result-icon">🔎</div>
+                                <div className="result-content">
+                                    <div className="result-title">Search all destinations for "{query}"</div>
+                                    <div className="result-meta">Open destination explorer</div>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -278,9 +323,8 @@ export default function QuickJump() {
                                             <div
                                                 key={`group-${group.id}`}
                                                 data-result-index={globalIdx}
-                                                className={`quick-jump-result-item ${
-                                                    selectedIndex === globalIdx ? "selected" : ""
-                                                }`}
+                                                className={`quick-jump-result-item ${selectedIndex === globalIdx ? "selected" : ""
+                                                    }`}
                                                 onClick={() =>
                                                     handleResultClick({
                                                         type: "group",
@@ -318,9 +362,8 @@ export default function QuickJump() {
                                             <div
                                                 key={`booking-${booking.id}`}
                                                 data-result-index={globalIdx}
-                                                className={`quick-jump-result-item ${
-                                                    selectedIndex === globalIdx ? "selected" : ""
-                                                }`}
+                                                className={`quick-jump-result-item ${selectedIndex === globalIdx ? "selected" : ""
+                                                    }`}
                                                 onClick={() =>
                                                     handleResultClick({
                                                         type: "booking",
@@ -362,9 +405,8 @@ export default function QuickJump() {
                                             <div
                                                 key={`dest-${dest.id}`}
                                                 data-result-index={globalIdx}
-                                                className={`quick-jump-result-item ${
-                                                    selectedIndex === globalIdx ? "selected" : ""
-                                                }`}
+                                                className={`quick-jump-result-item ${selectedIndex === globalIdx ? "selected" : ""
+                                                    }`}
                                                 onClick={() =>
                                                     handleResultClick({
                                                         type: "destination",
@@ -407,9 +449,8 @@ export default function QuickJump() {
                                             <div
                                                 key={`chat-${chat.group_id}`}
                                                 data-result-index={globalIdx}
-                                                className={`quick-jump-result-item ${
-                                                    selectedIndex === globalIdx ? "selected" : ""
-                                                }`}
+                                                className={`quick-jump-result-item ${selectedIndex === globalIdx ? "selected" : ""
+                                                    }`}
                                                 onClick={() =>
                                                     handleResultClick({
                                                         type: "chat",
