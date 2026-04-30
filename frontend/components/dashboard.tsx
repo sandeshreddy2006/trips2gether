@@ -969,6 +969,11 @@ export default function Dashboard() {
                     <button className="action-btn create-poll-btn" onClick={() => setShowCreateGroup(true)}>
                         + Create Group
                     </button>
+                    {user?.is_admin && (
+                        <button className="action-btn admin-btn" onClick={() => router.push("/admin/reports")}>
+                            Admin Dashboard
+                        </button>
+                    )}
                     <button className="action-btn search-flights-btn" onClick={() => router.push("/bookings")}>
                         Search Flights
                     </button>

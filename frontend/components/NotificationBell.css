@@ -3,6 +3,7 @@
 .notification-btn:hover{opacity:0.7}
 .notification-icon{width:28px;height:28px;color:#FFC107}
 .notification-badge{position:absolute;top:4px;right:4px;background:#ff4d4f;color:#fff;border-radius:12px;padding:2px 6px;font-size:12px}
+.admin-dot{position:absolute;top:6px;left:6px;width:10px;height:10px;background:#ff2d2d;border-radius:50%;box-shadow:0 0 0 4px rgba(255,45,45,0.12)}
 .notification-dropdown{position:absolute;right:0;top:36px;width:320px;background:#fff;border:1px solid rgba(46,107,85,0.18);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,0.08);z-index:40}
 .notification-header{padding:8px 12px;border-bottom:1px solid rgba(46,107,85,0.12);font-weight:700;color:#0E3F2E}
 .notification-loading,.notification-empty{padding:12px;color:#186C50}

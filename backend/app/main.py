@@ -58,6 +58,10 @@ from .schemas import (
     ReportCreateIn,
     ReportOut,
     ReportListOut,
+    AdminReportOut,
+    AdminReportFilterIn,
+    AdminReportStatusUpdateIn,
+    AdminReportNoteIn,
     ProfileOut, 
     ProfileUpdate,
     WalletTopUpIn,
@@ -168,6 +172,23 @@ def _ensure_trip_plan_shared_notes_column() -> None:
 
 
 _ensure_trip_plan_shared_notes_column()
+
+
+def _ensure_user_reports_admin_columns() -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("user_reports")}
+    except Exception:
+        return
+
+    with engine.begin() as connection:
+        if "admin_notes" not in columns:
+            connection.execute(text("ALTER TABLE user_reports ADD COLUMN admin_notes TEXT"))
+        if "updated_at" not in columns:
+            connection.execute(text("ALTER TABLE user_reports ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"))
+
+
+_ensure_user_reports_admin_columns()
 
 
 def _ensure_group_shortlist_cost_columns() -> None:
@@ -1301,6 +1322,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
         "id": user.id,
         "email": user.email,
         "name": user.name,
+        "is_admin": user.is_admin,
         "location": user.location,
         "latitude": user.latitude,
         "longitude": user.longitude,
@@ -4207,10 +4229,150 @@ def _send_report_alert(payload: dict) -> None:
                 print(f"[Report Alert] Email sent to {dev_recipient} for report {payload.get('id')}")
             except Exception as e:
                 print(f"[Report Alert] Failed to send email: {e}")
+
+
         else:
             print("[Report Alert] SMTP credentials or recipient not configured. Report payload:", payload)
     except Exception as e:
         print(f"[Report Alert] Unexpected error: {e}")
+
+
+@app.get("/admin/reports", response_model=dict)
+def list_admin_reports(
+    request: Request,
+    db: Session = Depends(get_db),
+    status: str | None = None,
+    report_type: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """List all user reports for admins with optional filters."""
+    current_user = get_current_user_info(request, db)
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    query = (
+        db.query(models.UserReport, models.User.email, models.User.first_name, models.User.last_name)
+        .outerjoin(models.User, models.User.id == models.UserReport.user_id)
+    )
+
+    if status:
+        query = query.filter(models.UserReport.status == status)
+    if report_type:
+        query = query.filter(models.UserReport.report_type == report_type)
+    if date_from:
+        try:
+            query = query.filter(models.UserReport.created_at >= datetime.fromisoformat(date_from))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_from format")
+    if date_to:
+        try:
+            query = query.filter(models.UserReport.created_at <= datetime.fromisoformat(date_to))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_to format")
+
+    rows = query.order_by(models.UserReport.created_at.desc()).all()
+    items = []
+    for report, email, first_name, last_name in rows:
+        items.append({
+            "id": report.id,
+            "user_id": report.user_id,
+            "report_type": report.report_type,
+            "title": report.title,
+            "description": report.description,
+            "status": report.status,
+            "admin_notes": report.admin_notes,
+            "created_at": report.created_at,
+            "updated_at": report.updated_at,
+            "reporter_email": email,
+            "reporter_name": " ".join(part for part in [first_name, last_name] if part),
+        })
+
+    return {"ok": True, "items": items}
+
+
+@app.patch("/admin/reports/{report_id}/status", response_model=dict)
+def update_admin_report_status(
+    report_id: int,
+    body: AdminReportStatusUpdateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Update a report's status (admin only)."""
+    current_user = get_current_user_info(request, db)
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    report = db.get(models.UserReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    allowed_statuses = {"open", "in_progress", "resolved"}
+    if body.new_status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Invalid report status")
+
+    report.status = body.new_status
+    report.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(report)
+
+    return {
+        "ok": True,
+        "report": {
+            "id": report.id,
+            "user_id": report.user_id,
+            "report_type": report.report_type,
+            "title": report.title,
+            "description": report.description,
+            "status": report.status,
+            "admin_notes": report.admin_notes,
+            "created_at": report.created_at,
+            "updated_at": report.updated_at,
+        },
+    }
+
+
+@app.post("/admin/reports/{report_id}/notes", response_model=dict)
+def add_admin_report_note(
+    report_id: int,
+    body: AdminReportNoteIn,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Append an internal note to a report (admin only)."""
+    current_user = get_current_user_info(request, db)
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    report = db.get(models.UserReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    note_text = (body.note_text or "").strip()
+    if not note_text:
+        raise HTTPException(status_code=400, detail="Note text is required")
+
+    author_name = " ".join(part for part in [current_user.first_name, current_user.last_name] if part) or "Admin"
+    note_line = f"[{datetime.utcnow().isoformat()}] {author_name}: {note_text}"
+    report.admin_notes = f"{report.admin_notes}\n{note_line}".strip() if report.admin_notes else note_line
+    report.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(report)
+
+    return {
+        "ok": True,
+        "report": {
+            "id": report.id,
+            "user_id": report.user_id,
+            "report_type": report.report_type,
+            "title": report.title,
+            "description": report.description,
+            "status": report.status,
+            "admin_notes": report.admin_notes,
+            "created_at": report.created_at,
+            "updated_at": report.updated_at,
+        },
+    }
 
 
 @app.put("/profile/update", response_model=ProfileOut)

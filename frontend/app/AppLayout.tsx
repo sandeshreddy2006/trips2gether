@@ -198,6 +198,15 @@ export default function AppLayout({
                         </div>
                     )}
 
+                    {isAuthenticated && user?.is_admin && (
+                        <div className="nav-section">
+                            <a href="/admin/reports" className="nav-item">
+                                <img src="/bookings.svg" alt="Admin Dashboard" className="nav-icon" />
+                                <span>Admin Dashboard</span>
+                            </a>
+                        </div>
+                    )}
+
                     <div className="nav-section">
                         <a href="/" className="nav-item home-item">
                             <img src="/home.svg" alt="Home" className="nav-icon home-icon" />

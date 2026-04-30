@@ -187,6 +187,18 @@
     color: #1a1a1a;
 }
 
+.admin-btn {
+    background: linear-gradient(135deg, #b02a2a 0%, #e63b3b 100%);
+    color: #fff;
+    border-color: rgba(180, 42, 42, 0.6);
+    box-shadow: 0 8px 18px rgba(230, 59, 59, 0.18);
+}
+
+.admin-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(230, 59, 59, 0.22);
+}
+
 /* Dashboard Grid */
 .dashboard-grid {
     display: grid;

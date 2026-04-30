@@ -191,6 +191,48 @@ class ReportListOut(BaseModel):
     items: list[ReportOut]
 
 
+class AdminReportFilterIn(BaseModel):
+    status: str | None = None
+    report_type: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+
+
+class AdminReportStatusUpdateIn(BaseModel):
+    new_status: Literal["open", "in_progress", "resolved"] = Field(...)
+
+
+class AdminReportNoteIn(BaseModel):
+    note_text: str = Field(..., min_length=1, max_length=1000)
+
+
+class AdminReportUpdateIn(BaseModel):
+    status: Literal["open", "in_progress", "resolved"] = Field(...)
+    admin_notes: str | None = Field(None, max_length=1000)
+
+
+class AdminReportOut(BaseModel):
+    id: int
+    user_id: int
+    report_type: str
+    title: str | None = None
+    description: str
+    status: str
+    admin_notes: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+    reporter_name: str
+    reporter_email: str
+
+    class Config:
+        from_attributes = True
+
+
+class AdminReportListOut(BaseModel):
+    items: list[AdminReportOut]
+    total: int
+
+
 class GroupAddMembersIn(BaseModel):
     user_ids: list[int] = Field(min_length=1, description="List of user IDs to invite")
 

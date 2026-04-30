@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/app/AuthContext";
 import "./NotificationBell.css";
 
 type NotifItem = {
@@ -17,6 +18,7 @@ type NotifItem = {
 
 export default function NotificationBell() {
   const router = useRouter();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotifItem[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -116,6 +118,7 @@ export default function NotificationBell() {
     <div className="notification-bell-container">
       <button className="notification-btn" onClick={handleToggle} aria-label="Notifications">
         <img src="/bell.svg" alt="Notifications" className="notification-icon" />
+        {user?.is_admin && <span className="admin-dot" title="Admin account" />}
         {unreadCount > 0 && <span className="notification-badge">{unreadCount}</span>}
       </button>
 

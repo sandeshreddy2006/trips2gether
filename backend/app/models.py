@@ -280,6 +280,8 @@ class UserReport(Base):
     title = Column(String(255), nullable=True)
     description = Column(Text, nullable=False)
     status = Column(String(32), nullable=False, default="open", index=True)
+    admin_notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     user = relationship("User", foreign_keys=[user_id])
